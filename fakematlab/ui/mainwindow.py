@@ -1,16 +1,27 @@
-"""
+r"""
 Main application window.
 ========================
-Layout:
-  ┌──────────────────┬────────────────────────────────────────┐
-  │  [Diagram view]  │  [Tab: System|Time|Freq|Stab|Perf|Design]│
-  │                  │                                        │
-  ├──────────────────┤                                        │
-  │  [Block editor]  │                                        │
-  └──────────────────┴────────────────────────────────────────┘
 
-The left panel (diagram + editor) is fixed-width; the right panel
-takes the remaining space. A QSplitter lets the user resize.
+::
+
+  ┌──────────────────────────────────────────────────────────┐
+  │ G(s) = …   K₂(s) = …   ● stable   PM 60°   [Edit model ▾]│  context bar
+  ├──────────────────────────────────────────────────────────┤
+  │ 📌 Snapshot  [ … ]  Restore  Delete  Compare             │
+  ├──────────────────────────────────────────────────────────┤
+  │ System │ Time │ Frequency │ … │ Simulink │ Modern        │
+  │                                                          │
+  │                    the analysis area                     │
+  └──────────────────────────────────────────────────────────┘
+
+The architecture diagram and the block editor are a **dock** (Ctrl+\),
+not a permanent column. They used to occupy 420–760 px on every tab — 21 %
+of the window — including on the two tabs that analyse a different model
+entirely. What is always visible instead is the context bar, which answers
+"what is loaded and is it stable?" in one strip.
+
+Geometry, dock layout and the current tab are saved on close and restored on
+launch; View ▸ Reset layout puts them back to the defaults.
 """
 
 from __future__ import annotations
@@ -19,16 +30,14 @@ import json
 from pathlib import Path
 
 import control as ctl
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSettings, Qt
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QApplication,
+    QDockWidget,
     QFileDialog,
-    QHBoxLayout,
-    QLabel,
     QMainWindow,
     QMessageBox,
-    QSplitter,
     QStatusBar,
     QTabWidget,
     QVBoxLayout,
@@ -49,6 +58,8 @@ from ..core.tf_utils import (
 from .apps import ControlSystemDesigner, LTIViewer, PIDTuner, SnapshotBar
 from .block_editor import BlockEditor
 from .console import ConsoleDock, FigureDock
+from .context_bar import ContextBar
+from .design import NORMAL, TIGHT
 from .diagram.fixed_diagram import FixedDiagramView
 from .lesson_dock import LessonDock
 from .sim.sim_tab import SimTab
@@ -87,52 +98,47 @@ class MainWindow(QMainWindow):
 
     # ── UI construction ───────────────────────────────────────
 
+    #: Tab labels. Words, not emoji: the old `🔬 System` rendered as an empty
+    #: box wherever the emoji font was missing — including in this project's
+    #: own headless screenshots — and an emoji is not a navigable label for
+    #: anything that reads the interface aloud.
+    _TABS = (
+        ("_sys_tab", "System"),
+        ("_time_tab", "Time"),
+        ("_freq_tab", "Frequency"),
+        ("_stab_tab", "Stability"),
+        ("_perf_tab", "Performance"),
+        ("_des_tab", "Design"),
+        ("_sim_tab", "Simulink"),
+        ("_mod_tab", "Modern"),
+    )
+
     def _build_ui(self) -> None:
         central = QWidget()
         self.setCentralWidget(central)
-        main_lay = QHBoxLayout(central)
-        main_lay.setContentsMargins(4, 4, 4, 4)
-        main_lay.setSpacing(4)
+        main_lay = QVBoxLayout(central)
+        main_lay.setContentsMargins(NORMAL, TIGHT, NORMAL, TIGHT)
+        main_lay.setSpacing(TIGHT)
 
-        outer_splitter = QSplitter(Qt.Horizontal)
-
-        # ── Left panel ──
-        left = QWidget()
-        left_lay = QVBoxLayout(left)
-        left_lay.setContentsMargins(0, 0, 0, 0)
-        left_lay.setSpacing(4)
-        # The diagram is inherently wide and short (roughly 3.3:1), so a narrow
-        # column renders it tiny with a tall band of empty space underneath.
-        # Give the panel room, and cap the diagram's height so the space it
-        # cannot use goes to the block editor instead.
-        left.setMinimumWidth(420)
-        left.setMaximumWidth(760)
-
-        self._diagram = FixedDiagramView(self._arch)
-        self._diagram.setMinimumHeight(150)
-        self._diagram.setMaximumHeight(260)
-        left_lay.addWidget(self._diagram, stretch=0)
-
-        self._editor = BlockEditor()
-        left_lay.addWidget(self._editor, stretch=1)
-
-        outer_splitter.addWidget(left)
-
-        # ── Right panel: the snapshot bar over the tabs ──
+        # ── the model context bar ──
         #
-        # The bar lives here rather than inside a tab because a snapshot is of
-        # the whole architecture, not of whatever panel happens to be open —
-        # taking one on the Frequency tab and restoring it on the Time tab is
-        # the point.
-        right = QWidget()
-        right_lay = QVBoxLayout(right)
-        right_lay.setContentsMargins(0, 0, 0, 0)
-        right_lay.setSpacing(4)
+        # What used to be a permanent 420–760 px column is now one strip. The
+        # diagram and the block editor live in a dock that opens on demand
+        # (Ctrl+\), so the analysis area gets the width instead of a picture
+        # of an architecture that two of the eight tabs do not even analyse.
+        self._context = ContextBar(self._arch)
+        self._context.edit_requested.connect(self.toggle_model_panel)
+        main_lay.addWidget(self._context)
 
+        # ── the snapshot bar ──
+        #
+        # Above the tabs because a snapshot is of the whole architecture, not
+        # of whatever panel happens to be open — taking one on the Frequency
+        # tab and restoring it on the Time tab is the point.
         self._snapshot_bar = SnapshotBar(self._arch, self.snapshots)
         self._snapshot_bar.restored.connect(self._on_snapshot_restored)
         self._snapshot_bar.compare_requested.connect(self._compare_snapshots)
-        right_lay.addWidget(self._snapshot_bar)
+        main_lay.addWidget(self._snapshot_bar)
 
         self._tabs = QTabWidget()
         self._tabs.setDocumentMode(True)
@@ -146,21 +152,31 @@ class MainWindow(QMainWindow):
         self._sim_tab  = SimTab()
         self._mod_tab  = ModernTab(self._arch)
 
-        self._tabs.addTab(self._sys_tab,  "🔬 System")
-        self._tabs.addTab(self._time_tab, "⏱ Time")
-        self._tabs.addTab(self._freq_tab, "〜 Frequency")
-        self._tabs.addTab(self._stab_tab, "🔒 Stability")
-        self._tabs.addTab(self._perf_tab, "📊 Performance")
-        self._tabs.addTab(self._des_tab,  "🎛 Design")
-        self._tabs.addTab(self._sim_tab,  "⛓ Simulink")
-        self._tabs.addTab(self._mod_tab,  "▦ Modern")
+        for attribute, label in self._TABS:
+            self._tabs.addTab(getattr(self, attribute), label)
 
-        right_lay.addWidget(self._tabs, stretch=1)
-        outer_splitter.addWidget(right)
-        outer_splitter.setStretchFactor(0, 1)
-        outer_splitter.setStretchFactor(1, 3)
+        main_lay.addWidget(self._tabs, stretch=1)
 
-        main_lay.addWidget(outer_splitter)
+        # ── the model panel, as a dock ──
+        self._model_dock = QDockWidget("Model", self)
+        self._model_dock.setObjectName("ModelDock")
+        self._model_dock.setAllowedAreas(Qt.LeftDockWidgetArea |
+                                         Qt.RightDockWidgetArea)
+        panel = QWidget()
+        panel_lay = QVBoxLayout(panel)
+        panel_lay.setContentsMargins(0, 0, 0, 0)
+        panel_lay.setSpacing(TIGHT)
+        # The diagram is inherently wide and short (roughly 3.3:1), so cap its
+        # height and give the space it cannot use to the block editor.
+        self._diagram = FixedDiagramView(self._arch)
+        self._diagram.setMinimumHeight(150)
+        self._diagram.setMaximumHeight(260)
+        panel_lay.addWidget(self._diagram, stretch=0)
+        self._editor = BlockEditor()
+        panel_lay.addWidget(self._editor, stretch=1)
+        self._model_dock.setWidget(panel)
+        self.addDockWidget(Qt.LeftDockWidgetArea, self._model_dock)
+        self._model_dock.hide()
 
         # ── Connections ──
         self._diagram.block_selected.connect(self._on_block_selected)
@@ -232,6 +248,93 @@ class MainWindow(QMainWindow):
         self._sim_tab._canvas.fit_all()
         self._tabs.setCurrentWidget(self._sim_tab)
         self._status.showMessage(f"{name} opened on the canvas", 6000)
+
+    # ── Layout ───────────────────────────────────────────────
+
+    #: Where `QSettings` keeps this window's layout.
+    SETTINGS_ORG = "FauxMatlab"
+    SETTINGS_APP = "FauxMatlab"
+
+    def toggle_model_panel(self, *_ignored) -> None:
+        """Show or hide the architecture diagram and block editor."""
+        visible = not self._model_dock.isVisible()
+        self._model_dock.setVisible(visible)
+        if visible:
+            self._model_dock.raise_()
+        self._act_model.setChecked(visible)
+
+    def _settings(self) -> QSettings:
+        return QSettings(self.SETTINGS_ORG, self.SETTINGS_APP)
+
+    def save_layout(self) -> None:
+        """
+        Remember the arrangement.
+
+        Nothing was persisted before: every launch put the splitter back,
+        hid the console, forgot which tab you were on and dropped any dock
+        you had arranged.
+        """
+        settings = self._settings()
+        settings.setValue("geometry", self.saveGeometry())
+        settings.setValue("windowState", self.saveState())
+        settings.setValue("currentTab", self._tabs.currentIndex())
+        settings.setValue("modelPanel", self._model_dock.isVisible())
+
+    def restore_layout(self) -> bool:
+        """Put it back. Returns whether anything was restored."""
+        settings = self._settings()
+        geometry = settings.value("geometry")
+        state = settings.value("windowState")
+        if geometry is None and state is None:
+            return False
+        if geometry is not None:
+            self.restoreGeometry(geometry)
+        if state is not None:
+            self.restoreState(state)
+        index = settings.value("currentTab")
+        if index is not None:
+            try:
+                self._tabs.setCurrentIndex(int(index))
+            except (TypeError, ValueError):
+                pass
+        # `restoreState` brings back dock *visibility* too, so the menu check
+        # marks have to be re-synchronised or they disagree with the window.
+        self._sync_view_menu()
+        return True
+
+    def reset_layout(self) -> None:
+        """
+        Back to the defaults, and forget what was saved.
+
+        A restored layout can become unusable — a dock dragged off-screen, a
+        saved geometry from a monitor that is no longer attached. Without
+        this, the only fix is deleting a registry key.
+        """
+        self._settings().clear()
+        for dock in (self._model_dock, self._console, self._figures,
+                     self._lessons):
+            dock.hide()
+        self.removeDockWidget(self._model_dock)
+        self.addDockWidget(Qt.LeftDockWidgetArea, self._model_dock)
+        self.addDockWidget(Qt.BottomDockWidgetArea, self._console)
+        self.addDockWidget(Qt.RightDockWidgetArea, self._figures)
+        self.addDockWidget(Qt.RightDockWidgetArea, self._lessons)
+        self.resize(1400, 850)
+        self._tabs.setCurrentIndex(0)
+        self._sync_view_menu()
+        self._status.showMessage("Layout reset", 4000)
+
+    def _sync_view_menu(self) -> None:
+        for action, dock in ((self._act_model, self._model_dock),
+                             (self._act_console, self._console),
+                             (self._act_figures, self._figures)):
+            action.blockSignals(True)
+            action.setChecked(dock.isVisible())
+            action.blockSignals(False)
+
+    def closeEvent(self, event) -> None:
+        self.save_layout()
+        super().closeEvent(event)
 
     # ── Apps ─────────────────────────────────────────────────
 
@@ -401,15 +504,30 @@ class MainWindow(QMainWindow):
 
         # View menu
         view_menu = mb.addMenu("&View")
+        act_model = QAction("&Model panel", self, checkable=True)
+        act_model.setShortcut("Ctrl+\\")
+        act_model.setStatusTip(
+            "The architecture diagram and the block editor")
+        act_model.triggered.connect(self.toggle_model_panel)
+        self._act_model = act_model
+        view_menu.addAction(act_model)
+
         act_console = QAction("&Command Window", self, checkable=True)
         act_console.setShortcut("Ctrl+`")
         act_console.toggled.connect(self._toggle_console)
         self._act_console = act_console
         view_menu.addAction(act_console)
+
         act_figures = QAction("&Figures", self, checkable=True)
         act_figures.toggled.connect(
             lambda on: self._figures.setVisible(on))
+        self._act_figures = act_figures
         view_menu.addAction(act_figures)
+
+        view_menu.addSeparator()
+        view_menu.addAction(QAction(
+            "&Reset layout", self, triggered=self.reset_layout,
+            statusTip="Restore the default window and dock arrangement"))
         view_menu.addSeparator()
         view_menu.addAction(QAction(
             "Send current plant to the console", self,
@@ -470,8 +588,6 @@ class MainWindow(QMainWindow):
     def _build_status_bar(self) -> None:
         self._status = QStatusBar()
         self.setStatusBar(self._status)
-        self._arch_label = QLabel("Architecture: G=1/(s+1)  K₂=1")
-        self._status.addWidget(self._arch_label)
 
     # ── Event handlers ────────────────────────────────────────
 
@@ -562,9 +678,14 @@ class MainWindow(QMainWindow):
             "G, K2, L, T, arch and model are now in the workspace", 6000)
 
     def _refresh_status(self) -> None:
-        G_str  = _tf_short(self._arch.block_tf("G"))
-        K2_str = _tf_short(self._arch.block_tf("K2"))
-        self._arch_label.setText(f"G={G_str}   K₂={K2_str}")
+        """
+        Refresh the context bar.
+
+        The status bar used to carry ``G=[1, 2]/[1, 3, 3, 1]`` — coefficient
+        arrays, no factorisation, no verdict. That job belongs to the context
+        bar now; the status bar is for transient messages.
+        """
+        self._context.refresh()
 
     # ── File I/O ──────────────────────────────────────────────
 

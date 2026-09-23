@@ -8,7 +8,7 @@ crashed one — so the UI stays live, shows progress, and can be cancelled.
 
 from __future__ import annotations
 
-from PySide6.QtCore import QObject, Qt, QThread, Signal
+from PySide6.QtCore import QObject, QSize, Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
@@ -17,7 +17,9 @@ from PySide6.QtWidgets import (
     QLabel,
     QProgressBar,
     QPushButton,
+    QSizePolicy,
     QSplitter,
+    QToolBar,
     QVBoxLayout,
     QWidget,
 )
@@ -26,6 +28,7 @@ from ...sim.compile import CompileError
 from ...sim.linearize import LinearizationError, linearize, steady_state
 from ...sim.model import ModelError, PortRef, SimModel
 from ...sim.solver import FIXED_STEP, SimulationError, simulate
+from ..design import NORMAL, TIGHT
 from ..guard import GuardedPanel, guard
 from .canvas import SimCanvas
 from .palette import BlockPalette
@@ -60,6 +63,19 @@ class _Worker(QObject):
             self.failed.emit(f"{type(exc).__name__}: {exc}")
 
 
+def _labelled(text: str, control: QWidget) -> QWidget:
+    """A toolbar-sized ``label [control]`` pair that can be hidden as a unit."""
+    holder = QWidget()
+    row = QHBoxLayout(holder)
+    row.setContentsMargins(TIGHT, 0, 0, 0)
+    row.setSpacing(TIGHT)
+    caption = QLabel(text)
+    caption.setStyleSheet("color: palette(mid);")
+    row.addWidget(caption)
+    row.addWidget(control)
+    return holder
+
+
 class SimTab(QWidget, GuardedPanel):
     """Model, run, inspect."""
 
@@ -86,7 +102,9 @@ class SimTab(QWidget, GuardedPanel):
         splitter = QSplitter(Qt.Horizontal)
 
         self._palette = BlockPalette()
-        self._palette.setMinimumWidth(180)
+        # A *preferred* width, not a floor. A 180 px minimum here was one
+        # of the constraints that stopped the window being narrowed.
+        self._palette.setMinimumWidth(0)
         self._palette.setMaximumWidth(280)
         splitter.addWidget(self._palette)
 
@@ -112,90 +130,126 @@ class SimTab(QWidget, GuardedPanel):
         self._canvas.path_changed.connect(self._on_path_changed)
 
     def _build_toolbar(self) -> QWidget:
-        bar = QWidget()
-        row = QHBoxLayout(bar)
-        row.setContentsMargins(4, 2, 4, 2)
+        """
+        A real ``QToolBar``, which is the whole point.
 
+        This used to be one ``QHBoxLayout`` holding Run, Stop, stop time,
+        solver, step, undo, redo, fit, up, a breadcrumb, Linearise, a progress
+        bar and two file buttons — in a row that could not wrap. It demanded
+        **1602 px**, and because a tab bar is as wide as its widest tab, that
+        one row set the minimum width of the entire application at 2038 px:
+        wider than a 1920 monitor, for someone who only wanted a Bode plot.
+
+        A toolbar with ``setMovable(False)`` and overflow puts whatever does
+        not fit behind a ``»`` button instead of pushing the window wider.
+        Groups are separated the way the plan describes: run, settings,
+        history, navigation, bridge, file.
+        """
+        bar = QToolBar()
+        bar.setMovable(False)
+        bar.setFloatable(False)
+        bar.setIconSize(QSize(16, 16))
+        bar.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        bar.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+
+        # ── run ──
         self._run_btn = QPushButton("▶ Run")
         self._run_btn.setShortcut("Ctrl+R")
+        self._run_btn.setToolTip("Run the simulation (Ctrl+R)")
         self._run_btn.clicked.connect(self.run_simulation)
-        row.addWidget(self._run_btn)
+        bar.addWidget(self._run_btn)
 
         self._stop_btn = QPushButton("■ Stop")
         self._stop_btn.setEnabled(False)
+        self._stop_btn.setToolTip("Cancel the running simulation")
         self._stop_btn.clicked.connect(self._cancel)
-        row.addWidget(self._stop_btn)
+        bar.addWidget(self._stop_btn)
+        bar.addSeparator()
 
-        row.addWidget(QLabel("  Stop time:"))
+        # ── simulation settings ──
         self._t_end = QDoubleSpinBox()
         self._t_end.setRange(1e-3, 1e6)
         self._t_end.setValue(10.0)
         self._t_end.setDecimals(3)
-        row.addWidget(self._t_end)
+        self._t_end.setAccessibleName("stop time")
+        self._t_end.setToolTip("Stop time (s)")
+        bar.addWidget(_labelled("Stop", self._t_end))
 
-        row.addWidget(QLabel("  Solver:"))
         self._solver = QComboBox()
         self._solver.addItems(["RK45", "LSODA", "Radau", "BDF", "DOP853",
                                "ode4", "ode1"])
+        self._solver.setAccessibleName("solver")
         self._solver.setToolTip(
             "RK45 is a good default. Radau or BDF for stiff models "
             "(widely separated time constants). ode4/ode1 are fixed-step, for "
             "matching what an embedded controller will do.")
-        row.addWidget(self._solver)
+        bar.addWidget(_labelled("Solver", self._solver))
 
-        row.addWidget(QLabel("  Step:"))
         self._step = QDoubleSpinBox()
         self._step.setRange(0.0, 1e3)
         self._step.setDecimals(5)
         self._step.setValue(0.0)
         self._step.setSpecialValueText("auto")
-        self._step.setToolTip("Maximum step; required for the fixed-step solvers.")
-        row.addWidget(self._step)
+        self._step.setAccessibleName("maximum step")
+        self._step.setToolTip(
+            "Maximum step; required for the fixed-step solvers.")
+        bar.addWidget(_labelled("Step", self._step))
+        bar.addSeparator()
 
-        row.addSpacing(12)
-        undo = QPushButton("↶")
+        # ── history and canvas navigation ──
+        undo = bar.addAction("↶")
         undo.setToolTip("Undo (Ctrl+Z)")
         undo.setShortcut("Ctrl+Z")
-        undo.clicked.connect(lambda: self._canvas.undo_stack.undo())
-        row.addWidget(undo)
-        redo = QPushButton("↷")
+        undo.triggered.connect(lambda: self._canvas.undo_stack.undo())
+        redo = bar.addAction("↷")
         redo.setToolTip("Redo (Ctrl+Y)")
         redo.setShortcut("Ctrl+Y")
-        redo.clicked.connect(lambda: self._canvas.undo_stack.redo())
-        row.addWidget(redo)
+        redo.triggered.connect(lambda: self._canvas.undo_stack.redo())
+        fit = bar.addAction("Fit")
+        fit.setToolTip("Fit the whole diagram in view")
+        fit.triggered.connect(lambda: self._canvas.fit_all())
+        bar.addSeparator()
 
-        fit = QPushButton("Fit")
-        fit.clicked.connect(lambda: self._canvas.fit_all())
-        row.addWidget(fit)
-
-        row.addSpacing(12)
-        self._up_btn = QPushButton("↑ Up")
-        self._up_btn.setToolTip("Leave this subsystem (Esc)")
-        self._up_btn.clicked.connect(lambda: self._canvas.ascend())
-        self._up_btn.setVisible(False)
-        row.addWidget(self._up_btn)
+        # ── subsystem navigation ──
+        self._up_action = bar.addAction("↑ Up")
+        self._up_action.setToolTip("Leave this subsystem (Esc)")
+        self._up_action.triggered.connect(lambda: self._canvas.ascend())
+        self._up_action.setVisible(False)
 
         self._crumb = QLabel("")
         self._crumb.setStyleSheet("color: palette(mid);")
-        row.addWidget(self._crumb)
+        bar.addWidget(self._crumb)
+        bar.addSeparator()
 
-        lin = QPushButton("Linearise →")
+        # ── the bridge to the analysis tabs ──
+        lin = bar.addAction("Linearise →")
         lin.setToolTip("Linearise the model and send it to the analysis tabs")
-        lin.clicked.connect(self.linearise)
-        row.addWidget(lin)
+        lin.triggered.connect(self.linearise)
+        bar.addSeparator()
 
-        row.addStretch()
+        for label, slot, tip in (
+            ("Open…", self.open_model, "Open a .fmdl model"),
+            ("Save…", self.save_model, "Save this model as .fmdl"),
+        ):
+            action = bar.addAction(label)
+            action.setToolTip(tip)
+            action.triggered.connect(slot)
+
+        # The progress bar lives outside the toolbar: it appears and vanishes,
+        # and a toolbar that reflows every time a simulation starts is worse
+        # than one that does not.
         self._progress = QProgressBar()
         self._progress.setMaximumWidth(160)
         self._progress.setVisible(False)
-        row.addWidget(self._progress)
 
-        for label, slot in (("Open…", self.open_model),
-                            ("Save…", self.save_model)):
-            button = QPushButton(label)
-            button.clicked.connect(slot)
-            row.addWidget(button)
-        return bar
+        wrapper = QWidget()
+        row = QHBoxLayout(wrapper)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(NORMAL)
+        row.addWidget(bar, stretch=1)
+        row.addWidget(self._progress)
+        self._toolbar = bar
+        return wrapper
 
     # ── default model ───────────────────────────────────────────
 
@@ -370,7 +424,7 @@ class SimTab(QWidget, GuardedPanel):
 
     def _on_path_changed(self, crumbs: list) -> None:
         inside = len(crumbs) > 1
-        self._up_btn.setVisible(inside)
+        self._up_action.setVisible(inside)
         self._crumb.setText(" ▸ ".join(crumbs) if inside else "")
 
     def _on_model_changed(self) -> None:
