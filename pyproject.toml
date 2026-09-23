@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fakematlab"
+version = "0.5.0"
+description = "A control-systems workbench: classical and modern control, plus a working block-diagram simulator."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Proprietary" }
+authors = [{ name = "Leon Gorecki" }]
+
+# Pinned to the versions the 432 tests were verified against. numpy 2.x
+# matters: it removed `ndarray.ptp`, which the 1.x-era code relied on.
+dependencies = [
+    "numpy>=2.0,<3",
+    "scipy>=1.14",
+    "sympy>=1.13",
+    "control>=0.10.1",
+    "PySide6>=6.7",
+    "pyqtgraph>=0.13.4",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-cov>=5", "ruff>=0.5"]
+
+[project.scripts]
+fakematlab = "app:main"
+
+[tool.setuptools.packages.find]
+include = ["fakematlab*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = [
+    "E501",  # long lines are usually a docstring explaining a subtlety
+    "B008",  # Qt idioms pass constructed objects as defaults
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests deliberately import inside functions to keep the core/UI split honest.
+"tests/**" = ["E402"]

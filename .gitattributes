@@ -1,0 +1,7 @@
+# Normalise text to LF in the repository; check out native on Windows.
+* text=auto
+
+*.py    text diff=python
+*.md    text
+*.toml  text
+*.fmdl  text
