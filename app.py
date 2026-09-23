@@ -19,7 +19,9 @@ import sys
 os.environ["PYQTGRAPH_QT_LIB"] = "PySide6"
 os.environ.setdefault("QT_AUTO_SCREEN_SCALE_FACTOR", "1")
 
-VERSION = "0.7.0"
+# Read from the package rather than declared here, so the two cannot
+# drift — which they already had.
+from fakematlab import __version__ as VERSION
 
 
 def _run_check(argv: list[str]) -> int:

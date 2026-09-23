@@ -512,6 +512,17 @@ the source tree:
    `UnicodeEncodeError` *inside* a check's `try` block: a display problem recorded as a
    correctness failure, which is a lie about the build. The development shell is UTF-8, so the
    source tree never hit it.
+4. **The windowed build would not launch at all.** A GUI executable on Windows has *no standard
+   streams* — `sys.stdout` and `sys.stderr` are `None` — and numpy's `f2py/cfuncs.py` does
+   `errmess = sys.stderr.write` at import time, reached through `scipy.linalg`. So the launch died
+   with `AttributeError: 'NoneType' object has no attribute 'write'` before the window appeared.
+   Fixed with a runtime hook (`packaging/rthook_stdio.py`) that supplies discard streams for every
+   package at once rather than patching them one by one.
+
+   **The verification hole matters more than the bug.** The self-test passed, and CI was written to
+   run it — against `FauxMatlab-check.exe`, the *console* build, which does have streams. The
+   entry point people actually double-click was the one never tested. CI now self-tests both, and
+   a test asserts that it does.
 
 **Deliberately deferred, not overlooked.** `B905` (`zip(..., strict=True)`) is switched off with a
 note. Fifteen call sites, mostly in the solver, where a length mismatch between ports and widths

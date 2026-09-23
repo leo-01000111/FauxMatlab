@@ -170,6 +170,49 @@ def test_the_spec_builds_a_console_entry_point_for_the_self_test():
     assert "console=True" in text
 
 
+def test_the_spec_installs_the_missing_stdio_runtime_hook():
+    """
+    A windowed build has ``sys.stdout is None`` and ``sys.stderr is None``.
+    numpy's ``f2py.cfuncs`` does ``errmess = sys.stderr.write`` at import
+    time — reached from ``scipy.linalg`` — so without the hook the launch
+    dies with ``AttributeError: 'NoneType' object has no attribute 'write'``
+    before the window appears. The console build never sees it.
+    """
+    spec = (ROOT / "packaging" / "fauxmatlab.spec").read_text(encoding="utf-8")
+    assert "rthook_stdio.py" in spec
+    assert "runtime_hooks=[]" not in spec
+    assert (ROOT / "packaging" / "rthook_stdio.py").exists()
+
+
+def test_the_stdio_hook_replaces_missing_streams():
+    """Run the hook with the streams knocked out, as a windowed build has."""
+    probe = (
+        "import sys, runpy;"
+        "sys.stdout = None; sys.stderr = None;"
+        "runpy.run_path(r'{hook}');"
+        "ok = sys.stdout is not None and sys.stderr is not None;"
+        "sys.stdout.write('');"
+        "sys.stderr.write('');"
+        "import numpy.f2py.cfuncs;"       # the import that used to crash
+        "sys.__stdout__.write('OK' if ok else 'STILL NONE')"
+    ).format(hook=ROOT / "packaging" / "rthook_stdio.py")
+    result = subprocess.run([sys.executable, "-c", probe], cwd=ROOT,
+                            capture_output=True, text=True, timeout=300)
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert "OK" in result.stdout
+
+
+def test_ci_self_tests_the_windowed_build_too():
+    """
+    The verification hole that let the crash ship: only the console entry
+    point was being checked, and the bug exists only in the windowed one.
+    """
+    text = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
+        encoding="utf-8")
+    assert "FauxMatlab-check.exe --check" in text
+    assert "FauxMatlab.exe" in text and "windowed" in text
+
+
 def test_the_spec_excludes_nothing_the_app_imports_at_startup():
     """
     The mistake this pins down was made once already.

@@ -77,12 +77,25 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: pyinstaller --clean --noconfirm packaging/fauxmatlab.spec
 
-      # A build that cannot pass its own self-test is not a release. Run the
-      # console entry point, not the windowed one: a windowed executable on
-      # Windows has no stdout, so a failure would set the exit code and leave
-      # the CI log with nothing in it.
-      - name: self-test the frozen build
+      # A build that cannot pass its own self-test is not a release.
+      #
+      # BOTH entry points, and that is the point. The console build is the one
+      # with a readable report. The windowed build is the one people actually
+      # double-click, and it differs in a way that matters: it has no standard
+      # streams, so packages that capture `sys.stderr.write` at import time
+      # fail there and nowhere else. Testing only the console exe is how a
+      # launch-blocking crash shipped once already.
+      - name: self-test the frozen build (console, readable report)
         run: dist/FauxMatlab/FauxMatlab-check.exe --check
+
+      - name: self-test the frozen build (windowed, exit code only)
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath dist/FauxMatlab/FauxMatlab.exe `
+                             -ArgumentList '--check' -Wait -PassThru
+          if ($p.ExitCode -ne 0) {
+            throw "windowed build failed its self-test (exit $($p.ExitCode))"
+          }
 
       - uses: actions/upload-artifact@v4
         with:

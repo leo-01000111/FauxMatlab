@@ -83,7 +83,10 @@ a = Analysis(
     datas=[],
     hiddenimports=HIDDEN,
     hookspath=[],
-    runtime_hooks=[],
+    # Runs before any package is imported. A windowed build has no standard
+    # streams, and several scientific packages capture `sys.stderr.write` at
+    # import time — see the hook for the numpy chain that crashed the launch.
+    runtime_hooks=[str(SPEC_DIR / "rthook_stdio.py")],
     excludes=EXCLUDES,
     noarchive=False,
 )
