@@ -210,14 +210,41 @@ class SimCanvas(QGraphicsView):
     # ── wiring ──────────────────────────────────────────────────
 
     def mousePressEvent(self, event) -> None:
+        """
+        Start a wire, or finish the one already in progress.
+
+        Both gestures work: **drag** from one port to another, or **click**
+        one port and then click the other. The click-click form is the one
+        that used to be dead — a second click on a port restarted the wire
+        instead of completing it, so nothing ever connected and every
+        abandoned attempt left a dashed line on the canvas.
+        """
         item = self.itemAt(event.position().toPoint())
-        if isinstance(item, PortItem) and event.button() == Qt.LeftButton:
-            self._start_wire(item)
+        if event.button() != Qt.LeftButton:
+            super().mousePressEvent(event)
+            return
+
+        if isinstance(item, PortItem):
+            if self._pending_port is not None and item is not self._pending_port:
+                self._finish_wire(item)
+                self._cancel_wire()
+            else:
+                self._start_wire(item)
             event.accept()
             return
+
+        if self._pending_port is not None:
+            # Clicking anywhere else abandons the wire, rather than leaving an
+            # invisible half-connection armed until something else clears it.
+            self._cancel_wire()
+            self.status.emit("Wiring cancelled")
+
         super().mousePressEvent(event)
 
     def _start_wire(self, port: PortItem) -> None:
+        # Never leave the previous rubber band behind: a second _start_wire
+        # used to orphan it in the scene, one stray dashed line per attempt.
+        self._cancel_wire()
         self._pending_port = port
         port.set_highlight(True)
         self._rubber_wire = self._scene.addPath(
@@ -257,13 +284,13 @@ class SimCanvas(QGraphicsView):
         if self._pending_port is not None:
             target = self.itemAt(event.position().toPoint())
             if isinstance(target, PortItem) and target is not self._pending_port:
+                # A drag that landed on another port: connect and finish.
                 self._finish_wire(target)
-            elif not isinstance(target, PortItem):
-                # Releasing on empty space leaves the wire pending, so a wire
-                # can be drawn with two clicks as well as one drag.
-                super().mouseReleaseEvent(event)
-                return
-            self._cancel_wire()
+                self._cancel_wire()
+            # Releasing on the starting port, or on empty space, leaves the
+            # wire *armed* so the next click can complete it. Cancelling here
+            # is what broke click-click wiring: the press had started a wire
+            # and the release immediately threw it away.
             event.accept()
             return
         super().mouseReleaseEvent(event)

@@ -427,3 +427,128 @@ def test_a_loop_through_a_subsystem_is_flagged_on_screen(app):
     assert "Algebraic loop" in view.validate()
     assert view._blocks["k"]._error
     view.deleteLater()
+
+
+# ──────────────────────────────────────────────────────────────
+#  Wiring through real mouse events
+# ──────────────────────────────────────────────────────────────
+#
+# Everything above drives `_start_wire` / `_finish_wire` directly, which is
+# precisely how click-click wiring stayed broken: the *event handlers* were
+# never exercised. `mousePressEvent` restarted the wire on the second click
+# instead of completing it, so nothing connected and every abandoned attempt
+# orphaned a dashed line in the scene. These tests synthesise the real events.
+
+from PySide6.QtCore import QEvent, QPoint, QPointF, Qt  # noqa: E402
+from PySide6.QtGui import QMouseEvent  # noqa: E402
+
+EMPTY_SPOT = QPoint(30, 560)
+
+
+@pytest.fixture
+def wiring(app):
+    """Two unconnected blocks, laid far enough apart to click separately."""
+    view = SimCanvas(SimModel("wiring"))
+    view.resize(900, 600)
+    view.show()
+    view.add_block("Step", QPointF(-150, 0))
+    view.add_block("Gain", QPointF(150, 0))
+    for _ in range(10):
+        app.processEvents()
+    yield view
+    view.hide()
+    view.deleteLater()
+
+
+def _press(view, pos):
+    view.mousePressEvent(QMouseEvent(
+        QEvent.MouseButtonPress, QPointF(pos), Qt.LeftButton, Qt.LeftButton,
+        Qt.NoModifier))
+
+
+def _release(view, pos):
+    view.mouseReleaseEvent(QMouseEvent(
+        QEvent.MouseButtonRelease, QPointF(pos), Qt.LeftButton, Qt.LeftButton,
+        Qt.NoModifier))
+
+
+def _port(view, block_id, name, is_input):
+    """Fresh lookup every time — connecting rebuilds the whole scene."""
+    item = view._blocks[block_id].ports[(name, is_input)]
+    return view.mapFromScene(item.scene_pos())
+
+
+def _rubber_bands(view):
+    from PySide6.QtWidgets import QGraphicsPathItem
+
+    return sum(1 for i in view._scene.items()
+               if isinstance(i, QGraphicsPathItem))
+
+
+def test_dragging_from_an_output_to_an_input_connects(wiring):
+    _press(wiring, _port(wiring, "Step1", "out", False))
+    _release(wiring, _port(wiring, "Gain1", "in", True))
+    assert len(wiring.model.connections) == 1
+    assert _rubber_bands(wiring) == 0
+
+
+def test_clicking_one_port_then_the_other_connects(wiring):
+    """The gesture that did nothing at all before."""
+    _press(wiring, _port(wiring, "Step1", "out", False))
+    _release(wiring, _port(wiring, "Step1", "out", False))
+    assert wiring._pending_port is not None, "the first click must arm a wire"
+
+    _press(wiring, _port(wiring, "Gain1", "in", True))
+    _release(wiring, _port(wiring, "Gain1", "in", True))
+    assert len(wiring.model.connections) == 1
+    assert wiring._pending_port is None
+    assert _rubber_bands(wiring) == 0
+
+
+def test_a_wire_can_be_drawn_backwards(wiring):
+    """Input first, then output — the wire still runs the right way."""
+    _press(wiring, _port(wiring, "Gain1", "in", True))
+    _release(wiring, _port(wiring, "Gain1", "in", True))
+    _press(wiring, _port(wiring, "Step1", "out", False))
+    _release(wiring, _port(wiring, "Step1", "out", False))
+
+    assert len(wiring.model.connections) == 1
+    conn = wiring.model.connections[0]
+    assert str(conn.src).startswith("Step1")
+    assert str(conn.dst).startswith("Gain1")
+
+
+def test_releasing_on_empty_space_keeps_the_wire_armed(wiring):
+    _press(wiring, _port(wiring, "Step1", "out", False))
+    _release(wiring, EMPTY_SPOT)
+    assert wiring._pending_port is not None
+
+    _press(wiring, _port(wiring, "Gain1", "in", True))
+    _release(wiring, _port(wiring, "Gain1", "in", True))
+    assert len(wiring.model.connections) == 1
+
+
+def test_clicking_empty_space_cancels_an_armed_wire(wiring):
+    _press(wiring, _port(wiring, "Step1", "out", False))
+    _release(wiring, _port(wiring, "Step1", "out", False))
+    _press(wiring, EMPTY_SPOT)
+    _release(wiring, EMPTY_SPOT)
+
+    assert wiring._pending_port is None
+    assert len(wiring.model.connections) == 0
+    assert _rubber_bands(wiring) == 0
+
+
+def test_abandoned_attempts_do_not_litter_the_canvas(wiring):
+    """
+    Each abandoned wire used to orphan its rubber band in the scene, so the
+    canvas slowly filled with dashed lines that nothing could remove.
+    """
+    for _ in range(10):
+        _press(wiring, _port(wiring, "Step1", "out", False))
+        _release(wiring, _port(wiring, "Step1", "out", False))
+        _press(wiring, EMPTY_SPOT)
+        _release(wiring, EMPTY_SPOT)
+
+    assert _rubber_bands(wiring) == 0
+    assert len(wiring.model.connections) == 0
