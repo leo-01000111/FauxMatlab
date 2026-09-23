@@ -40,7 +40,11 @@ from .tabs.design_tab        import DesignTab
 from .sim.sim_tab           import SimTab
 from .tabs.modern           import ModernTab
 from .console               import ConsoleDock, FigureDock
+from .apps                  import (ControlSystemDesigner, LTIViewer,
+                                    PIDTuner, SnapshotBar)
+from ..console.apps          import AppRequest, set_app_sink
 from ..core.architecture     import CourseArchitecture
+from ..core.collection       import SnapshotStore, SystemCollection
 from ..core.report           import text_report
 from ..core.session          import load_session_dict, session_dict
 from ..core.tf_utils         import (
@@ -63,10 +67,15 @@ class MainWindow(QMainWindow):
         )
         self.setWindowTitle(self.APP_TITLE)
         self.resize(1400, 850)
+        #: Snapshots are shared: the bar above the tabs, the Compare button
+        #: and the console all read the same store.
+        self.snapshots = SnapshotStore()
+        self._apps: dict[str, QWidget] = {}
         self._build_ui()
         self._build_docks()
         self._build_menus()
         self._build_status_bar()
+        set_app_sink(self.open_app)
 
     # ── UI construction ───────────────────────────────────────
 
@@ -101,7 +110,22 @@ class MainWindow(QMainWindow):
 
         outer_splitter.addWidget(left)
 
-        # ── Right panel (tabs) ──
+        # ── Right panel: the snapshot bar over the tabs ──
+        #
+        # The bar lives here rather than inside a tab because a snapshot is of
+        # the whole architecture, not of whatever panel happens to be open —
+        # taking one on the Frequency tab and restoring it on the Time tab is
+        # the point.
+        right = QWidget()
+        right_lay = QVBoxLayout(right)
+        right_lay.setContentsMargins(0, 0, 0, 0)
+        right_lay.setSpacing(4)
+
+        self._snapshot_bar = SnapshotBar(self._arch, self.snapshots)
+        self._snapshot_bar.restored.connect(self._on_snapshot_restored)
+        self._snapshot_bar.compare_requested.connect(self._compare_snapshots)
+        right_lay.addWidget(self._snapshot_bar)
+
         self._tabs = QTabWidget()
         self._tabs.setDocumentMode(True)
 
@@ -123,7 +147,8 @@ class MainWindow(QMainWindow):
         self._tabs.addTab(self._sim_tab,  "⛓ Simulink")
         self._tabs.addTab(self._mod_tab,  "▦ Modern")
 
-        outer_splitter.addWidget(self._tabs)
+        right_lay.addWidget(self._tabs, stretch=1)
+        outer_splitter.addWidget(right)
         outer_splitter.setStretchFactor(0, 1)
         outer_splitter.setStretchFactor(1, 3)
 
@@ -195,6 +220,94 @@ class MainWindow(QMainWindow):
         self._tabs.setCurrentWidget(self._sim_tab)
         self._status.showMessage(f"{name} opened on the canvas", 6000)
 
+    # ── Apps ─────────────────────────────────────────────────
+
+    def open_app(self, request: AppRequest):
+        """
+        The console's app sink: ``ltiview(G)`` at the prompt lands here.
+
+        Also the one path the menu actions take, so a window opened by typing
+        and a window opened by clicking are the same window — not two copies
+        of it quietly diverging.
+        """
+        opener = {
+            "ltiview": self._open_lti_viewer,
+            "sisotool": self._open_designer,
+            "pidtuner": self._open_pid_tuner,
+        }[request.app]
+        return opener(request)
+
+    def _show(self, key: str, widget: QWidget) -> QWidget:
+        """Keep a reference — a parentless QWidget is garbage at once."""
+        self._apps[key] = widget
+        widget.show()
+        widget.raise_()
+        widget.activateWindow()
+        return widget
+
+    def _open_lti_viewer(self, request: AppRequest | None = None) -> LTIViewer:
+        viewer = self._apps.get("ltiview")
+        if not isinstance(viewer, LTIViewer):
+            viewer = LTIViewer()
+            viewer.open_requested.connect(self._on_console_system)
+        systems = dict(request.systems) if request is not None else {}
+        if not systems and not len(viewer.collection):
+            systems = self._default_viewer_systems()
+        for name, system in systems.items():
+            viewer.collection.add(name, system)
+        viewer.refresh()
+        return self._show("ltiview", viewer)
+
+    def _default_viewer_systems(self) -> dict:
+        """What the viewer opens with when nothing was named: the loop."""
+        return {
+            "G (plant)": self._arch.block_tf("G"),
+            "L (open loop)": self._arch.loop_tf(),
+            "T (closed loop)": self._arch.get_closed_loop_tf("r", "y"),
+        }
+
+    def _open_designer(self,
+                       request: AppRequest | None = None
+                       ) -> ControlSystemDesigner:
+        systems = dict(request.systems) if request is not None else {}
+        designer = self._apps.get("sisotool")
+        if not isinstance(designer, ControlSystemDesigner):
+            designer = ControlSystemDesigner(
+                plant=systems.get("plant", self._arch.block_tf("G")),
+                sensor=self._arch.block_tf("H"))
+            designer.compensator_applied.connect(self._on_controller_designed)
+        elif "plant" in systems:
+            designer.set_plant(systems["plant"], self._arch.block_tf("H"))
+        return self._show("sisotool", designer)
+
+    def _open_pid_tuner(self, request: AppRequest | None = None) -> PIDTuner:
+        systems = dict(request.systems) if request is not None else {}
+        kind = (request.options.get("kind", "PI")
+                if request is not None else "PI")
+        tuner = self._apps.get("pidtuner")
+        if not isinstance(tuner, PIDTuner):
+            tuner = PIDTuner(
+                plant=systems.get("plant", self._arch.block_tf("G")),
+                baseline=self._arch.block_tf("K2"), kind=kind)
+            tuner.controller_applied.connect(self._on_controller_designed)
+        else:
+            tuner.set_plant(systems.get("plant", self._arch.block_tf("G")),
+                            self._arch.block_tf("K2"))
+        return self._show("pidtuner", tuner)
+
+    def _compare_snapshots(self, collection: SystemCollection) -> None:
+        """The snapshot bar's Compare button: hand them to the LTI Viewer."""
+        viewer = self._open_lti_viewer()
+        viewer.set_collection(collection)
+        self._status.showMessage(
+            f"Comparing {len(collection)} designs in the LTI Viewer", 6000)
+
+    def _on_snapshot_restored(self, snapshot) -> None:
+        self._diagram.build()
+        self._update_all_tabs()
+        self._refresh_status()
+        self._status.showMessage(f"Restored “{snapshot.label}”", 5000)
+
     # ── Menus ────────────────────────────────────────────────
 
     def _build_menus(self) -> None:
@@ -244,6 +357,22 @@ class MainWindow(QMainWindow):
         view_menu.addAction(QAction(
             "Send current plant to the console", self,
             triggered=self._push_to_console))
+
+        # Apps menu
+        apps_menu = mb.addMenu("&Apps")
+        for label, shortcut, slot, tip in (
+            ("&LTI Viewer", "Ctrl+Shift+L", self._open_lti_viewer,
+             "Every loaded system, any response, on one set of axes."),
+            ("&Control System Designer", "Ctrl+Shift+D", self._open_designer,
+             "Drag a closed-loop pole on the root locus; Bode and step follow."),
+            ("&PID Tuner", "Ctrl+Shift+T", self._open_pid_tuner,
+             "Two sliders: response time and transient behaviour."),
+        ):
+            action = QAction(label, self)
+            action.setShortcut(shortcut)
+            action.setStatusTip(tip)
+            action.triggered.connect(lambda _checked=False, s=slot: s())
+            apps_menu.addAction(action)
 
         # Presets menu
         preset_menu = mb.addMenu("&Presets")
@@ -374,6 +503,11 @@ class MainWindow(QMainWindow):
             K2 = unity(), K1 = unity(), H  = unity(),
         )
         self._diagram._arch = self._arch
+        # Everything holding the *old* architecture has to be handed the new
+        # one. A stale reference here is invisible until someone takes a
+        # snapshot of a plant that is no longer on screen.
+        self._snapshot_bar.set_architecture(self._arch)
+        self._console.push(arch=self._arch)
         self._diagram.build()
         self._update_all_tabs()
 

@@ -637,6 +637,66 @@ def linearize(model, input_port: str, output_port: str, **kwargs):
 
 
 # ──────────────────────────────────────────────────────────────
+#  The apps
+# ──────────────────────────────────────────────────────────────
+
+def pidtune(sys, kind: str = "PI", wc: float | None = None,
+            pm: float = 60.0, Tf: float = 0.0):
+    """
+    Tune a PID by loop shaping: ``C = pidtune(G, 'pi')``.
+
+    Returns the controller, so it composes the way MATLAB's does —
+    ``T = feedback(pidtune(G, 'pid') * G, 1)``. The full report (achieved
+    crossover, margin, overshoot, and *why* if the target was impossible) is
+    attached as ``C.tuning``; print it with ``C.tuning.describe()``.
+    """
+    from ..core.pidtune import tune
+    result = tune(sys, kind.upper(), wc=wc, pm_deg=pm, Tf=Tf)
+    if not result.feasible:
+        raise ValueError(result.note)
+    controller = result.C
+    controller.tuning = result
+    return controller
+
+
+def ltiview(*systems, **named):
+    """
+    Open the LTI Viewer: ``ltiview(G, T)`` or ``ltiview(plant=G, loop=L)``.
+
+    Positional systems are named after their position; keyword arguments keep
+    the name you give them, which is what makes a four-curve comparison
+    readable.
+    """
+    from .apps import AppRequest, emit as _emit
+    entries = {f"sys{i + 1}": sys for i, sys in enumerate(systems)}
+    entries.update(named)
+    return _emit(AppRequest("ltiview", entries))
+
+
+def sisotool(plant=None, compensator=None):
+    """
+    Open the Control System Designer: ``sisotool(G)``.
+
+    With no argument it opens on the app's current plant.
+    """
+    from .apps import AppRequest, emit as _emit
+    systems = {}
+    if plant is not None:
+        systems["plant"] = plant
+    if compensator is not None:
+        systems["compensator"] = compensator
+    return _emit(AppRequest("sisotool", systems))
+
+
+def pidtuner(plant=None, kind: str = "PI"):
+    """Open the PID Tuner: ``pidtuner(G, 'pid')``."""
+    from .apps import AppRequest, emit as _emit
+    systems = {"plant": plant} if plant is not None else {}
+    return _emit(AppRequest("pidtuner", systems,
+                            {"kind": kind.upper()}))
+
+
+# ──────────────────────────────────────────────────────────────
 #  Namespace assembly
 # ──────────────────────────────────────────────────────────────
 
@@ -656,6 +716,7 @@ _GROUPS: dict[str, tuple[str, ...]] = {
                "zn"),
     "Discrete": ("c2d", "d2c", "deadbeat"),
     "Simulink": ("sim", "linearize"),
+    "Apps": ("pidtune", "ltiview", "sisotool", "pidtuner"),
 }
 
 

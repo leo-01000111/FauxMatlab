@@ -43,6 +43,20 @@ block at the prompt changes what every tab analyses.
 with undo, RK4/RK45/Euler solvers, scopes, and `linearize()` to pull a state-space model
 out of a nonlinear diagram.
 
+**Three apps**, from the Apps menu or the prompt:
+
+- **LTI Viewer** (`ltiview`) — any set of systems, seven response types, right-click to add
+  characteristics. The menu offers only the ones that mean something for the response on
+  screen: a rise time has nowhere to go on a Nyquist plot.
+- **Control System Designer** (`sisotool`) — drag a closed-loop pole along the root locus
+  and watch the Bode plot and step response follow. Or ask directly for the gain that gives
+  ζ = 0.5, or 16% overshoot.
+- **PID Tuner** (`pidtuner`) — response time and transient behaviour on two sliders, with
+  a before/after overlay.
+
+A **snapshot bar** sits above the tabs: freeze the whole architecture under a name, restore
+it from any tab, and Compare throws every stored design into the LTI Viewer at once.
+
 ---
 
 ## Three things it takes seriously
@@ -76,6 +90,15 @@ The console API builds a `FigureSpec` and hands it to an installed *sink*. The G
 one that opens a docked plot; the default just records. That is what makes `step(G)` both
 headlessly testable and drawable, from one implementation — and why the API never imports Qt.
 
+The apps follow the same split, which is what lets the PID tuner make a strong claim and
+have it checked. It does not search for gains: at the target crossover the controller's
+required magnitude and phase are both fixed, so a PI's two parameters are determined
+outright and a PID spends its third on the classical `Ti = 4·Td`. The achieved margin is
+therefore *exact* — `margin(C·G)` returns the requested ωc and φm to 1e-14, and a test says
+so. Where a structure cannot meet a target, it refuses and names the reason: a PI only ever
+subtracts phase, so asking one for a crossover above the plant's phase budget is impossible
+rather than merely inaccurate.
+
 ---
 
 ## Tests
@@ -84,7 +107,7 @@ headlessly testable and drawable, from one implementation — and why the API ne
 pytest
 ```
 
-432 tests. They are mostly *golden* tests: analytic values computed by hand or by an
+511 tests. They are mostly *golden* tests: analytic values computed by hand or by an
 independent route, not snapshots of whatever the code printed first. The numeric signal
 solver and the symbolic one check each other; `python-control` acts as a third opinion.
 
@@ -99,17 +122,20 @@ Several are there to pin down a bug that was genuinely hard to see:
   `1/(s+1)³` factors as `(s²+2s+1)(s+1)` unless the roots are cleaned.
 - RK4 converging at *first* order because the integrator recorded the state from the end of
   a straddling step rather than stepping onto the output point.
+- A pyqtgraph plot **title** long enough to outgrow its panel lays the whole plot out wider
+  than the scene it sits in, pushing every curve off the right-hand edge. The panel looks
+  blank, every value in it is correct, and nothing reports an error.
 
-Run `python debug_runner.py` for a headless end-to-end sweep (153 checks) that builds every
+Run `python debug_runner.py` for a headless end-to-end sweep (175 checks) that builds every
 tab and exercises every core path without a display.
 
 ---
 
 ## Status
 
-Phases 1–5 of [`PLAN.md`](PLAN.md) are done: correctness, the classical half, modern
-control, the simulator, and the command window. Remaining are the MATLAB-style *apps*
-(LTI Viewer, a sisotool-lite, a PID tuner), per-chapter worked examples, and packaging.
+Phases 1–6 of [`PLAN.md`](PLAN.md) are done: correctness, the classical half, modern
+control, the simulator, the command window and the apps. Remaining are per-chapter worked
+examples and packaging.
 
 `PLAN.md` also records what was deliberately **not** built, and why. The one worth
 repeating: there is no Python Function block, because a block that executes arbitrary text

@@ -350,6 +350,123 @@ for name, (label, tf_preset) in PRESETS.items():
 
 
 # ─────────────────────────────────────────────────────────────
+print("\n══ 9. THE APPS ═══════════════════════════════════════")
+# ─────────────────────────────────────────────────────────────
+
+from fakematlab.core.collection import (SnapshotStore, SystemCollection,
+                                        restore_snapshot, take_snapshot)
+from fakematlab.core.designer import (Compensator, closed_loop_poles, evaluate,
+                                      gain_for_damping, gain_for_overshoot,
+                                      point_to_gain)
+from fakematlab.core.pidtune import PIDKind, tune, tune_by_sliders
+from fakematlab.core.viewer import CHARACTERISTICS, ResponseKind
+from fakematlab.core.viewer import compute as viewer_compute
+
+
+def check_true(label, condition, why):
+    """Assert a plain condition, so a broken invariant reads as a failure."""
+    return check(label, lambda: True if condition else _raise(why))
+
+
+def _raise(why):
+    raise AssertionError(why)
+
+
+# ── LTI Viewer: every response kind, with every characteristic it admits ──
+viewer_set = SystemCollection()
+viewer_set.add("2nd order", second_order(1.0, 0.3, 2.0))
+viewer_set.add("1st order", first_order(1.0, 1.0))
+for kind in ResponseKind:
+    data = check(f"viewer: {kind.value}",
+                 lambda k=kind: viewer_compute(viewer_set, k,
+                                               set(CHARACTERISTICS[k])))
+    if data is not None:
+        print(f"       {len(data.curves)} curves, {len(data.marks)} marks")
+
+# ── Designer ──
+L_locus = ctl.TransferFunction([1], [1, 3, 2, 0])
+known_pole = max(closed_loop_poles(L_locus, 1.5), key=lambda p: p.imag)
+dp = check("designer: point_to_gain round trip",
+           lambda: point_to_gain(L_locus, known_pole))
+if dp:
+    print(f"       asked for K=1.5, got K={dp.K:.6g}, "
+          f"distance {dp.distance:.2e}")
+
+zeta_point = check("designer: gain for zeta = 0.5",
+                   lambda: gain_for_damping(L_locus, 0.5))
+if zeta_point:
+    print(f"       K={zeta_point.K:.6g} (exact 28/27 = {28 / 27:.6g})  "
+          f"zeta={zeta_point.zeta:.4f}  wn={zeta_point.wn:.4g}")
+
+mp_point = check("designer: gain for 16.3% overshoot",
+                 lambda: gain_for_overshoot(L_locus, 16.303))
+if mp_point and zeta_point:
+    print(f"       K={mp_point.K:.6g} — agrees with the zeta route to "
+          f"{abs(mp_point.K - zeta_point.K):.2e}")
+
+lead_design = check("designer: evaluate (lead section)",
+                    lambda: evaluate(L_locus,
+                                     Compensator(2.0, [-1.0], [-10.0])),
+                    "gm_dB", "pm_deg", "wc")
+if lead_design:
+    print("       " + lead_design.describe().replace("\n", "\n       "))
+
+quiet = evaluate(L_locus, Compensator(gain=1.0))
+loud = evaluate(L_locus, Compensator(gain=25.0))
+check_true("designer: the locus does not move when only the gain does",
+           np.allclose(quiet.locus.roots, loud.locus.roots, equal_nan=True),
+           "the locus moved with the gain")
+
+# ── PID tuner: the achieved crossover and margin are the requested ones ──
+G_pid = ctl.TransferFunction([1], [1, 3, 3, 1])
+for kind_name, wc_target, pm_target in (("PI", 0.5, 60.0),
+                                        ("PID", 1.2, 50.0),
+                                        ("PD", 1.2, 50.0)):
+    r = check(f"pidtune {kind_name}: wc={wc_target}, PM={pm_target}",
+              lambda k=kind_name, w=wc_target, p=pm_target:
+              tune(G_pid, k, wc=w, pm_deg=p))
+    if r and r.feasible:
+        print(f"       achieved wc={r.achieved_wc:.6g} "
+              f"(error {abs(r.achieved_wc - wc_target):.2e}), "
+              f"PM={r.achieved_pm_deg:.4f} "
+              f"(error {abs(r.achieved_pm_deg - pm_target):.2e})")
+
+impossible = check("pidtune PI at a crossover it cannot reach",
+                   lambda: tune(G_pid, PIDKind.PI, wc=1.2, pm_deg=50.0))
+if impossible is not None:
+    print(f"       feasible={impossible.feasible} — {impossible.note[:62]}...")
+
+for speed, transient in ((-0.2, 0.0), (0.0, 0.5), (0.2, 1.0)):
+    r = check(f"pidtune sliders: speed={speed:+.1f} transient={transient:.1f}",
+              lambda s=speed, t=transient:
+              tune_by_sliders(G_pid, PIDKind.PID, speed=s, transient=t))
+    if r and r.metrics:
+        print(f"       wc={r.achieved_wc:.4g}  PM={r.achieved_pm_deg:.1f}  "
+              f"Mp={r.metrics.Mp_pct:.1f}%  ts={r.metrics.ts_2pct:.3g}s")
+
+# ── Snapshots ──
+arch_snap = CourseArchitecture(G=first_order(1.0, 1.0))
+frozen = take_snapshot(arch_snap, "before")
+arch_snap.set_block("G", ctl.TransferFunction([99], [1, 7]))
+check_true("snapshot: frozen against later edits",
+           np.allclose(np.atleast_1d(frozen.tf("G").num[0][0]), [1.0]),
+           "the snapshot followed the edit")
+
+restore_snapshot(arch_snap, frozen)
+check_true("snapshot: restore puts the blocks back",
+           np.allclose(np.atleast_1d(arch_snap.block_tf("G").den[0][0]),
+                       [1.0, 1.0]),
+           "restore did nothing")
+
+store = SnapshotStore()
+for _ in range(12):
+    store.take(arch_snap, "design")
+check_true("snapshot store: bounded, labels stay unique",
+           len(store) == 8 and len(set(store.labels)) == len(store),
+           f"{len(store)} snapshots, {len(set(store.labels))} distinct labels")
+
+
+# ─────────────────────────────────────────────────────────────
 print("\n══ SUMMARY ═══════════════════════════════════════════")
 # ─────────────────────────────────────────────────────────────
 

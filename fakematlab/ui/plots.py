@@ -44,6 +44,28 @@ def _is_dark() -> bool:
     return pal.window().color().lightness() < 128
 
 
+def set_title(plot: PlotItem, title: str, **kwargs) -> None:
+    """
+    Set a plot title without letting it drive the layout.
+
+    A pyqtgraph title is a ``LabelItem`` in the ``PlotItem``'s grid layout, and
+    a ``LabelItem``'s *minimum* width is the width of its text. So a title long
+    enough to outgrow the panel silently lays the whole ``PlotItem`` out wider
+    than the scene it sits in, and the curves end up off the right-hand edge:
+    measured here, a 63-character title stretched a 434-pixel panel to 1080,
+    leaving a plot that looked blank while reporting nothing wrong.
+
+    Capping the label's maximum width lets the view box drive the layout
+    instead. Titles should still be *short* — a sentence belongs in a readout,
+    not on an axis — but a long one can now only be clipped, which is a
+    symptom you can see, rather than a panel you cannot.
+    """
+    plot.setTitle(title, **kwargs)
+    label = getattr(plot, "titleLabel", None)
+    if label is not None:
+        label.setMaximumWidth(1)
+
+
 def apply_theme(plot: PlotItem, title: str = "",
                 xlabel: str = "", ylabel: str = "") -> None:
     """Apply consistent colours, grid, labels to a PlotItem."""
@@ -56,7 +78,7 @@ def apply_theme(plot: PlotItem, title: str = "",
     label_style = {"color": fg, "font-size": "11pt"}
 
     if title:
-        plot.setTitle(title, color=fg, size="12pt")
+        set_title(plot, title, color=fg, size="12pt")
     if xlabel:
         plot.setLabel("bottom", xlabel, **label_style)
     if ylabel:

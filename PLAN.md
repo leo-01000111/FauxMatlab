@@ -382,14 +382,62 @@ reproduces the ch.4 overshoot, `margin` matches the analytic `Gm = 8` at `ω = �
 `errconst` and `lqr` agree with the core modules, every figure kind renders, and the
 console survives an error and keeps its namespace.
 
-### Phase 6 — The "apps" (3–4 d)
+### Phase 6 — The "apps" ✅ **DONE**
 
-- **LTI Viewer** — any set of systems, any response type, side by side, right-click to add
-  characteristics (the MATLAB gesture).
-- **Control System Designer (sisotool-lite)** — drag closed-loop poles on the root locus and
-  watch Bode + step update live. The single most useful MATLAB app for this course.
-- **PID Tuner** — response-time / transient-behaviour sliders, before/after overlay.
-- Snapshot/compare across all tabs (partly exists in the Design tab; generalise it).
+1. ✅ **LTI Viewer** — `core/viewer.py` + `ui/apps/lti_viewer.py`. Any set of systems, seven
+   response types, right-click to add characteristics (the MATLAB gesture) with the menu
+   offering only the ones that mean something for the response on screen.
+2. ✅ **Control System Designer** — `core/designer.py` + `ui/apps/designer_app.py`. Drag a
+   closed-loop pole on the root locus; Bode and step follow. Compensator poles/zeros editable,
+   plus "set K for ζ" and "set K for overshoot".
+3. ✅ **PID Tuner** — `core/pidtune.py` + `ui/apps/pid_tuner.py`. Response-time and
+   transient-behaviour sliders, before/after overlay, and a readout that says what each slider
+   actually sets.
+4. ✅ **Snapshot/compare generalised** — `core/collection.py` + `ui/apps/snapshots.py`. The bar
+   sits above the tabs, so a snapshot is of the *architecture*, not of whichever panel is open;
+   Compare hands the stored designs to the LTI Viewer.
+5. ✅ Console commands `pidtune`, `ltiview`, `sisotool`, `pidtuner`, through an **app sink**
+   mirroring the figure sink — so the API stays Qt-free and a typed command and a clicked menu
+   item reach the same window.
+
+**Three decisions worth recording.**
+
+*The tuner solves, it does not search.* At the target crossover the controller's required
+magnitude and phase are both known, so a PI (two free parameters) is determined outright and a
+PID spends its third on the classical `Ti = 4·Td`. The achieved margin is therefore **exact**:
+`margin(C·G)` returns the requested `ωc` and `φm` to 1e-14. Where a structure cannot meet a
+target — a PI asked to *add* phase — it refuses and names the reason instead of returning gains
+that do something else.
+
+*The locus is computed at unit gain*, so it does not move when the gain does. Dragging a pole is
+then a position on a fixed curve, which is what makes the gesture legible; `evaluate()` takes the
+locus back as an argument so a drag costs no root solves.
+
+*A dragged point is projected onto the locus*, not fed to `K = 1/|L(s)|`. Off the locus that
+formula answers a different question, and the reported distance says how far off the request was.
+
+**Acceptance.** 79 tests (511 total, up from 432) and 22 more `debug_runner` checks (175, 0
+errors). The golden values are analytic: ζ = 0.5 on `1/(s(s+1)(s+2))` gives **K = 28/27** exactly
+(hand-derived in the test's docstring), the overshoot and damping entry points agree to 1e-5, a
+known gain round-trips through `point_to_gain` to 1e-10, and the locus crossing comes back as
+K = 6, ω = √2.
+
+**Bugs found while building it.**
+
+- **A long plot title silently blanks its panel.** A pyqtgraph title is a `LabelItem` whose
+  *minimum* width is the text width, so a 63-character title laid a 434-pixel panel out 1080
+  wide and pushed every curve off the right-hand edge. Nothing raised; the values were all
+  correct; the plot just looked empty. Fixed centrally in `plots.set_title`, which caps the
+  label so the view box drives the layout — this also repaired the console figure view's
+  root-locus and Nyquist titles, which had the same defect since Phase 5.
+- **Qt flattens a `str`-mixin enum.** `QComboBox.itemData` stores the member in a `QVariant` and
+  returns a plain `str`, which compares and hashes equal to the member — so every dict lookup
+  still worked and the only symptom was `.value` raising three calls later, in a different file.
+- **`_new_session` left stale architecture references** in the snapshot bar and the console, so
+  a snapshot taken afterwards would have been of a plant no longer on screen.
+- **The neutral crossover is wrong for a PI.** Defined as "where the controller needs no phase",
+  it is right for a PID but gives a PI `Ki ≈ 1e-6` — a P controller wearing a PI's name. Each
+  structure now aims at the phase it can actually supply.
 
 ### Phase 7 — Course content (2 d)
 
@@ -408,7 +456,7 @@ a PyInstaller one-file build, `--check` headless self-test entry point.
 
 ## Part 5 — Sequencing, risk, and what I'd cut
 
-**Order:** ~~1 → 2 → 4 → 3 → 5~~ (done) → 6 → 7 → 8. Phase 4 (Simulink) before Phase 3 (modern control),
+**Order:** ~~1 → 2 → 4 → 3 → 5 → 6~~ (done) → 7 → 8. Phase 4 (Simulink) before Phase 3 (modern control),
 because Phase 4 depends on the Phase-1 graph while it's fresh, and because Phase 3's tabs are
 additive and low-risk. Total ≈ **28–40 focused days**. Phases 1+2 alone (≈ 1 week) turn a tool
 that quietly prints wrong numbers into one you can trust.
