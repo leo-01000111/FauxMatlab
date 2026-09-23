@@ -4,26 +4,39 @@ Stability tab — Routh table, root locus, closed-loop pole map.
 
 from __future__ import annotations
 
-import numpy as np
 import control as ctl
-import sympy as sp
+import numpy as np
 import pyqtgraph as pg
-from PySide6.QtCore    import Qt, QTimer
+import sympy as sp
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
-    QWidget, QHBoxLayout, QVBoxLayout, QLabel, QComboBox,
-    QPushButton, QGroupBox, QFormLayout, QSplitter,
-    QTableWidget, QTableWidgetItem, QCheckBox,
-    QLineEdit, QDoubleSpinBox, QSizePolicy, QTabWidget,
+    QCheckBox,
+    QDoubleSpinBox,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
 )
 
-from ..guard import GuardedPanel, guard
-from ..plots import (make_plot, add_vline, add_hline, add_marker,
-                      add_text_annotation, curve_pen, apply_theme,
-                      draw_pz_map, COLORS)
 from ...core.architecture import CourseArchitecture
-from ...core.stability    import routh_from_closed_loop, root_locus
-from ...core.tf_utils     import analyse
-import pyqtgraph as pg
+from ...core.stability import root_locus, routh_from_closed_loop
+from ...core.tf_utils import analyse
+from ..guard import GuardedPanel, guard
+from ..plots import (
+    COLORS,
+    add_hline,
+    add_vline,
+    apply_theme,
+    curve_pen,
+    draw_pz_map,
+    make_plot,
+)
 
 
 class StabilityTab(QWidget, GuardedPanel):

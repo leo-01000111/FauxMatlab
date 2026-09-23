@@ -13,12 +13,10 @@ import pytest
 
 from fakematlab.core.architecture import CourseArchitecture
 from fakematlab.core.freqresp import bode, nichols_m_contour, nyquist, response
-from fakematlab.core.internal import internal_stability
 from fakematlab.core.stability import marginal_gain, root_locus
-from fakematlab.core.timeresp import compute_step_metrics, step_response
 from fakematlab.core.tf_utils import dc_gain, pure_delay_pade, second_order
+from fakematlab.core.timeresp import compute_step_metrics, step_response
 from fakematlab.core.tuning import zn_ultimate
-
 
 # ──────────────────────────────────────────────────────────────
 #  ch.4 — second-order step-response metrics in closed form

@@ -16,13 +16,11 @@ import control as ctl
 import numpy as np
 import pytest
 
-from fakematlab.sim.blocks import by_category  # noqa: F401  (registers library)
 from fakematlab.sim.block import BlockError, block_types, create
-from fakematlab.sim.compile import (CompileError, compile_model,
-                                    describe_algebraic_loop)
+from fakematlab.sim.blocks import by_category  # noqa: F401  (registers library)
+from fakematlab.sim.compile import CompileError, compile_model, describe_algebraic_loop
 from fakematlab.sim.model import ModelError, SimModel
-from fakematlab.sim.solver import SimulationError, simulate
-
+from fakematlab.sim.solver import simulate
 
 # ──────────────────────────────────────────────────────────────
 #  Helpers
@@ -443,7 +441,7 @@ def test_scopes_and_workspace_are_collected():
 
 def test_every_registered_block_can_be_instantiated():
     """The palette must not offer a block that cannot be created."""
-    for name, cls in block_types().items():
+    for name in block_types():
         block = create(name, f"{name}_1")
         assert block.type_name == name
         assert isinstance(block.label(), str)

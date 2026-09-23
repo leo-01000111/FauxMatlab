@@ -169,7 +169,7 @@ class _Evaluator:
 
     def derivatives(self, t, x, xd, values) -> np.ndarray:
         dx = np.zeros(self.c.n_states)
-        for bid, plan in self.c.plans.items():
+        for _bid, plan in self.c.plans.items():
             if not plan.block.n_states:
                 continue
             self._values = values
@@ -179,7 +179,7 @@ class _Evaluator:
 
     def zero_crossings(self, t, x, xd, values) -> np.ndarray:
         out = []
-        for bid, plan in self.c.plans.items():
+        for _bid, plan in self.c.plans.items():
             self._values = values
             zc = plan.block.zero_crossings(
                 t, x[plan.x_slice], xd[plan.xd_slice], self._inputs(plan))

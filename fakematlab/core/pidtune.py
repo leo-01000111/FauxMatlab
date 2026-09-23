@@ -182,7 +182,7 @@ def default_crossover(G: ctl.TransferFunction, pm_deg: float = 60.0,
 
 def crossover_for(G: ctl.TransferFunction, speed: float,
                   pm_deg: float = 60.0,
-                  kind: "PIDKind | str" = "PID") -> float:
+                  kind: PIDKind | str = "PID") -> float:
     """
     Response-time slider → target crossover.
 

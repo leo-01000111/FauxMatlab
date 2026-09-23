@@ -10,8 +10,9 @@ headless script — where they record the request instead of opening anything.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 #: The apps a request can name.
 APPS = ("ltiview", "sisotool", "pidtuner")

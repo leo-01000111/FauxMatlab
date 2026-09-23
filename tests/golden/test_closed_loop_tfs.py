@@ -14,8 +14,11 @@ import control as ctl
 import numpy as np
 import pytest
 
-from fakematlab.core.architecture import (INPUT_SIGNALS, OUTPUT_SIGNALS,
-                                          CourseArchitecture)
+from fakematlab.core.architecture import (
+    INPUT_SIGNALS,
+    OUTPUT_SIGNALS,
+    CourseArchitecture,
+)
 from fakematlab.core.signal_graph import SignalGraph
 
 # Deliberately awkward blocks: a feedforward that is not 1, a sensor that is

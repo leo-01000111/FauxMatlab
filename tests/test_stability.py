@@ -1,13 +1,15 @@
 """Tests for fakematlab.core.stability."""
 
+import control as ctl
 import numpy as np
-import pytest
 import sympy as sp
 
 from fakematlab.core.stability import (
-    routh_table, routh_from_closed_loop, root_locus, RouthResult,
+    RouthResult,
+    root_locus,
+    routh_from_closed_loop,
+    routh_table,
 )
-import control as ctl
 
 
 class TestRouthTable:

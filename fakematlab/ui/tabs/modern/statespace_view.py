@@ -7,17 +7,32 @@ from __future__ import annotations
 import numpy as np
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
-from PySide6.QtWidgets import (QComboBox, QGroupBox, QHBoxLayout, QLabel,
-                               QPushButton, QSplitter, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (
+    QComboBox,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QSplitter,
+    QVBoxLayout,
+    QWidget,
+)
 
-from ....core.statespace import (StateSpaceError, analyse, controllable_form,
-                                  minimal, modal_form, modal_response,
-                                  observable_form, state_space, to_tf)
+from ....core.statespace import (
+    StateSpaceError,
+    analyse,
+    controllable_form,
+    minimal,
+    modal_form,
+    modal_response,
+    observable_form,
+    state_space,
+    to_tf,
+)
 from ....core.tf_utils import factored_str
 from ...guard import GuardedPanel, guard
 from ...plots import apply_theme, curve_pen, draw_pz_map, make_plot
-from .widgets import (MatrixEditor, frame_poles, make_table, parse_matrix,
-                      table_item)
+from .widgets import MatrixEditor, frame_poles, make_table, parse_matrix, table_item
 
 
 class StateSpaceView(QWidget, GuardedPanel):

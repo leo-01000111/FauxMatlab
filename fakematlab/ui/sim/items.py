@@ -14,10 +14,8 @@ from __future__ import annotations
 import math
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import (QBrush, QColor, QFont, QPainter, QPainterPath, QPen,
-                           QPolygonF)
-from PySide6.QtWidgets import (QApplication, QGraphicsItem, QGraphicsObject,
-                               QStyle)
+from PySide6.QtGui import QBrush, QColor, QFont, QPainter, QPainterPath, QPen, QPolygonF
+from PySide6.QtWidgets import QApplication, QGraphicsItem, QGraphicsObject, QStyle
 
 BLOCK_W, BLOCK_H = 110.0, 60.0
 PORT_R = 5.0
@@ -143,7 +141,7 @@ class BlockItem(QGraphicsObject):
         return QRectF(-BLOCK_W / 2, -h / 2, BLOCK_W, h)
 
     def _build_ports(self) -> None:
-        for (bid, port), item in list(self.ports.items()):
+        for item in list(self.ports.values()):
             item.setParentItem(None)
         self.ports.clear()
         h = self.height()

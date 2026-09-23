@@ -14,9 +14,17 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QSplitter, QVBoxLayout, QWidget
 
 from ...console.figures import FigureSpec
-from ..plots import (add_hline, add_marker, add_text_annotation, add_vline,
-                     curve_pen, freq_vline, make_freq_plot, make_plot,
-                     plot_freq)
+from ..plots import (
+    add_hline,
+    add_marker,
+    add_text_annotation,
+    add_vline,
+    curve_pen,
+    freq_vline,
+    make_freq_plot,
+    make_plot,
+    plot_freq,
+)
 
 
 class FigureView(QWidget):
@@ -67,7 +75,7 @@ class FigureView(QWidget):
         add_hline(mag_plot, 0.0, "#888888", width=0.8)
 
         phase_plot = phase.getPlotItem()
-        for i, (omega, degrees, label) in enumerate(
+        for i, (omega, degrees, _label) in enumerate(
                 self.spec.extra.get("phase", [])):
             plot_freq(phase_plot, omega, degrees, pen=_pen(i, "line"))
         add_hline(phase_plot, -180.0, "#888888", width=0.8)

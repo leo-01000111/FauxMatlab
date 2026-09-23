@@ -30,7 +30,6 @@ from .stability import RootLocusData, root_locus
 from .tf_utils import from_zpk
 from .timeresp import StepMetrics, compute_step_metrics, step_response
 
-
 # ──────────────────────────────────────────────────────────────
 #  The compensator being designed
 # ──────────────────────────────────────────────────────────────
@@ -86,7 +85,7 @@ class Compensator:
             parts.append("poles: " + ", ".join(_fmt(p) for p in self.poles))
         return "   ".join(parts)
 
-    def copy(self) -> "Compensator":
+    def copy(self) -> Compensator:
         return Compensator(self.gain, list(self.zeros), list(self.poles))
 
 

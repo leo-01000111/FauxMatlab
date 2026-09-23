@@ -14,8 +14,8 @@ from __future__ import annotations
 
 from abc import abstractmethod
 
-from PySide6.QtCore   import Signal, Qt
-from PySide6.QtWidgets import QGraphicsView, QGraphicsScene
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import QGraphicsScene, QGraphicsView
 
 
 class BaseDiagramView(QGraphicsView):

@@ -82,7 +82,7 @@ def test_tf_of_s_is_the_same_variable(it):
 # ──────────────────────────────────────────────────────────────
 
 def test_stepinfo_uses_matlab_field_names(it):
-    result = _run(it, "G = tf([4], [1, 1.2, 4])", "info = stepinfo(G)")
+    _run(it, "G = tf([4], [1, 1.2, 4])", "info = stepinfo(G)")
     info = it.namespace["info"]
     for field in ("RiseTime", "SettlingTime", "Overshoot", "Peak",
                   "PeakTime", "SteadyState"):

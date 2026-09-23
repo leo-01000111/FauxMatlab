@@ -7,28 +7,45 @@ Run: python debug_runner.py
 """
 
 import os
+
 os.environ["PYQTGRAPH_QT_LIB"] = "PySide6"
 
-import traceback
-import numpy as np
 import control as ctl
+import numpy as np
 
-from fakematlab.core.tf_utils      import (first_order, second_order, unity,
-                                            from_coefficients, from_expression,
-                                            from_zpk, integrator, PRESETS,
-                                            pure_delay_pade,
-                                            factored_str, analyse)
-from fakematlab.core.architecture  import CourseArchitecture
-from fakematlab.core.timeresp      import (step_response, impulse_response,
-                                            ramp_response, compute_step_metrics,
-                                            parameter_sweep)
-from fakematlab.core.freqresp      import bode, nyquist, nichols
-from fakematlab.core.stability     import (routh_table, routh_from_closed_loop,
-                                            root_locus)
-from fakematlab.core.performance   import analyse_performance
-from fakematlab.core.tuning        import (PIDParams, pid_tf, lead_tf, lag_tf,
-                                            LeadLagParams, zn_step, zn_ultimate,
-                                            ControllerType)
+from fakematlab.core.architecture import CourseArchitecture
+from fakematlab.core.freqresp import bode, nichols, nyquist
+from fakematlab.core.performance import analyse_performance
+from fakematlab.core.stability import root_locus, routh_from_closed_loop, routh_table
+from fakematlab.core.tf_utils import (
+    PRESETS,
+    analyse,
+    factored_str,
+    first_order,
+    from_coefficients,
+    from_expression,
+    from_zpk,
+    integrator,
+    pure_delay_pade,
+    second_order,
+    unity,
+)
+from fakematlab.core.timeresp import (
+    compute_step_metrics,
+    impulse_response,
+    parameter_sweep,
+    ramp_response,
+    step_response,
+)
+from fakematlab.core.tuning import (
+    LeadLagParams,
+    PIDParams,
+    lag_tf,
+    lead_tf,
+    pid_tf,
+    zn_step,
+    zn_ultimate,
+)
 
 PASS = "  [OK]"
 FAIL = "  [!!]"
@@ -193,18 +210,18 @@ for pname, G in PLANTS:
     S    = arch.sensitivity()
     T    = arch.compl_sensitivity()
 
-    bd = check(f"bode({pname} L)",  lambda l=L: bode(l),
+    bd = check(f"bode({pname} L)",  lambda loop=L: bode(loop),
                "gm_dB", "pm_deg")
     if bd:
         print(f"    GM={bd.gm_dB:.2f}dB  PM={bd.pm_deg:.2f}°  "
               f"wc={bd.wc:.3g}  bw3dB={bd.bw_3dB:.3g}  stable={bd.stable}")
 
-    ny = check(f"nyquist({pname} L)", lambda l=L: nyquist(l),
+    ny = check(f"nyquist({pname} L)", lambda loop=L: nyquist(loop),
                "encirclements", "P", "Z", "modulus_margin")
     if ny:
         print(f"    N={ny.encirclements}  P={ny.P}  Z={ny.Z}  mod_margin={ny.modulus_margin:.3g}")
 
-    check(f"nichols({pname} L)", lambda l=L: nichols(l))
+    check(f"nichols({pname} L)", lambda loop=L: nichols(loop))
     check(f"bode(S {pname})",    lambda s=S: bode(s), "gm_dB", "pm_deg")
     check(f"bode(T {pname})",    lambda t=T: bode(t), "gm_dB", "pm_deg")
 
@@ -229,6 +246,7 @@ for name, coeffs in ROUTH_CASES:
 print()
 # Symbolic K in Routh
 import sympy
+
 K = sympy.Symbol("K", positive=True)
 arch_sym = CourseArchitecture(G=second_order(1,0.5,2), K2=unity(), K1=unity(), H=unity())
 r_sym = check("routh_from_closed_loop (symbolic K)",
@@ -270,7 +288,7 @@ for pname, G in PLANTS:
     arch = CourseArchitecture(G=G, K2=unity(), K1=unity(), H=unity())
     L    = arch.loop_tf()
     pr = check(f"analyse_performance({pname})",
-               lambda l=L: analyse_performance(l))
+               lambda loop=L: analyse_performance(loop))
     if pr:
         print(f"    sys_type={pr.system_type}  Kp={pr.Kp:.4g}  "
               f"Kv={pr.Kv:.4g}  Ka={pr.Ka:.4g}  "
@@ -353,11 +371,20 @@ for name, (label, tf_preset) in PRESETS.items():
 print("\n══ 9. THE APPS ═══════════════════════════════════════")
 # ─────────────────────────────────────────────────────────────
 
-from fakematlab.core.collection import (SnapshotStore, SystemCollection,
-                                        restore_snapshot, take_snapshot)
-from fakematlab.core.designer import (Compensator, closed_loop_poles, evaluate,
-                                      gain_for_damping, gain_for_overshoot,
-                                      point_to_gain)
+from fakematlab.core.collection import (
+    SnapshotStore,
+    SystemCollection,
+    restore_snapshot,
+    take_snapshot,
+)
+from fakematlab.core.designer import (
+    Compensator,
+    closed_loop_poles,
+    evaluate,
+    gain_for_damping,
+    gain_for_overshoot,
+    point_to_gain,
+)
 from fakematlab.core.pidtune import PIDKind, tune, tune_by_sliders
 from fakematlab.core.viewer import CHARACTERISTICS, ResponseKind
 from fakematlab.core.viewer import compute as viewer_compute

@@ -14,18 +14,39 @@ import numpy as np
 import pytest
 
 from fakematlab.core.architecture import CourseArchitecture
-from fakematlab.core.collection import (MAX_SNAPSHOTS, Snapshot,
-                                        SnapshotStore, SystemCollection,
-                                        restore_snapshot, take_snapshot)
-from fakematlab.core.designer import (Compensator, closed_loop_poles,
-                                      damping_of, evaluate, gain_for_damping,
-                                      gain_for_overshoot, point_to_gain)
+from fakematlab.core.collection import (
+    MAX_SNAPSHOTS,
+    Snapshot,
+    SnapshotStore,
+    SystemCollection,
+    restore_snapshot,
+    take_snapshot,
+)
+from fakematlab.core.designer import (
+    Compensator,
+    closed_loop_poles,
+    damping_of,
+    evaluate,
+    gain_for_damping,
+    gain_for_overshoot,
+    point_to_gain,
+)
 from fakematlab.core.freqresp import bode
-from fakematlab.core.pidtune import (NEUTRAL_PHASE, PIDKind, crossover_for,
-                                     default_crossover, phase_margin_for,
-                                     tune, tune_by_sliders)
-from fakematlab.core.viewer import (CHARACTERISTICS, Characteristic,
-                                    ResponseKind, compute)
+from fakematlab.core.pidtune import (
+    NEUTRAL_PHASE,
+    PIDKind,
+    crossover_for,
+    default_crossover,
+    phase_margin_for,
+    tune,
+    tune_by_sliders,
+)
+from fakematlab.core.viewer import (
+    CHARACTERISTICS,
+    Characteristic,
+    ResponseKind,
+    compute,
+)
 
 #: 1/(s+1)³ — one gain crossover, a finite gain margin, and the analytic
 #: answers are known: GM = 8 at ω = √3.

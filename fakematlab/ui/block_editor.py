@@ -16,22 +16,32 @@ from __future__ import annotations
 
 import control as ctl
 import numpy as np
-
-from PySide6.QtCore    import Signal, Qt
-from PySide6.QtGui     import QFont
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
-    QLabel, QLineEdit, QComboBox, QPushButton,
-    QGroupBox, QSizePolicy, QTabWidget, QDoubleSpinBox,
+    QComboBox,
+    QDoubleSpinBox,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
 )
 
 from ..core.tf_utils import (
-    from_coefficients, from_expression, from_zpk,
-    first_order, second_order, unity, analyse, factored_str,
+    analyse,
+    factored_str,
+    first_order,
+    from_coefficients,
+    from_expression,
+    from_zpk,
     pure_delay_pade,
+    second_order,
+    unity,
 )
-from .plots import make_plot, draw_pz_map
-
 
 # ──────────────────────────────────────────────────────────────
 

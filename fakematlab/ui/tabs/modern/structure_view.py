@@ -8,16 +8,27 @@ import control as ctl
 import numpy as np
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
-from PySide6.QtWidgets import (QGroupBox, QHBoxLayout, QLabel, QPushButton,
-                               QSpinBox, QSplitter, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QSpinBox,
+    QSplitter,
+    QVBoxLayout,
+    QWidget,
+)
 
 from ....core.statespace import StateSpaceError
-from ....core.structural import (analyse_structure, balanced_reduction,
-                                  hankel_singular_values, kalman_decomposition,
-                                  reduction_error_bound)
+from ....core.structural import (
+    analyse_structure,
+    balanced_reduction,
+    hankel_singular_values,
+    kalman_decomposition,
+    reduction_error_bound,
+)
 from ...guard import GuardedPanel, guard
-from ...plots import (apply_theme, curve_pen, make_freq_plot, make_plot,
-                       plot_freq)
+from ...plots import apply_theme, curve_pen, make_freq_plot, make_plot, plot_freq
 from .widgets import fill_table, make_table
 
 

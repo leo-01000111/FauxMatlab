@@ -20,7 +20,6 @@ from PySide6.QtWidgets import QApplication
 
 from fakematlab.sim.model import SimModel
 from fakematlab.ui.sim.canvas import SimCanvas
-from fakematlab.ui.sim.items import BlockItem, WireItem
 from fakematlab.ui.sim.palette import BlockPalette
 from fakematlab.ui.sim.sim_tab import SimTab, course_loop
 

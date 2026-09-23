@@ -13,17 +13,42 @@ import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAction
-from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QInputDialog, QLabel,
-                               QListWidget, QListWidgetItem, QMenu,
-                               QPushButton, QSplitter, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (
+    QComboBox,
+    QHBoxLayout,
+    QInputDialog,
+    QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QMenu,
+    QPushButton,
+    QSplitter,
+    QVBoxLayout,
+    QWidget,
+)
 
 from ...core.collection import SystemCollection
-from ...core.viewer import (CHARACTERISTICS, Characteristic, ResponseKind,
-                            ViewerData, compute)
+from ...core.viewer import (
+    CHARACTERISTICS,
+    Characteristic,
+    ResponseKind,
+    ViewerData,
+    compute,
+)
 from ..guard import GuardedPanel, guard
-from ..plots import (COLORS, add_hline, add_marker, add_text_annotation,
-                     add_vline, curve_pen, freq_marker, freq_text,
-                     make_freq_plot, make_plot, plot_freq)
+from ..plots import (
+    COLORS,
+    add_hline,
+    add_marker,
+    add_text_annotation,
+    add_vline,
+    curve_pen,
+    freq_marker,
+    freq_text,
+    make_freq_plot,
+    make_plot,
+    plot_freq,
+)
 
 
 class LTIViewer(QWidget, GuardedPanel):

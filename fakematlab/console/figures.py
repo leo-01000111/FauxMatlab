@@ -13,8 +13,9 @@ headless with no display at all.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 import numpy as np
 
@@ -45,7 +46,7 @@ class FigureSpec:
     traces:  list[Trace] = field(default_factory=list)
     extra:   dict[str, Any] = field(default_factory=dict)
 
-    def add(self, x, y, label: str = "", style: str = "line") -> "FigureSpec":
+    def add(self, x, y, label: str = "", style: str = "line") -> FigureSpec:
         self.traces.append(Trace(np.asarray(x, dtype=float),
                                  np.asarray(y, dtype=float), label, style))
         return self

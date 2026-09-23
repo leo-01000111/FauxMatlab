@@ -1,8 +1,8 @@
 """Tests for fakematlab.core.architecture."""
 
+import control as ctl
 import numpy as np
 import pytest
-import control as ctl
 
 from fakematlab.core.architecture import CourseArchitecture
 from fakematlab.core.tf_utils import first_order, second_order, unity

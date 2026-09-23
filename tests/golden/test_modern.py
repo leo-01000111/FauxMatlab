@@ -12,21 +12,46 @@ import control as ctl
 import numpy as np
 import pytest
 
-from fakematlab.core.discrete import (DiscreteError, c2d, d2c, deadbeat, jury,
-                                      sample_rate_sweep, settling_samples)
-from fakematlab.core.observers import (compensator, estimation_error_response,
-                                       kalman, observer, reduced_observer)
-from fakematlab.core.statefbk import (DesignError, acker, closed_loop, lqi,
-                                      lqr, place, reference_scaling)
-from fakematlab.core.statespace import (StateSpaceError, analyse, minimal,
-                                        modal_form, modal_response,
-                                        observable_form, similarity_transform,
-                                        state_space)
-from fakematlab.core.structural import (analyse_structure, balanced_realization,
-                                        balanced_reduction, gramian,
-                                        hankel_singular_values,
-                                        kalman_decomposition,
-                                        reduction_error_bound)
+from fakematlab.core.discrete import (
+    DiscreteError,
+    c2d,
+    d2c,
+    deadbeat,
+    jury,
+    sample_rate_sweep,
+    settling_samples,
+)
+from fakematlab.core.observers import (
+    compensator,
+    estimation_error_response,
+    kalman,
+    observer,
+    reduced_observer,
+)
+from fakematlab.core.statefbk import (
+    DesignError,
+    acker,
+    lqi,
+    lqr,
+    place,
+)
+from fakematlab.core.statespace import (
+    StateSpaceError,
+    analyse,
+    minimal,
+    modal_form,
+    modal_response,
+    similarity_transform,
+    state_space,
+)
+from fakematlab.core.structural import (
+    analyse_structure,
+    balanced_realization,
+    balanced_reduction,
+    gramian,
+    kalman_decomposition,
+    reduction_error_bound,
+)
 
 # The ch.2 satellite: a double integrator.
 SATELLITE = state_space([[0, 1], [0, 0]], [[0], [1]], [[1, 0]])

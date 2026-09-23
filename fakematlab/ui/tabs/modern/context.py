@@ -90,5 +90,5 @@ class ModernContext(QObject):
 
     def describe(self) -> str:
         return (f"{self.n} states · from {self._source}"
-                + (f" · K set" if self._K is not None else "")
-                + (f" · L set" if self._L is not None else ""))
+                + (" · K set" if self._K is not None else "")
+                + (" · L set" if self._L is not None else ""))

@@ -32,10 +32,9 @@ from ..core import stability as _stab
 from ..core import statefbk as _fbk
 from ..core import statespace as _ss
 from ..core import structural as _struct
-from ..core import timeresp as _time
 from ..core import tf_utils as _tfu
+from ..core import timeresp as _time
 from .figures import FigureSpec, emit
-
 
 # ──────────────────────────────────────────────────────────────
 #  Construction
@@ -667,7 +666,8 @@ def ltiview(*systems, **named):
     the name you give them, which is what makes a four-curve comparison
     readable.
     """
-    from .apps import AppRequest, emit as _emit
+    from .apps import AppRequest
+    from .apps import emit as _emit
     entries = {f"sys{i + 1}": sys for i, sys in enumerate(systems)}
     entries.update(named)
     return _emit(AppRequest("ltiview", entries))
@@ -679,7 +679,8 @@ def sisotool(plant=None, compensator=None):
 
     With no argument it opens on the app's current plant.
     """
-    from .apps import AppRequest, emit as _emit
+    from .apps import AppRequest
+    from .apps import emit as _emit
     systems = {}
     if plant is not None:
         systems["plant"] = plant
@@ -690,7 +691,8 @@ def sisotool(plant=None, compensator=None):
 
 def pidtuner(plant=None, kind: str = "PI"):
     """Open the PID Tuner: ``pidtuner(G, 'pid')``."""
-    from .apps import AppRequest, emit as _emit
+    from .apps import AppRequest
+    from .apps import emit as _emit
     systems = {"plant": plant} if plant is not None else {}
     return _emit(AppRequest("pidtuner", systems,
                             {"kind": kind.upper()}))

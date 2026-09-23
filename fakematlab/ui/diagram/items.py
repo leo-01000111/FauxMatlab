@@ -11,15 +11,21 @@ Item hierarchy (designed for future extension to free-form canvas):
 
 from __future__ import annotations
 
-from typing import Callable, Optional
-
-from PySide6.QtCore  import QPointF, QRectF, Qt, Signal, QObject
-from PySide6.QtGui   import (QBrush, QColor, QFont, QPainter, QPen,
-                              QPolygonF, QFontMetrics, QPainterPath)
-from PySide6.QtWidgets import (QGraphicsItem, QGraphicsObject,
-                                QGraphicsSimpleTextItem, QGraphicsEllipseItem,
-                                QGraphicsRectItem, QApplication)
-
+from PySide6.QtCore import QPointF, QRectF, Qt, Signal
+from PySide6.QtGui import (
+    QBrush,
+    QColor,
+    QFont,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QPolygonF,
+)
+from PySide6.QtWidgets import (
+    QApplication,
+    QGraphicsItem,
+    QGraphicsObject,
+)
 
 # ──────────────────────────────────────────────────────────────
 #  Colours (palette-independent fallbacks)

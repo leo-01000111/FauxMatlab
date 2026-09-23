@@ -15,12 +15,15 @@ import sympy as sp
 from fakematlab.core.architecture import CourseArchitecture
 from fakematlab.core.performance import waterbed
 from fakematlab.core.report import text_report
-from fakematlab.core.session import (SESSION_VERSION, architecture_from_session,
-                                     load_session_dict, session_dict)
+from fakematlab.core.session import (
+    SESSION_VERSION,
+    architecture_from_session,
+    load_session_dict,
+    session_dict,
+)
 from fakematlab.core.stability import routh_from_closed_loop
 from fakematlab.core.tf_utils import factored_str, first_order, pure_delay_pade
 from fakematlab.core.tuning import zn_step
-
 
 # ──────────────────────────────────────────────────────────────
 #  Symbolic Routh (ch.6, 6/26)

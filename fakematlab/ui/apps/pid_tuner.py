@@ -14,17 +14,32 @@ import control as ctl
 import numpy as np
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
-from PySide6.QtWidgets import (QComboBox, QDoubleSpinBox, QFormLayout,
-                               QGroupBox, QHBoxLayout, QLabel, QPushButton,
-                               QSlider, QSplitter, QTextEdit, QVBoxLayout,
-                               QWidget)
+from PySide6.QtWidgets import (
+    QComboBox,
+    QDoubleSpinBox,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QSlider,
+    QSplitter,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
 
-from ...core.pidtune import (PIDKind, TuneResult, crossover_for,
-                             phase_margin_for, tune)
+from ...core.pidtune import PIDKind, TuneResult, crossover_for, phase_margin_for, tune
 from ...core.timeresp import step_response
 from ..guard import GuardedPanel, guard
-from ..plots import (add_hline, curve_pen, freq_vline, make_freq_plot,
-                     make_plot, plot_freq)
+from ..plots import (
+    add_hline,
+    curve_pen,
+    freq_vline,
+    make_freq_plot,
+    make_plot,
+    plot_freq,
+)
 
 #: Slider travel. Both run over integers so the widget behaves; the mapping to
 #: physical quantities lives in :mod:`fakematlab.core.pidtune`.

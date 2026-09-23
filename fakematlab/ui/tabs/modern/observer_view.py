@@ -7,12 +7,25 @@ from __future__ import annotations
 import numpy as np
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
-from PySide6.QtWidgets import (QGroupBox, QHBoxLayout, QLabel, QLineEdit,
-                               QPushButton, QSlider, QSplitter, QVBoxLayout,
-                               QWidget)
+from PySide6.QtWidgets import (
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QSlider,
+    QSplitter,
+    QVBoxLayout,
+    QWidget,
+)
 
-from ....core.observers import (compensator, estimation_error_response,
-                                 kalman, observer, reduced_observer)
+from ....core.observers import (
+    compensator,
+    estimation_error_response,
+    kalman,
+    observer,
+    reduced_observer,
+)
 from ....core.statefbk import DesignError
 from ...guard import GuardedPanel, guard
 from ...plots import add_hline, apply_theme, curve_pen, make_plot

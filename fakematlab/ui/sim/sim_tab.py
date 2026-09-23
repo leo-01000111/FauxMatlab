@@ -9,9 +9,18 @@ crashed one — so the UI stays live, shows progress, and can be cancelled.
 from __future__ import annotations
 
 from PySide6.QtCore import QObject, Qt, QThread, Signal
-from PySide6.QtWidgets import (QComboBox, QDoubleSpinBox, QFileDialog,
-                               QHBoxLayout, QLabel, QProgressBar, QPushButton,
-                               QSplitter, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (
+    QComboBox,
+    QDoubleSpinBox,
+    QFileDialog,
+    QHBoxLayout,
+    QLabel,
+    QProgressBar,
+    QPushButton,
+    QSplitter,
+    QVBoxLayout,
+    QWidget,
+)
 
 from ...sim.compile import CompileError
 from ...sim.linearize import LinearizationError, linearize, steady_state

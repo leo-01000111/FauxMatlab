@@ -6,8 +6,14 @@ from __future__ import annotations
 
 import control as ctl
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import (QHBoxLayout, QLabel, QPushButton, QTabWidget,
-                               QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
 
 from ....core.architecture import CourseArchitecture
 from ...guard import GuardedPanel, guard

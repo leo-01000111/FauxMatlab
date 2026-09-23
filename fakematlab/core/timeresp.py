@@ -9,11 +9,10 @@ Also supports parameter sweeps for multi-curve overlay plots.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 import control as ctl
 import numpy as np
-
 
 # ──────────────────────────────────────────────────────────────
 #  Result dataclasses

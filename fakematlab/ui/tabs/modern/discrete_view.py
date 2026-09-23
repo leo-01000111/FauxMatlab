@@ -8,17 +8,40 @@ import control as ctl
 import numpy as np
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
-from PySide6.QtWidgets import (QComboBox, QDoubleSpinBox, QGroupBox,
-                               QHBoxLayout, QLabel, QPushButton, QSplitter,
-                               QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (
+    QComboBox,
+    QDoubleSpinBox,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QSplitter,
+    QVBoxLayout,
+    QWidget,
+)
 
-from ....core.discrete import (DiscreteError, c2d, compare_methods, d2c,
-                                damping_from_z, deadbeat, jury_from_system,
-                                sample_rate_sweep, settling_samples,
-                                unit_circle)
+from ....core.discrete import (
+    DiscreteError,
+    c2d,
+    compare_methods,
+    d2c,
+    damping_from_z,
+    deadbeat,
+    jury_from_system,
+    sample_rate_sweep,
+    settling_samples,
+    unit_circle,
+)
 from ...guard import GuardedPanel, guard
-from ...plots import (add_hline, add_vline, apply_theme, curve_pen,
-                       make_freq_plot, make_plot, plot_freq)
+from ...plots import (
+    add_hline,
+    add_vline,
+    apply_theme,
+    curve_pen,
+    make_freq_plot,
+    make_plot,
+    plot_freq,
+)
 from .widgets import fill_table, make_table
 
 

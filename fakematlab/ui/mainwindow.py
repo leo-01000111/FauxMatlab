@@ -16,41 +16,49 @@ takes the remaining space. A QSplitter lets the user resize.
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 import control as ctl
-import numpy as np
-from PySide6.QtCore    import Qt, QTimer
-from PySide6.QtGui     import QAction, QKeySequence, QFont
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
-    QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
-    QSplitter, QTabWidget, QStatusBar, QMenuBar,
-    QMessageBox, QFileDialog, QLabel, QApplication,
+    QApplication,
+    QFileDialog,
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QMessageBox,
+    QSplitter,
+    QStatusBar,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
 )
 
-from .diagram.fixed_diagram import FixedDiagramView
-from .block_editor           import BlockEditor
-from .tabs.system_tab        import SystemTab
-from .tabs.time_tab          import TimeTab
-from .tabs.frequency_tab     import FrequencyTab
-from .tabs.stability_tab     import StabilityTab
-from .tabs.performance_tab   import PerformanceTab
-from .tabs.design_tab        import DesignTab
-from .sim.sim_tab           import SimTab
-from .tabs.modern           import ModernTab
-from .console               import ConsoleDock, FigureDock
-from .apps                  import (ControlSystemDesigner, LTIViewer,
-                                    PIDTuner, SnapshotBar)
-from ..console.apps          import AppRequest, set_app_sink
-from ..core.architecture     import CourseArchitecture
-from ..core.collection       import SnapshotStore, SystemCollection
-from ..core.report           import text_report
-from ..core.session          import load_session_dict, session_dict
-from ..core.tf_utils         import (
-    from_coefficients, from_expression, PRESETS,
-    first_order, second_order, unity,
+from ..console.apps import AppRequest, set_app_sink
+from ..core.architecture import CourseArchitecture
+from ..core.collection import SnapshotStore, SystemCollection
+from ..core.lessons import Lesson, all_lessons
+from ..core.report import text_report
+from ..core.session import load_session_dict, session_dict
+from ..core.tf_utils import (
+    first_order,
+    second_order,
+    unity,
 )
+from .apps import ControlSystemDesigner, LTIViewer, PIDTuner, SnapshotBar
+from .block_editor import BlockEditor
+from .console import ConsoleDock, FigureDock
+from .diagram.fixed_diagram import FixedDiagramView
+from .lesson_dock import LessonDock
+from .sim.sim_tab import SimTab
+from .tabs.design_tab import DesignTab
+from .tabs.frequency_tab import FrequencyTab
+from .tabs.modern import ModernTab
+from .tabs.performance_tab import PerformanceTab
+from .tabs.stability_tab import StabilityTab
+from .tabs.system_tab import SystemTab
+from .tabs.time_tab import TimeTab
 
 
 class MainWindow(QMainWindow):
@@ -188,6 +196,11 @@ class MainWindow(QMainWindow):
         self._console.open_system.connect(self._on_console_system)
         self._console.open_model.connect(self._on_console_model)
 
+        self._lessons = LessonDock(self)
+        self.addDockWidget(Qt.RightDockWidgetArea, self._lessons)
+        self._lessons.hide()
+        self._lessons.console_requested.connect(self._run_lesson_snippet)
+
     def _console_state(self) -> dict:
         """
         What the console starts with from the app.
@@ -295,6 +308,50 @@ class MainWindow(QMainWindow):
                             self._arch.block_tf("K2"))
         return self._show("pidtuner", tuner)
 
+    # ── Lessons ──────────────────────────────────────────────
+
+    #: Lesson tab names → the attribute holding that tab.
+    _TAB_BY_NAME = {
+        "System": "_sys_tab", "Time": "_time_tab", "Frequency": "_freq_tab",
+        "Stability": "_stab_tab", "Performance": "_perf_tab",
+        "Design": "_des_tab", "Simulink": "_sim_tab", "Modern": "_mod_tab",
+    }
+
+    def load_lesson(self, lesson: Lesson) -> None:
+        """
+        Load a worked example: its blocks, its tab, and its notes.
+
+        A snapshot of the current design is taken first, so opening a lesson
+        out of curiosity does not cost you the controller you were working on
+        — Restore brings it back. It reuses one slot rather than accumulating,
+        because browsing seven lessons should not fill the store with seven
+        copies of the same "before".
+        """
+        self.snapshots.remove("before lesson")
+        self.snapshots.take(self._arch, "before lesson")
+        self._snapshot_bar.refresh()
+
+        lesson.apply_to(self._arch)
+        self._diagram.build()
+        self._refresh_status()
+
+        tab = getattr(self, self._TAB_BY_NAME.get(lesson.tab, "_sys_tab"), None)
+        if tab is not None:
+            self._tabs.setCurrentWidget(tab)
+        self._update_all_tabs()
+
+        self._lessons.show_lesson(lesson, self._arch)
+        self._status.showMessage(
+            f"Chapter {lesson.chapter}: {lesson.title}  "
+            f"({lesson.slides})", 10000)
+
+    def _run_lesson_snippet(self, commands: tuple[str, ...]) -> None:
+        """Send a lesson's snippet to the console, one line at a time."""
+        self._act_console.setChecked(True)
+        self._console.focus()
+        for command in commands:
+            self._console.execute(command)
+
     def _compare_snapshots(self, collection: SystemCollection) -> None:
         """The snapshot bar's Compare button: hand them to the LTI Viewer."""
         viewer = self._open_lti_viewer()
@@ -373,6 +430,20 @@ class MainWindow(QMainWindow):
             action.setStatusTip(tip)
             action.triggered.connect(lambda _checked=False, s=slot: s())
             apps_menu.addAction(action)
+
+        # Lessons menu
+        lesson_menu = mb.addMenu("&Lessons")
+        for item in all_lessons():
+            action = QAction(f"Ch. {item.chapter} — {item.title}", self)
+            action.setStatusTip(item.slides)
+            action.triggered.connect(
+                lambda _checked=False, les=item: self.load_lesson(les))
+            lesson_menu.addAction(action)
+        lesson_menu.addSeparator()
+        show_notes = QAction("Show the lesson panel", self)
+        show_notes.triggered.connect(
+            lambda: (self._lessons.show(), self._lessons.raise_()))
+        lesson_menu.addAction(show_notes)
 
         # Presets menu
         preset_menu = mb.addMenu("&Presets")

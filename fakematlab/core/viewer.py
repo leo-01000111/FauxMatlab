@@ -26,8 +26,13 @@ import numpy as np
 
 from .collection import Entry, SystemCollection
 from .freqresp import bode, nichols, nyquist
-from .timeresp import (_auto_tspan, compute_step_metrics, impulse_response,
-                       ramp_response, step_response)
+from .timeresp import (
+    _auto_tspan,
+    compute_step_metrics,
+    impulse_response,
+    ramp_response,
+    step_response,
+)
 
 
 class ResponseKind(str, Enum):

@@ -12,12 +12,10 @@ log-axis conversion; see :mod:`fakematlab.ui.plots`.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
 import control as ctl
 import numpy as np
-
 
 # ──────────────────────────────────────────────────────────────
 #  Result dataclasses

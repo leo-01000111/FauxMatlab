@@ -1,13 +1,18 @@
 """Tests for fakematlab.core.tf_utils."""
 
-import numpy as np
-import pytest
 import control as ctl
+import numpy as np
 
 from fakematlab.core.tf_utils import (
-    from_coefficients, from_expression, from_zpk,
-    first_order, second_order, integrator,
-    pole_info, analyse, factored_str, coefficients_str,
+    analyse,
+    factored_str,
+    first_order,
+    from_coefficients,
+    from_expression,
+    from_zpk,
+    integrator,
+    pole_info,
+    second_order,
 )
 
 

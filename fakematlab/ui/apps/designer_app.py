@@ -19,17 +19,41 @@ import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QFont
-from PySide6.QtWidgets import (QCheckBox, QDoubleSpinBox, QFormLayout,
-                               QGroupBox, QHBoxLayout, QLineEdit,
-                               QPushButton, QSlider, QSplitter, QTextEdit,
-                               QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QDoubleSpinBox,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLineEdit,
+    QPushButton,
+    QSlider,
+    QSplitter,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
 
-from ...core.designer import (Compensator, DesignSummary, damping_ray,
-                              evaluate, gain_for_damping, gain_for_overshoot,
-                              point_to_gain)
+from ...core.designer import (
+    Compensator,
+    DesignSummary,
+    damping_ray,
+    evaluate,
+    gain_for_damping,
+    gain_for_overshoot,
+    point_to_gain,
+)
 from ..guard import GuardedPanel, guard
-from ..plots import (add_hline, add_marker, add_vline, curve_pen,
-                     freq_vline, make_freq_plot, make_plot, plot_freq)
+from ..plots import (
+    add_hline,
+    add_marker,
+    add_vline,
+    curve_pen,
+    freq_vline,
+    make_freq_plot,
+    make_plot,
+    plot_freq,
+)
 
 #: How long after the last drag event before the linked plots are recomputed.
 #: Short enough to feel live, long enough that a fast drag does not queue up

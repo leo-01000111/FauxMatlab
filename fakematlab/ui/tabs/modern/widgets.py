@@ -5,9 +5,17 @@ from __future__ import annotations
 import numpy as np
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
-from PySide6.QtWidgets import (QFormLayout, QHBoxLayout, QPlainTextEdit,
-                               QPushButton, QSizePolicy, QTableWidget,
-                               QTableWidgetItem, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (
+    QFormLayout,
+    QHBoxLayout,
+    QPlainTextEdit,
+    QPushButton,
+    QSizePolicy,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 
 
 def make_table(headers: list[str], max_height: int | None = None) -> QTableWidget:

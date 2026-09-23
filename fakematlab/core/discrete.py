@@ -19,7 +19,6 @@ import control as ctl
 import numpy as np
 from scipy.linalg import logm
 
-
 #: Discretisation methods ``c2d`` accepts.
 METHODS = ("zoh", "tustin", "bilinear", "euler", "backward_diff", "matched")
 
@@ -266,8 +265,6 @@ def deadbeat(sys) -> np.ndarray:
             "z = 0, which has no continuous equivalent. Sample the system "
             "first with c2d().")
 
-    plant = ctl.ss(np.asarray(sys.A), np.asarray(sys.B),
-                   np.asarray(sys.C), np.asarray(sys.D))
     n = sys.nstates
 
     # Ackermann's formula, not the robust placement routine. Deadbeat needs

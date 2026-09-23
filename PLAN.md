@@ -439,24 +439,90 @@ K = 6, ω = √2.
   it is right for a PID but gives a PI `Ki ≈ 1e-6` — a P controller wearing a PI's name. Each
   structure now aims at the phase it can actually supply.
 
-### Phase 7 — Course content (2 d)
+### Phase 7 — Course content ✅ **DONE**
 
-A **Lessons** menu that loads a worked example per chapter straight from the slides: ch2 satellite,
-ch3 NMP undershoot and slow-zero overshoot, ch4 1st/2nd-order families, ch5 the 2-DOF architecture,
-ch6 Nyquist/margins/M-circles, ch7 trade-offs and Bode–Freudenberg, ch8 the full PID and lead/lag
-progression. Each preloads a model + the right tab + a short note. This is what turns a tool into
-a study aid.
+A **Lessons** menu with one worked example per chapter (ch2 satellite, ch3 NMP undershoot, ch4 the
+second-order family, ch5 the 2-DOF architecture, ch6 margins and M-circles, ch7 the waterbed, ch8
+Ziegler–Nichols). Each loads a model, opens the right tab, and shows a note.
 
-### Phase 8 — Packaging (1–2 d)
+**The decision that makes this worth having.** A lesson contains no prose about numbers. It
+contains `Claim` objects — a sentence, a *probe* that measures the quantity from whatever model is
+loaded, and the value the theory predicts. The panel shows predicted beside measured, and
+`test_lessons.py` checks every claim of every lesson. A note that stops being true fails the build
+instead of quietly misleading a student, and changing the plant turns the ticks into crosses in
+front of you, which is a better demonstration than a paragraph.
 
-`git init` + `.gitignore`, `pyproject.toml`, README with screenshots, `pytest` + `ruff` in CI,
-a PyInstaller one-file build, `--check` headless self-test entry point.
+Claims carry a `mode` — `equals`, `at_least`, `at_most` — because some of the course's results are
+bounds. Ch.3's undershoot theorem says *Mu > 1/(e^{c·ts} − 1)*; pinning that to a number would be
+asserting the simulation rather than the theorem.
+
+**Acceptance.** 60 tests. 29 claims across 7 lessons, several exact: ωc = √(2^⅔ − 1) and
+PM = 180° − 3·arctan ωc for ch6, Pc = 8 and Tc = 2π/√3 for ch8, Mp = exp(−πζ/√(1−ζ²)) for ch4.
+Plus the arguments the notes make, checked independently — that *no* proportional gain stabilises
+a double integrator (not just the one loaded), and that an unstable pole makes ∫ln|S| = π·Σ Re(pᵢ).
+
+**Two claims of mine that were wrong, and the code was right.**
+
+- "Changing K₁ leaves every closed-loop pole where it was" — false. K₁ is in the reference path, so
+  its own pole genuinely joins the r→y response. What is true is that K₁ cannot move the roots of
+  1 + L, which is what the claim now measures.
+- Ch.6 at K₂ = 1 has |L(0)| = 1 exactly, so the loop *starts* on the 0 dB line and never crosses
+  it: no gain crossover, and therefore no phase margin and no delay margin. Not a bug — the
+  quantities are defined at a crossing that is not happening. The lesson now uses K₂ = 2 and makes
+  the degenerate case an exercise.
+
+### Phase 8 — Packaging ✅ **DONE**
+
+`git init`, `.gitignore`, `.gitattributes`, `pyproject.toml`, README, and the repository published
+at [github.com/leo-01000111/FauxMatlab](https://github.com/leo-01000111/FauxMatlab). Then:
+
+1. ✅ **`--check`**, a headless self-test (`fakematlab/selftest.py`). Its payload is not smoke
+   checks: it runs the course lessons' analytic claims, so a pass means the numbers agree with the
+   theory rather than merely that nothing raised. Exit code is the failure count, so
+   `app.py --check && deploy` does what it looks like it does.
+2. ✅ **CI** — ruff, pytest on Linux *and* Windows, then `app.py --check`. The Linux job installs
+   the Qt runtime libraries PySide6 links against even offscreen.
+3. ✅ **PyInstaller** one-*folder* build (`packaging/fauxmatlab.spec`). One-file unpacks the whole
+   Qt runtime on every launch; one-folder starts immediately. It builds two entry points over one
+   bundle — `FauxMatlab.exe` windowed and `FauxMatlab-check.exe` console, because a windowed
+   executable on Windows has no stdout and `--check` there would set an exit code and print
+   nothing.
+4. ✅ **ruff clean**, from 301 violations to zero. 225 were auto-fixed, ~20 were real dead code,
+   and the rest are configured off *with a stated reason each* rather than silently.
+
+**Acceptance.** `ruff check .` passes. 589 tests. `app.py --check` reports 41/41 in 5.5 s, and
+the *frozen* build passes its own self-test.
+
+**What the linter caught that the tests did not.** A blanket rename of unused loop variables hit
+three loops in `solver.py` that *do* use the variable — `F821 undefined-name`, in code paths the
+suite does not reach. That is the argument for the linter in one example.
+
+**What the frozen build caught that nothing else did.** Three defects in a row, none visible from
+the source tree:
+
+1. `collect_submodules("control")` reaches `control.tests`, which imports pytest, whose plugin
+   discovery then reaches whatever else is installed — torch, jax, OpenCV, transformers. **1.5 GB**
+   from a 340 MB application. Dropped; the static scan already follows what this code imports.
+2. Excluding matplotlib and python-control's plotting modules looked free — this app draws with
+   pyqtgraph and never calls them. But `control/__init__.py` imports `ctrlplot`, `freqplot`,
+   `timeplot` and five more unconditionally, so `import control` became `ModuleNotFoundError`.
+   matplotlib is a hard runtime dependency of python-control 0.10. Same for `PySide6.QtTest`,
+   which pyqtgraph imports — caught by a test before it reached a build.
+3. A Windows console is cp1252 and the report is full of ζ, ω and −, so printing raised
+   `UnicodeEncodeError` *inside* a check's `try` block: a display problem recorded as a
+   correctness failure, which is a lie about the build. The development shell is UTF-8, so the
+   source tree never hit it.
+
+**Deliberately deferred, not overlooked.** `B905` (`zip(..., strict=True)`) is switched off with a
+note. Fifteen call sites, mostly in the solver, where a length mismatch between ports and widths
+would be a genuine bug — but turning it on blind converts working code into raising code, so it
+wants a per-site audit rather than a flag.
 
 ---
 
 ## Part 5 — Sequencing, risk, and what I'd cut
 
-**Order:** ~~1 → 2 → 4 → 3 → 5 → 6~~ (done) → 7 → 8. Phase 4 (Simulink) before Phase 3 (modern control),
+**Order:** ~~1 → 2 → 4 → 3 → 5 → 6 → 7 → 8~~ — **all eight phases complete.** Phase 4 (Simulink) before Phase 3 (modern control),
 because Phase 4 depends on the Phase-1 graph while it's fresh, and because Phase 3's tabs are
 additive and low-risk. Total ≈ **28–40 focused days**. Phases 1+2 alone (≈ 1 week) turn a tool
 that quietly prints wrong numbers into one you can trust.

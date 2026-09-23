@@ -7,22 +7,42 @@ module docstring of :mod:`fakematlab.ui.plots` for why that matters.
 
 from __future__ import annotations
 
-import numpy as np
 import control as ctl
+import numpy as np
 import pyqtgraph as pg
-from PySide6.QtCore    import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
-    QWidget, QHBoxLayout, QVBoxLayout, QLabel,
-    QComboBox, QCheckBox, QPushButton, QGroupBox, QDoubleSpinBox,
-    QFormLayout, QSplitter, QTabWidget, QSizePolicy,
+    QCheckBox,
+    QComboBox,
+    QDoubleSpinBox,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
 )
 
-from ..guard import GuardedPanel, guard
-from ..plots import (make_plot, make_freq_plot, plot_freq, freq_vline,
-                     freq_marker, freq_text, add_vline, add_hline, add_marker,
-                     add_text_annotation, curve_pen, apply_theme, COLORS)
 from ...core.architecture import CourseArchitecture
-from ...core.freqresp     import bode, nyquist, nichols
+from ...core.freqresp import bode, nichols, nyquist
+from ..guard import GuardedPanel, guard
+from ..plots import (
+    COLORS,
+    add_hline,
+    add_marker,
+    add_text_annotation,
+    add_vline,
+    apply_theme,
+    curve_pen,
+    freq_marker,
+    freq_text,
+    freq_vline,
+    make_freq_plot,
+    make_plot,
+    plot_freq,
+)
 
 
 class FrequencyTab(QWidget, GuardedPanel):
@@ -221,7 +241,7 @@ class FrequencyTab(QWidget, GuardedPanel):
         pi_ph.clear()
         apply_theme(pi_ph, "Bode — Phase", "ω (rad/s)", "Phase (°)")
         plot_freq(pi_ph, bd.omega, bd.phase_deg, pen=curve_pen(0, 2.2))
-        for i, (name, otf) in enumerate(overlays):
+        for i, (_name, otf) in enumerate(overlays):
             obd = bode(otf)
             plot_freq(pi_ph, obd.omega, obd.phase_deg, pen=curve_pen(i + 1, 1.6))
 

@@ -18,15 +18,16 @@ The diagram is read-only in the canvas; editing happens in BlockEditor.
 from __future__ import annotations
 
 import control as ctl
-from PySide6.QtCore   import QPointF, Qt
-from PySide6.QtWidgets import QGraphicsTextItem
+from PySide6.QtCore import QPointF
 
-from .base_diagram   import BaseDiagramView
-from .items          import (DiagramBlock, DiagramSummer, DiagramWire,
-                              DiagramSignalLabel, WIRE_COLOR)
 from ...core.architecture import CourseArchitecture
-from ...core.tf_utils     import unity
-
+from .base_diagram import BaseDiagramView
+from .items import (
+    DiagramBlock,
+    DiagramSignalLabel,
+    DiagramSummer,
+    DiagramWire,
+)
 
 # ── Layout constants ──────────────────────────────────────────
 

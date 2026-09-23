@@ -8,9 +8,18 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
-from PySide6.QtWidgets import (QDockWidget, QFileDialog, QHBoxLayout, QLabel,
-                               QPlainTextEdit, QPushButton, QSplitter,
-                               QTabWidget, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (
+    QDockWidget,
+    QFileDialog,
+    QHBoxLayout,
+    QLabel,
+    QPlainTextEdit,
+    QPushButton,
+    QSplitter,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
 
 from ...console.figures import FigureSpec, set_figure_sink
 from ...console.interpreter import Interpreter

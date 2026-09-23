@@ -9,9 +9,16 @@ from typing import Any
 import control as ctl
 import numpy as np
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import (QHBoxLayout, QHeaderView, QLabel, QPushButton,
-                               QTableWidget, QTableWidgetItem, QVBoxLayout,
-                               QWidget)
+from PySide6.QtWidgets import (
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 
 from ...console.interpreter import Interpreter
 

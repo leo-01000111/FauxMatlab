@@ -20,8 +20,8 @@ import numpy as np
 from .architecture import BLOCK_IDS, INPUT_SIGNALS, OUTPUT_SIGNALS, CourseArchitecture
 from .freqresp import bode, nyquist
 from .performance import analyse_performance, waterbed
-from .timeresp import compute_step_metrics, step_response
 from .tf_utils import analyse, factored_str
+from .timeresp import compute_step_metrics, step_response
 
 _WIDTH = 74
 

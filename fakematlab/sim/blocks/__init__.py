@@ -6,8 +6,14 @@ and the canvas palette both read from that registry, so a new block becomes
 available everywhere as soon as its module is imported here.
 """
 
-from . import (continuous, discrete, math_blocks, nonlinear, sources,  # noqa: F401
-               subsystem)
 from ..block import block_types, by_category, create  # noqa: F401
+from . import (  # noqa: F401
+               continuous,
+               discrete,
+               math_blocks,
+               nonlinear,
+               sources,
+               subsystem,
+)
 
 __all__ = ["block_types", "by_category", "create"]

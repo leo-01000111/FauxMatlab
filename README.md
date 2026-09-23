@@ -15,6 +15,8 @@ python app.py
 
 Requires Python 3.12+. The import package is `fakematlab`; the repository is `FauxMatlab`.
 
+`python app.py --check` runs a headless self-test and exits with the number of failures.
+
 ---
 
 ## What it does
@@ -107,9 +109,10 @@ rather than merely inaccurate.
 pytest
 ```
 
-511 tests. They are mostly *golden* tests: analytic values computed by hand or by an
-independent route, not snapshots of whatever the code printed first. The numeric signal
-solver and the symbolic one check each other; `python-control` acts as a third opinion.
+587 tests, plus `ruff check .`. They are mostly *golden* tests: analytic values computed by
+hand or by an independent route, not snapshots of whatever the code printed first. The
+numeric signal solver and the symbolic one check each other; `python-control` acts as a
+third opinion.
 
 Several are there to pin down a bug that was genuinely hard to see:
 
@@ -131,15 +134,49 @@ tab and exercises every core path without a display.
 
 ---
 
+## Lessons that check themselves
+
+A **Lessons** menu loads one worked example per chapter: the satellite that proportional
+control cannot hold (ch2), the right-half-plane zero that has to undershoot (ch3), the
+second-order family (ch4), the two-degrees-of-freedom split (ch5), margins and the 2.3 dB
+M-circle (ch6), the waterbed integral (ch7), Ziegler–Nichols (ch8).
+
+The notes contain no prose about numbers. Each lesson carries `Claim` objects — a sentence,
+a probe that *measures* the quantity from whatever model is currently loaded, and the value
+the theory predicts — and the panel shows predicted beside measured. Change the plant and
+the ticks become crosses in front of you.
+
+Every claim of every lesson is checked by the test suite, so a note that stops being true
+fails the build rather than quietly misleading whoever reads it. Several are exact:
+ωc = √(2^⅔ − 1) with PM = 180° − 3·arctan ωc for the ch6 loop, a critical gain of exactly 8
+at ω = √3 for ch8.
+
+That is also what `--check` runs. A packaged build ships without the test suite, so its
+self-test is the lessons' analytic claims plus a full offscreen build of the window — a pass
+means the numbers agree with the theory, not merely that nothing raised.
+
+---
+
 ## Status
 
-Phases 1–6 of [`PLAN.md`](PLAN.md) are done: correctness, the classical half, modern
-control, the simulator, the command window and the apps. Remaining are per-chapter worked
-examples and packaging.
+All eight phases of [`PLAN.md`](PLAN.md) are done: correctness, the classical half, modern
+control, the simulator, the command window, the apps, the course lessons and packaging.
 
-`PLAN.md` also records what was deliberately **not** built, and why. The one worth
-repeating: there is no Python Function block, because a block that executes arbitrary text
-from a shared model file is a code-execution surface, not a feature.
+`PLAN.md` records what was deliberately **not** built, and why. The one worth repeating:
+there is no Python Function block, because a block that executes arbitrary text from a
+shared model file is a code-execution surface, not a feature.
+
+### Building a standalone copy
+
+```bash
+pyinstaller --clean --noconfirm packaging/fauxmatlab.spec
+```
+
+A one-*folder* build: one-file unpacks the whole Qt runtime on every launch, which for
+PySide6 plus scipy plus sympy is several seconds before the window appears. It produces two
+entry points over one bundle — `FauxMatlab.exe` and `FauxMatlab-check.exe`, because a
+windowed executable on Windows has no stdout, so `--check` there would set an exit code and
+print nothing.
 
 ---
 

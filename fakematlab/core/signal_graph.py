@@ -39,13 +39,10 @@ omega, H = graph.frequency_response(input_id="r", output_id="y")
 
 from __future__ import annotations
 
-import warnings
 from dataclasses import dataclass, field
-from typing import Optional
 
 import control as ctl
 import numpy as np
-
 
 # ──────────────────────────────────────────────────────────────
 #  Data structures
@@ -56,7 +53,7 @@ class _Node:
     """One node (block or junction) in the signal-flow graph."""
     node_id: str
     label: str
-    tf: Optional[ctl.TransferFunction]  # None → summer (H=1, gains ±1 per edge)
+    tf: ctl.TransferFunction | None  # None → summer (H=1, gains ±1 per edge)
     is_summer: bool = False             # True → output = sum of signed inputs
     metadata: dict = field(default_factory=dict)
 
@@ -265,7 +262,7 @@ class SignalGraph:
     # ── convenience: rebuild with new block TF ──────────────────
 
     def copy_with_update(self, node_id: str,
-                         new_tf: ctl.TransferFunction) -> "SignalGraph":
+                         new_tf: ctl.TransferFunction) -> SignalGraph:
         """Return a shallow copy with one block's TF replaced."""
         g2 = SignalGraph()
         g2._nodes  = {k: v for k, v in self._nodes.items()}

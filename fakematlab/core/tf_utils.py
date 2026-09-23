@@ -6,15 +6,11 @@ All functions accept/return python-control TransferFunction objects.
 
 from __future__ import annotations
 
-import re
-import warnings
 from dataclasses import dataclass
-from typing import Optional
 
 import control as ctl
 import numpy as np
 import sympy as sp
-
 
 # ──────────────────────────────────────────────────────────────
 #  Pole / zero dataclasses
@@ -322,7 +318,7 @@ def _clean_roots(roots, tol: float = 1e-4) -> list[complex]:
     # Merge clusters so repeated roots compare equal and collapse to a power.
     merged: list[complex] = []
     for r in cleaned:
-        for i, seen in enumerate(merged):
+        for seen in merged:
             if abs(r - seen) < tol * max(1.0, abs(seen)):
                 r = seen
                 break

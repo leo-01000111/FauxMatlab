@@ -12,7 +12,6 @@ from dataclasses import dataclass
 import control as ctl
 import numpy as np
 
-
 # ──────────────────────────────────────────────────────────────
 #  Dataclass
 # ──────────────────────────────────────────────────────────────

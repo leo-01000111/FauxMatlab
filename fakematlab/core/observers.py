@@ -194,8 +194,10 @@ def reduced_observer(sys: ctl.StateSpace, desired) -> ObserverDesign:
     Ti = np.linalg.inv(T)
     At = T @ A @ Ti
 
-    A11, A12 = At[:p, :p], At[:p, p:]
-    A21, A22 = At[p:, :p], At[p:, p:]
+    # Only the unmeasured-state blocks are needed; the partition is
+    # [[A11, A12], [A21, A22]] with the measured states on top.
+    A12 = At[:p, p:]
+    A22 = At[p:, p:]
 
     dual = state_space(A22.T, A12.T, np.eye(n - p))
     gain = place(dual, desired).K

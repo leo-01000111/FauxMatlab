@@ -1,14 +1,15 @@
 """Tests for fakematlab.core.timeresp."""
 
-import numpy as np
-import pytest
 import control as ctl
+import numpy as np
 
-from fakematlab.core.timeresp import (
-    step_response, impulse_response, ramp_response,
-    compute_step_metrics, parameter_sweep,
-)
 from fakematlab.core.tf_utils import first_order, second_order
+from fakematlab.core.timeresp import (
+    compute_step_metrics,
+    impulse_response,
+    parameter_sweep,
+    step_response,
+)
 
 
 class TestStepResponse:

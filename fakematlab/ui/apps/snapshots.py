@@ -10,8 +10,14 @@ rather than re-implementing an overlay in every tab.
 from __future__ import annotations
 
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QInputDialog, QLabel,
-                               QPushButton, QWidget)
+from PySide6.QtWidgets import (
+    QComboBox,
+    QHBoxLayout,
+    QInputDialog,
+    QLabel,
+    QPushButton,
+    QWidget,
+)
 
 from ...core.architecture import CourseArchitecture
 from ...core.collection import Snapshot, SnapshotStore, restore_snapshot

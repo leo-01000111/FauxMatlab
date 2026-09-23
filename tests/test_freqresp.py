@@ -1,10 +1,9 @@
 """Tests for fakematlab.core.freqresp."""
 
-import numpy as np
-import pytest
 import control as ctl
+import numpy as np
 
-from fakematlab.core.freqresp import bode, nyquist, nichols
+from fakematlab.core.freqresp import bode, nichols, nyquist
 from fakematlab.core.tf_utils import first_order, second_order
 
 

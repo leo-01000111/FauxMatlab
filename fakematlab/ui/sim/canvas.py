@@ -14,17 +14,14 @@ from __future__ import annotations
 import json
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import (QColor, QKeySequence, QPainter, QPainterPath,
-                           QPen, QUndoStack)
-from PySide6.QtWidgets import (QApplication, QGraphicsScene, QGraphicsView,
-                               QMenu)
+from PySide6.QtGui import QColor, QKeySequence, QPainter, QPainterPath, QPen, QUndoStack
+from PySide6.QtWidgets import QApplication, QGraphicsScene, QGraphicsView, QMenu
 
 from ...sim.block import block_types
 from ...sim.compile import CompileError, compile_model
 from ...sim.model import ModelError, PortRef, SimModel
 from . import commands as cmd
-from .items import (GRID, BlockItem, PortItem, WireItem, snap, sel_colour,
-                    wire_colour)
+from .items import GRID, BlockItem, PortItem, WireItem, sel_colour, snap, wire_colour
 
 MIME_TYPE = "application/x-fakematlab-blocks"
 

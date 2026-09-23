@@ -1,8 +1,5 @@
 """Tests for fakematlab.core.performance."""
 
-import numpy as np
-import pytest
-import control as ctl
 
 from fakematlab.core.performance import analyse_performance
 from fakematlab.core.tf_utils import first_order, integrator

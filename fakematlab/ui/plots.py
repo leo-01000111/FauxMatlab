@@ -25,15 +25,12 @@ directly.
 
 from __future__ import annotations
 
-from typing import Optional
-
 import numpy as np
 import pyqtgraph as pg
-from pyqtgraph import PlotWidget, PlotItem, mkPen, mkBrush, InfiniteLine
-from PySide6.QtCore  import Qt
-from PySide6.QtGui   import QColor, QFont
+from pyqtgraph import InfiniteLine, PlotItem, PlotWidget, mkBrush, mkPen
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QApplication
-
 
 # ──────────────────────────────────────────────────────────────
 #  Theme
@@ -72,7 +69,6 @@ def apply_theme(plot: PlotItem, title: str = "",
     dark = _is_dark()
     bg   = "#1A1A2E" if dark else "#FAFAFA"
     fg   = "#E8E8F0" if dark else "#111111"
-    grid = "#3A3A5C" if dark else "#CCCCDD"
 
     plot.getViewBox().setBackgroundColor(bg)
     label_style = {"color": fg, "font-size": "11pt"}

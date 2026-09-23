@@ -9,13 +9,11 @@ from desired phase-margin specifications.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from enum import Enum, auto
-from typing import Optional
+from dataclasses import dataclass
+from enum import Enum
 
 import control as ctl
 import numpy as np
-
 
 # ──────────────────────────────────────────────────────────────
 #  Enumerations
@@ -264,8 +262,9 @@ def zn_step(
     Estimates dead time L and time constant T from the open-loop step response.
     Uses the tangent-at-inflection-point method.
     """
-    from .timeresp import step_response, _auto_tspan
     import numpy as np
+
+    from .timeresp import _auto_tspan, step_response
 
     t = _auto_tspan(G, n_pts=4000)
     resp = step_response(G, amplitude=amplitude, t=t)
@@ -300,7 +299,6 @@ def zn_step(
         )
 
     # ZN rules
-    R = L / T   # ratio
     P_params   = PIDParams(Kp=T / (dc * L))
     PI_params  = PIDParams(Kp=0.9 * T / (dc * L),
                            Ki=0.9 * T / (dc * L) / (3.33 * L))

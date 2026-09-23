@@ -5,20 +5,33 @@ Performance tab — system type, error constants, trade-offs.
 from __future__ import annotations
 
 import numpy as np
-from PySide6.QtCore    import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QGroupBox, QFormLayout, QTableWidget, QTableWidgetItem,
-    QSplitter, QSizePolicy, QTextEdit,
+    QGroupBox,
+    QHBoxLayout,
+    QPushButton,
+    QSplitter,
+    QTableWidget,
+    QTableWidgetItem,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
 )
 
-from ..guard  import GuardedPanel, guard
-from ..plots import (make_plot, make_freq_plot, plot_freq, freq_vline,
-                      freq_marker, freq_text, add_hline, add_vline, add_marker,
-                      add_text_annotation, curve_pen, apply_theme)
 from ...core.architecture import CourseArchitecture
-from ...core.performance  import analyse_performance, waterbed
-from ...core.freqresp     import bode
+from ...core.freqresp import bode
+from ...core.performance import analyse_performance, waterbed
+from ..guard import GuardedPanel, guard
+from ..plots import (
+    add_hline,
+    apply_theme,
+    curve_pen,
+    freq_marker,
+    freq_text,
+    freq_vline,
+    make_freq_plot,
+    plot_freq,
+)
 
 
 class PerformanceTab(QWidget, GuardedPanel):

@@ -19,8 +19,9 @@ means a snapshot can be written to a session file, and compared for equality.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass, field, replace
-from typing import Any, Iterator
+from typing import Any
 
 import control as ctl
 import numpy as np
@@ -185,7 +186,7 @@ class Snapshot:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Snapshot":
+    def from_dict(cls, data: dict[str, Any]) -> Snapshot:
         blocks = {
             bid: (tuple(float(c) for c in entry["num"]),
                   tuple(float(c) for c in entry["den"]))

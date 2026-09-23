@@ -8,12 +8,20 @@ import control as ctl
 import numpy as np
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
-from PySide6.QtWidgets import (QCheckBox, QGroupBox, QHBoxLayout, QLabel,
-                               QLineEdit, QPushButton, QSlider, QSplitter,
-                               QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QSlider,
+    QSplitter,
+    QVBoxLayout,
+    QWidget,
+)
 
-from ....core.statefbk import (DesignError, acker, control_effort, lqi,
-                                lqr, place)
+from ....core.statefbk import DesignError, acker, control_effort, lqi, lqr, place
 from ...guard import GuardedPanel, guard
 from ...plots import add_hline, apply_theme, curve_pen, make_plot
 from .widgets import fill_table, frame_poles, make_table

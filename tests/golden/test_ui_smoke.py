@@ -18,7 +18,6 @@ import pytest
 
 pytest.importorskip("PySide6", reason="Qt not available")
 
-import control as ctl
 from PySide6.QtWidgets import QApplication
 
 from fakematlab.core.architecture import CourseArchitecture

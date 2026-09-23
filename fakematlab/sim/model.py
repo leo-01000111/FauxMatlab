@@ -10,9 +10,10 @@ typed ports and need not be linear, so it needs its own container —
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 from .block import Block, BlockError, create
 
@@ -235,7 +236,7 @@ class SimModel:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "SimModel":
+    def from_dict(cls, data: dict[str, Any]) -> SimModel:
         if data.get("format") != FORMAT:
             raise ModelError(
                 f"not a FakeMatlab model file (format={data.get('format')!r})")
@@ -270,10 +271,10 @@ class SimModel:
                               encoding="utf-8")
 
     @classmethod
-    def load(cls, path: str | Path) -> "SimModel":
+    def load(cls, path: str | Path) -> SimModel:
         return cls.from_dict(json.loads(Path(path).read_text(encoding="utf-8")))
 
-    def copy(self) -> "SimModel":
+    def copy(self) -> SimModel:
         return SimModel.from_dict(self.to_dict())
 
 

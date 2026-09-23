@@ -29,8 +29,9 @@ the algebra read from the same edge list.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass, field, replace
-from typing import Iterable, Iterator, Literal
+from typing import Literal
 
 import control as ctl
 import numpy as np
@@ -109,40 +110,40 @@ class Model:
 
     # ── construction ────────────────────────────────────────────
 
-    def add_node(self, node: Node) -> "Model":
+    def add_node(self, node: Node) -> Model:
         if node.node_id in self._nodes:
             raise ValueError(f"duplicate node id {node.node_id!r}")
         self._nodes[node.node_id] = node
         return self
 
     def add_block(self, node_id: str, tf: ctl.TransferFunction,
-                  label: str = "", **meta) -> "Model":
+                  label: str = "", **meta) -> Model:
         """A transfer-function block (drawn as a rectangle)."""
         return self.add_node(Node(node_id, tf, label, "block", meta))
 
-    def add_sum(self, node_id: str, label: str = "", **meta) -> "Model":
+    def add_sum(self, node_id: str, label: str = "", **meta) -> Model:
         """A summing junction. Signs live on the incoming edges, not here."""
         return self.add_node(Node(node_id, unity_tf(), label or "+", "sum", meta))
 
-    def add_wire(self, node_id: str, label: str = "", **meta) -> "Model":
+    def add_wire(self, node_id: str, label: str = "", **meta) -> Model:
         """A named tap point — unity gain, exists so a signal can be observed."""
         return self.add_node(Node(node_id, unity_tf(), label, "wire", meta))
 
-    def connect(self, src: str, dst: str, gain: float = 1.0) -> "Model":
+    def connect(self, src: str, dst: str, gain: float = 1.0) -> Model:
         for nid in (src, dst):
             if nid not in self._nodes:
                 raise KeyError(f"cannot connect: no node {nid!r}")
         self._edges.append(Edge(src, dst, float(gain)))
         return self
 
-    def add_input(self, node_id: str) -> "Model":
+    def add_input(self, node_id: str) -> Model:
         if node_id not in self._nodes:
             raise KeyError(f"no node {node_id!r}")
         if node_id not in self._inputs:
             self._inputs.append(node_id)
         return self
 
-    def add_output(self, node_id: str) -> "Model":
+    def add_output(self, node_id: str) -> Model:
         if node_id not in self._nodes:
             raise KeyError(f"no node {node_id!r}")
         if node_id not in self._outputs:
@@ -151,18 +152,18 @@ class Model:
 
     # ── mutation ────────────────────────────────────────────────
 
-    def set_tf(self, node_id: str, tf: ctl.TransferFunction) -> "Model":
+    def set_tf(self, node_id: str, tf: ctl.TransferFunction) -> Model:
         """Replace one node's transfer function (the common edit)."""
         if node_id not in self._nodes:
             raise KeyError(f"no node {node_id!r}. Have: {sorted(self._nodes)}")
         self._nodes[node_id] = replace(self._nodes[node_id], tf=tf)
         return self
 
-    def with_tf(self, node_id: str, tf: ctl.TransferFunction) -> "Model":
+    def with_tf(self, node_id: str, tf: ctl.TransferFunction) -> Model:
         """Return a copy with one node's TF replaced — for sweeps and snapshots."""
         return self.copy().set_tf(node_id, tf)
 
-    def copy(self) -> "Model":
+    def copy(self) -> Model:
         m = Model(self.name)
         m._nodes   = dict(self._nodes)
         m._edges   = list(self._edges)

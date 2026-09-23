@@ -4,20 +4,27 @@ System tab — poles/zeros, factored form, stability summary.
 
 from __future__ import annotations
 
-import numpy as np
 import control as ctl
-from PySide6.QtCore    import Qt
-from PySide6.QtGui     import QFont
+import numpy as np
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QTableWidget, QTableWidgetItem, QGroupBox,
-    QComboBox, QSplitter, QSizePolicy,
+    QComboBox,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QSizePolicy,
+    QSplitter,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
 )
 
-from ..guard import GuardedPanel, guard
-from ..plots import make_plot, draw_pz_map, apply_theme
 from ...core.architecture import CourseArchitecture
-from ...core.tf_utils     import analyse, factored_str, coefficients_str
+from ...core.tf_utils import analyse, factored_str
+from ..guard import GuardedPanel, guard
+from ..plots import apply_theme, draw_pz_map, make_plot
 
 
 class SystemTab(QWidget, GuardedPanel):

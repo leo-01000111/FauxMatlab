@@ -5,25 +5,43 @@ Time tab — step / impulse / ramp responses with metrics and parameter sweep.
 from __future__ import annotations
 
 import numpy as np
-import control as ctl
-from PySide6.QtCore    import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox,
-    QPushButton, QDoubleSpinBox, QGroupBox, QFormLayout,
-    QSplitter, QTableWidget, QTableWidgetItem, QCheckBox,
-    QLineEdit, QSizePolicy,
+    QCheckBox,
+    QComboBox,
+    QDoubleSpinBox,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLineEdit,
+    QPushButton,
+    QSizePolicy,
+    QSplitter,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
 )
 
-from ..guard import GuardedPanel, guard
-from ..plots import (make_plot, add_vline, add_hline, add_marker,
-                      add_band, add_text_annotation, curve_pen,
-                      apply_theme, COLORS)
 from ...core.architecture import CourseArchitecture
-from ...core.timeresp     import (step_response, impulse_response,
-                                   ramp_response, compute_step_metrics,
-                                   parameter_sweep)
-from ...core.tf_utils     import unity
-import pyqtgraph as pg
+from ...core.timeresp import (
+    compute_step_metrics,
+    impulse_response,
+    parameter_sweep,
+    ramp_response,
+    step_response,
+)
+from ..guard import GuardedPanel, guard
+from ..plots import (
+    add_band,
+    add_hline,
+    add_marker,
+    add_text_annotation,
+    add_vline,
+    apply_theme,
+    curve_pen,
+    make_plot,
+)
 
 
 class TimeTab(QWidget, GuardedPanel):

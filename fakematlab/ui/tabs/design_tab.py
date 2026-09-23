@@ -5,27 +5,44 @@ snapshot comparison.
 
 from __future__ import annotations
 
-import numpy as np
 import control as ctl
-from PySide6.QtCore    import Qt, QTimer, Signal
+import numpy as np
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
-    QWidget, QHBoxLayout, QVBoxLayout, QLabel, QComboBox,
-    QPushButton, QGroupBox, QFormLayout, QSplitter,
-    QDoubleSpinBox, QSlider, QTabWidget, QTextEdit,
-    QSizePolicy, QTableWidget, QTableWidgetItem,
+    QComboBox,
+    QDoubleSpinBox,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QSplitter,
+    QVBoxLayout,
+    QWidget,
 )
 
-from ..guard  import GuardedPanel, guard
-from ..plots import (make_plot, make_freq_plot, plot_freq, freq_vline,
-                      add_vline, add_hline, add_marker,
-                      add_text_annotation, curve_pen, add_band,
-                      apply_theme, COLORS)
 from ...core.architecture import CourseArchitecture
-from ...core.tuning       import (PIDParams, pid_tf, lead_tf, lag_tf,
-                                   LeadLagParams, zn_step, zn_ultimate,
-                                   ControllerType)
-from ...core.timeresp     import step_response, compute_step_metrics
-from ...core.freqresp     import bode as _bode
+from ...core.freqresp import bode as _bode
+from ...core.timeresp import step_response
+from ...core.tuning import (
+    LeadLagParams,
+    PIDParams,
+    lag_tf,
+    lead_tf,
+    pid_tf,
+    zn_step,
+    zn_ultimate,
+)
+from ..guard import GuardedPanel, guard
+from ..plots import (
+    add_hline,
+    apply_theme,
+    curve_pen,
+    freq_vline,
+    make_freq_plot,
+    make_plot,
+    plot_freq,
+)
 
 
 class DesignTab(QWidget, GuardedPanel):
@@ -335,7 +352,7 @@ class DesignTab(QWidget, GuardedPanel):
         pi.clear()
         apply_theme(pi, "Step Response (r→y)", "Time (s)", "Amplitude")
 
-        curves = [(f"Current K₂", self._current_tf)]
+        curves = [("Current K₂", self._current_tf)]
         for name, tf in self._snapshots[-4:]:   # keep last 4 snapshots
             curves.append((name, tf))
 

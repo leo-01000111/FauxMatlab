@@ -23,10 +23,16 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "pytest-cov>=5", "ruff>=0.5"]
+dev = ["pytest>=8", "pytest-cov>=5", "ruff>=0.5", "pyinstaller>=6.10"]
 
 [project.scripts]
 fakematlab = "app:main"
+
+[tool.setuptools]
+# `app.py` sits beside the package rather than inside it, and the console
+# script above points at it — so it has to be installed as a top-level module
+# or `fakematlab` would be a script that cannot import its own entry point.
+py-modules = ["app"]
 
 [tool.setuptools.packages.find]
 include = ["fakematlab*"]
@@ -38,14 +44,35 @@ filterwarnings = ["ignore::DeprecationWarning"]
 [tool.ruff]
 line-length = 88
 target-version = "py312"
+# Archived material, kept for reference rather than maintained.
+exclude = ["Inspiration"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B"]
 ignore = [
-    "E501",  # long lines are usually a docstring explaining a subtlety
-    "B008",  # Qt idioms pass constructed objects as defaults
+    "E501",   # long lines are usually a docstring explaining a subtlety
+    "B008",   # Qt idioms pass constructed objects as defaults
+    "E701",   # one-line accessors and the aligned preset table read better
+    "E702",   # as small aligned tables than as one statement per line
+    "E731",   # a named lambda is clearer than a def for a one-line probe
+    "B027",   # empty base-class methods here are deliberate extension points
+    # `class X(str, Enum)` rather than `StrEnum`. Not cosmetic: these members
+    # cross Qt's QVariant boundary, where the mixin's exact type decides what
+    # comes back — see the LTI Viewer's response-kind round trip.
+    "UP042",
+    # zip(..., strict=True) would be a real improvement in the solver, where a
+    # length mismatch between ports and widths is a genuine bug. Turning it on
+    # blind would convert working code into raising code, so it wants a
+    # per-site audit rather than a flag. Deliberately deferred, not overlooked.
+    "B905",
 ]
 
 [tool.ruff.lint.per-file-ignores]
+# The Qt binding has to be pinned in the environment *before* pyqtgraph is
+# imported, or pyqtgraph loads PyQt5 and fights PySide6 over the Qt DLLs.
+# That ordering is the whole point, so the imports cannot go at the top.
+"app.py" = ["E402"]
+# A sectioned diagnostic script: each section imports what it exercises.
+"debug_runner.py" = ["E402"]
 # Tests deliberately import inside functions to keep the core/UI split honest.
 "tests/**" = ["E402"]
