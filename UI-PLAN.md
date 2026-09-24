@@ -477,12 +477,22 @@ Tracked here rather than by editing the phases above, so the plan stays as writt
 | UI-2 — Context bar and model panel | **done** | `ui/context_bar.py`: factored transfer functions, internal-stability badge, PM/GM/ωc. Diagram and block editor moved to a dock behind Ctrl+\. Analysis area is 99 % of the width at 1280 px. |
 | UI-3 — Workspaces and persistence | **done** | `ui/workspace.py`: Analyse / Model / Console on a rail, Ctrl+1/2/3. `QStackedWidget`, so switching preserves live state. `QSettings` on close; View ▸ Reset layout. The console and figures stopped being hidden docks and became the Console workspace. |
 | UI-4 — Analysis pane grid | **done** | `ui/panes.py`: 1 / 1×2 / 2×2, fourteen pane kinds. Plot panes *are* `LTIViewer` in compact mode, so the viewer is the multi-system form of the same renderer. Root locus added to `core/viewer.py` as a response kind. The classic tabs remain beside the grid. |
-| UI-5 — Dockable applications | not started | |
-| UI-6 — Simulink ergonomics | partial | Click-click wiring fixed and tested; properties inspector, alignment tools and wire routing outstanding. |
-| UI-7 — Modern Control regrouping | not started | |
-| UI-8 — Visual polish and hardening | partial | `ui/design.py` exists (spacing scale, `PanelHeader`, `SectionCard`, `StatusBadge`, `MetricLabel`, `EmptyState`) and new surfaces use it; the existing tabs are not yet retrofitted. Emoji navigation removed. No bundled icon set yet. |
+| UI-5 — Dockable applications | **done** | LTI Viewer, Control System Designer and PID Tuner are tabbed docks in Analyse. Opening one from the console navigates to the workspace its edits land in. One top-level window with all three open. |
+| UI-6 — Simulink ergonomics | **done** | Click-click wiring fixed; `ui/sim/inspector.py` replaces the modal parameter dialog; port hit areas widened without changing the drawn mark; a standing wiring hint; rubber-band selection; align and distribute as one undo step. Wire routing still draws straight lines. |
+| UI-7 — Modern Control regrouping | **done** | The five views renamed to the plan's vocabulary (Model / Structure / Design / Estimation / Discrete), each with a tooltip and accessible name saying what it is for. Control columns scroll instead of dictating width. |
+| UI-8 — Visual polish and hardening | **mostly** | Emoji gone from every button and tab label, enforced by a test. `ui/design.py` primitives used by all new surfaces. Tested at 1280×720, 1366×768 and 1920×1080. Still outstanding: retrofitting the six classic analysis tabs onto the design system, and a bundled icon set. |
 
-### Two things found while implementing
+### Where it ended up
+
+```
+MainWindow.minimumSizeHint()   2038 × 643   →   920 × 344
+SimTab minimum width                 1602   →       152
+Top-level windows with every app open   7   →         1
+Analysis area at 1280 px               —    →       99 %
+Tests                                 598   →       674
+```
+
+### Things found while implementing
 
 **Qt flattens a `str`-mixin enum through `QVariant`.** `QComboBox.currentData()` returns a
 plain `str` that compares and hashes equal to the member, so every dict lookup keeps working
@@ -496,3 +506,13 @@ state-space realisation, no step response. It is reachable from the Presets menu
 to surface as a raw `ValueError` in an error banner. It is a property of the system, not a
 failure to compute, so `core/viewer.py` now says so and the pane shows an empty state with the
 reason.
+
+**Word-wrapped help text is taller the narrower it gets.** The classic analysis tabs fit at
+1400 px and then wanted 748 px of window height at 1280 px, because their control columns wrap.
+A height-for-width effect, not a fixed size, and invisible to any check that measures at one
+width only. They are scrolled now, so a secondary view cannot set the application's minimum.
+
+**A test that shares a window has to put it back.** The resolution tests measure minimum sizes,
+so a pane another test left showing the Modern tab, or an app dock left open, changes the next
+test's answer. The reset fixture now restores the workspace, the view, the pane layout *and*
+the pane kinds.

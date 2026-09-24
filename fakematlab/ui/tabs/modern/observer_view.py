@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QScrollArea,
     QSlider,
     QSplitter,
     QVBoxLayout,
@@ -53,6 +54,7 @@ class ObserverView(QWidget, GuardedPanel):
 
         left = QWidget()
         left.setMaximumWidth(380)
+        left.setMinimumWidth(0)
         left_lay = QVBoxLayout(left)
 
         place_box = QGroupBox("Luenberger observer")
@@ -99,7 +101,12 @@ class ObserverView(QWidget, GuardedPanel):
         self._result.setTextInteractionFlags(Qt.TextSelectableByMouse)
         left_lay.addWidget(self._result)
         left_lay.addStretch()
-        splitter.addWidget(left)
+        left_scroll = QScrollArea()
+        left_scroll.setWidgetResizable(True)
+        left_scroll.setFrameShape(QScrollArea.NoFrame)
+        left_scroll.setWidget(left)
+        left_scroll.setMaximumWidth(400)
+        splitter.addWidget(left_scroll)
 
         right = QSplitter(Qt.Vertical)
 

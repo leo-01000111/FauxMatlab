@@ -49,7 +49,7 @@ class SnapshotBar(QWidget):
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(6)
 
-        self._take_btn = QPushButton("📌 Snapshot")
+        self._take_btn = QPushButton("Snapshot")
         self._take_btn.setToolTip(
             "Freeze the four block transfer functions under a name.")
         self._take_btn.clicked.connect(self.take)

@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QSplitter,
     QVBoxLayout,
@@ -51,6 +52,7 @@ class StructureView(QWidget, GuardedPanel):
 
         left = QWidget()
         left.setMaximumWidth(430)
+        left.setMinimumWidth(0)
         left_lay = QVBoxLayout(left)
 
         verdict = QGroupBox("Verdict")
@@ -88,7 +90,12 @@ class StructureView(QWidget, GuardedPanel):
         reduce_lay.addWidget(self._reduce_note)
         left_lay.addWidget(reduce_box)
         left_lay.addStretch()
-        splitter.addWidget(left)
+        left_scroll = QScrollArea()
+        left_scroll.setWidgetResizable(True)
+        left_scroll.setFrameShape(QScrollArea.NoFrame)
+        left_scroll.setWidget(left)
+        left_scroll.setMaximumWidth(450)
+        splitter.addWidget(left_scroll)
 
         right = QSplitter(Qt.Vertical)
 

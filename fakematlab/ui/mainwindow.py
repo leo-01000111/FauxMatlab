@@ -40,6 +40,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMainWindow,
     QMessageBox,
+    QScrollArea,
     QSplitter,
     QStatusBar,
     QTabWidget,
@@ -96,6 +97,7 @@ class MainWindow(QMainWindow):
         #: and the console all read the same store.
         self.snapshots = SnapshotStore()
         self._apps: dict[str, QWidget] = {}
+        self._app_docks: dict[str, QDockWidget] = {}
         self._build_ui()
         self._build_docks()
         self._build_menus()
@@ -193,7 +195,16 @@ class MainWindow(QMainWindow):
         self._view_tabs = QTabWidget()
         self._view_tabs.setDocumentMode(True)
         self._view_tabs.addTab(self._wrap_grid(), "Panes")
-        self._view_tabs.addTab(self._tabs, "Tabs")
+        # Scrolled, so the classic tabs cannot set the window's minimum
+        # height. Their control columns carry wrapped help text, and a
+        # word-wrapped label is taller the narrower it gets — at 1280 px the
+        # Design and Frequency tabs alone wanted 748 px of window, which is
+        # more than the screen the application is supposed to fit.
+        tab_scroll = QScrollArea()
+        tab_scroll.setWidgetResizable(True)
+        tab_scroll.setFrameShape(QScrollArea.NoFrame)
+        tab_scroll.setWidget(self._tabs)
+        self._view_tabs.addTab(tab_scroll, "Tabs")
         self._view_tabs.currentChanged.connect(
             lambda _i: self._update_all_tabs())
         main_lay.addWidget(self._view_tabs, stretch=1)
@@ -411,7 +422,8 @@ class MainWindow(QMainWindow):
         this, the only fix is deleting a registry key.
         """
         self._settings().clear()
-        for dock in (self._model_dock, self._lessons):
+        for dock in (self._model_dock, self._lessons,
+                     *self._app_docks.values()):
             dock.hide()
         self.removeDockWidget(self._model_dock)
         self.addDockWidget(Qt.LeftDockWidgetArea, self._model_dock)
@@ -452,14 +464,52 @@ class MainWindow(QMainWindow):
             "sisotool": self._open_designer,
             "pidtuner": self._open_pid_tuner,
         }[request.app]
+        # These edit the architecture, so show the workspace their changes
+        # land in — otherwise `sisotool(G)` typed in the console opens a panel
+        # beside a page that is not showing what it changes.
+        self._stack.set_current(Workspace.ANALYSE)
         return opener(request)
 
+    #: Where each app docks, and what its dock is called.
+    _APP_DOCKS = {
+        "ltiview": ("LTI Viewer", Qt.RightDockWidgetArea),
+        "sisotool": ("Control System Designer", Qt.RightDockWidgetArea),
+        "pidtuner": ("PID Tuner", Qt.RightDockWidgetArea),
+    }
+
     def _show(self, key: str, widget: QWidget) -> QWidget:
-        """Keep a reference — a parentless QWidget is garbage at once."""
+        """
+        Dock the app, rather than opening a window.
+
+        These were three parentless top-level windows. With the main window,
+        the lesson dock and the model dock that made up to six independent
+        surfaces, none of which remembered a position, all floating over a
+        window that did not fit the screen. As docks they sit beside the
+        analysis they are editing — which is the point of a designer whose
+        changes go straight into the shared architecture.
+        """
         self._apps[key] = widget
-        widget.show()
-        widget.raise_()
-        widget.activateWindow()
+        dock = self._app_docks.get(key)
+        if dock is None:
+            title, area = self._APP_DOCKS[key]
+            dock = QDockWidget(title, self)
+            dock.setObjectName(f"{key}Dock")
+            dock.setAllowedAreas(Qt.RightDockWidgetArea |
+                                 Qt.LeftDockWidgetArea |
+                                 Qt.BottomDockWidgetArea)
+            dock.setWidget(widget)
+            self.addDockWidget(area, dock)
+            # Tab them together rather than stacking three narrow columns.
+            siblings = [d for k, d in self._app_docks.items() if k != key]
+            if siblings:
+                self.tabifyDockWidget(siblings[-1], dock)
+            self._app_docks[key] = dock
+        else:
+            dock.setWidget(widget)
+
+        dock.show()
+        dock.raise_()
+        self._status.showMessage(self._APP_DOCKS[key][0], 4000)
         return widget
 
     def _open_lti_viewer(self, request: AppRequest | None = None) -> LTIViewer:

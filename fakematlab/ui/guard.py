@@ -63,9 +63,11 @@ class ErrorBanner(QFrame):
         self._detail_btn.toggled.connect(self._toggle_detail)
         lay.addWidget(self._detail_btn)
 
-        close = QPushButton("✕")
+        close = QPushButton("×")
         close.setFlat(True)
         close.setFixedWidth(24)
+        close.setToolTip("Dismiss this error")
+        close.setAccessibleName("dismiss error")
         close.clicked.connect(self.clear)
         lay.addWidget(close)
 

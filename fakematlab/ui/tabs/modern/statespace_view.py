@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QScrollArea,
     QSplitter,
     QVBoxLayout,
     QWidget,
@@ -55,6 +56,7 @@ class StateSpaceView(QWidget, GuardedPanel):
         # ── left: the matrices ──
         left = QWidget()
         left.setMaximumWidth(400)
+        left.setMinimumWidth(0)
         left_lay = QVBoxLayout(left)
 
         grp = QGroupBox("ẋ = Ax + Bu,   y = Cx + Du")
@@ -94,7 +96,12 @@ class StateSpaceView(QWidget, GuardedPanel):
         self._info.setWordWrap(True)
         left_lay.addWidget(self._info)
         left_lay.addStretch()
-        splitter.addWidget(left)
+        left_scroll = QScrollArea()
+        left_scroll.setWidgetResizable(True)
+        left_scroll.setFrameShape(QScrollArea.NoFrame)
+        left_scroll.setWidget(left)
+        left_scroll.setMaximumWidth(420)
+        splitter.addWidget(left_scroll)
 
         # ── right: modes and plots ──
         right = QSplitter(Qt.Vertical)

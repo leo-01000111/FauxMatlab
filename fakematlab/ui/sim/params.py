@@ -1,5 +1,5 @@
 """
-Block parameter dialog, built from the block's own ``params_spec``.
+Block parameter editing, built from the block's own ``params_spec``.
 
 Nothing here knows about any particular block: the widget for each parameter
 follows from its declared ``kind``, so a new block gets a working editor with
@@ -24,22 +24,27 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QSpinBox,
     QVBoxLayout,
+    QWidget,
 )
 
 from ...sim.block import Block, BlockError, create
 
 
-class ParamDialog(QDialog):
-    """Edit one block's parameters."""
+class ParamForm(QWidget):
+    """
+    The editors for one block's parameters, without any container.
+
+    Shared by the modal dialog and the docked inspector so there is one
+    implementation of "what widget does a `matrix` parameter get?" — the
+    reason a new block type still needs no UI changes.
+    """
 
     def __init__(self, block: Block, parent=None) -> None:
         super().__init__(parent)
         self.block = block
-        self.changes: dict[str, Any] = {}
-        self.setWindowTitle(f"{block.type_name} — {block.block_id}")
-        self.setMinimumWidth(380)
 
         root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
 
         header = QLabel(block.description)
         header.setWordWrap(True)
@@ -53,6 +58,7 @@ class ParamDialog(QDialog):
             widget = self._make_editor(spec, block.params[spec.name])
             if spec.help:
                 widget.setToolTip(spec.help)
+            widget.setAccessibleName(spec.label)
             self._editors[spec.name] = widget
             form.addRow(spec.label + ":", widget)
         root.addLayout(form)
@@ -62,11 +68,6 @@ class ParamDialog(QDialog):
         self._error.setStyleSheet("color: #C0392B;")
         self._error.hide()
         root.addWidget(self._error)
-
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(self._accept)
-        buttons.rejected.connect(self.reject)
-        root.addWidget(buttons)
 
     # ── editors ─────────────────────────────────────────────────
 
@@ -116,20 +117,51 @@ class ParamDialog(QDialog):
 
     # ── validation ──────────────────────────────────────────────
 
-    def _accept(self) -> None:
+    def commit(self) -> dict[str, Any] | None:
+        """
+        The changed parameters, or ``None`` if they would be rejected.
+
+        Validated on a throwaway instance: the live block keeps its old
+        parameters until the undo command applies the new ones, so a rejected
+        edit cannot leave a half-configured block behind.
+        """
         values = {spec.name: self._value(spec.name)
                   for spec in self.block.params_spec}
         try:
-            # Validate on a throwaway instance. The live block keeps its old
-            # parameters until the undo command applies the new ones, so a
-            # rejected edit cannot leave a half-configured block behind.
             create(self.block.type_name, "__validate__", **values)
         except (BlockError, ValueError) as exc:
             self._error.setText(str(exc))
             self._error.show()
+            return None
+
+        self._error.hide()
+        return {k: v for k, v in values.items()
+                if v != self.block.params[k]}
+
+
+class ParamDialog(QDialog):
+    """Edit one block's parameters, modally."""
+
+    def __init__(self, block: Block, parent=None) -> None:
+        super().__init__(parent)
+        self.block = block
+        self.changes: dict[str, Any] = {}
+        self.setWindowTitle(f"{block.type_name} — {block.block_id}")
+        self.setMinimumWidth(380)
+
+        root = QVBoxLayout(self)
+        self.form = ParamForm(block)
+        root.addWidget(self.form)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self._accept)
+        buttons.rejected.connect(self.reject)
+        root.addWidget(buttons)
+
+    def _accept(self) -> None:
+        changes = self.form.commit()
+        if changes is None:
             self.adjustSize()
             return
-
-        self.changes = {k: v for k, v in values.items()
-                        if v != self.block.params[k]}
+        self.changes = changes
         self.accept()

@@ -19,6 +19,10 @@ from PySide6.QtWidgets import QApplication, QGraphicsItem, QGraphicsObject, QSty
 
 BLOCK_W, BLOCK_H = 110.0, 60.0
 PORT_R = 5.0
+#: Extra radius that counts as a click on the port but is not
+#: drawn. Wiring is the canvas's most-used gesture and a 5 px
+#: circle is a hard target.
+PORT_HIT_MARGIN = 7.0
 GRID = 10.0
 
 
@@ -67,8 +71,23 @@ class PortItem(QGraphicsObject):
         self.setToolTip(f"{block_id}.{port} ({'input' if is_input else 'output'})")
 
     def boundingRect(self) -> QRectF:
-        r = PORT_R + 3
+        r = PORT_R + PORT_HIT_MARGIN
         return QRectF(-r, -r, 2 * r, 2 * r)
+
+    def shape(self):
+        """
+        The clickable area, which is deliberately larger than the dot.
+
+        A 5-pixel circle is a 10-pixel target, and half of it overlaps the
+        block body. Widening the *hit* area without widening the mark is the
+        difference between "click the port" and "click near the port".
+        """
+        from PySide6.QtGui import QPainterPath
+
+        path = QPainterPath()
+        r = PORT_R + PORT_HIT_MARGIN
+        path.addEllipse(QPointF(0, 0), r, r)
+        return path
 
     def scene_pos(self) -> QPointF:
         return self.mapToScene(QPointF(0, 0))

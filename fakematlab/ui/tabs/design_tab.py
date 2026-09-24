@@ -133,7 +133,7 @@ class DesignTab(QWidget, GuardedPanel):
         # Snapshot
         grp_snap = QGroupBox("Snapshots")
         snap_lay = QVBoxLayout(grp_snap)
-        self._snap_btn = QPushButton("📌 Snapshot current")
+        self._snap_btn = QPushButton("Snapshot current")
         self._snap_btn.clicked.connect(self._take_snapshot)
         snap_lay.addWidget(self._snap_btn)
         left_lay.addWidget(grp_snap)

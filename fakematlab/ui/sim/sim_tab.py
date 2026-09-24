@@ -31,6 +31,7 @@ from ...sim.solver import FIXED_STEP, SimulationError, simulate
 from ..design import NORMAL, TIGHT
 from ..guard import GuardedPanel, guard
 from .canvas import SimCanvas
+from .inspector import BlockInspector
 from .palette import BlockPalette
 from .scope import ScopeWidget
 
@@ -108,17 +109,35 @@ class SimTab(QWidget, GuardedPanel):
         self._palette.setMaximumWidth(280)
         splitter.addWidget(self._palette)
 
-        right = QSplitter(Qt.Vertical)
+        centre = QSplitter(Qt.Vertical)
         self._canvas = SimCanvas()
-        right.addWidget(self._canvas)
+        centre.addWidget(self._canvas)
         self._scope = ScopeWidget()
-        right.addWidget(self._scope)
-        right.setStretchFactor(0, 3)
-        right.setStretchFactor(1, 2)
-        splitter.addWidget(right)
+        centre.addWidget(self._scope)
+        centre.setStretchFactor(0, 3)
+        centre.setStretchFactor(1, 2)
+        splitter.addWidget(centre)
+
+        # The inspector, so parameters can be edited with the diagram still
+        # visible. They used to be a modal dialog on double-click: you could
+        # not see the block you were editing, or compare two of them.
+        self._inspector = BlockInspector()
+        self._inspector.setMinimumWidth(0)
+        self._inspector.setMaximumWidth(340)
+        splitter.addWidget(self._inspector)
         splitter.setStretchFactor(1, 1)
 
         root.addWidget(splitter, stretch=1)
+
+        # A standing hint. The wiring gesture was discoverable only by
+        # succeeding at it, and the status line said how *after* you clicked.
+        self._hint = QLabel(
+            "Drag between two ports to wire them, or click one port and then "
+            "the other. Drag on empty canvas to select. Double-click a block "
+            "for its parameters.")
+        self._hint.setWordWrap(True)
+        self._hint.setStyleSheet("color: palette(mid);")
+        root.addWidget(self._hint)
 
         self._status = QLabel("")
         self._status.setWordWrap(True)
@@ -128,6 +147,8 @@ class SimTab(QWidget, GuardedPanel):
         self._canvas.status.connect(self._status.setText)
         self._canvas.model_changed.connect(self._on_model_changed)
         self._canvas.path_changed.connect(self._on_path_changed)
+        self._canvas.selection_changed.connect(self._on_block_selected)
+        self._inspector.apply_requested.connect(self._apply_params)
 
     def _build_toolbar(self) -> QWidget:
         """
@@ -210,6 +231,19 @@ class SimTab(QWidget, GuardedPanel):
         fit.triggered.connect(lambda: self._canvas.fit_all())
         bar.addSeparator()
 
+        for label, tip, slot in (
+            ("Align ↔", "Align the selected blocks on one row",
+             lambda: self._align("y")),
+            ("Align ↕", "Align the selected blocks in one column",
+             lambda: self._align("x")),
+            ("Space ↔", "Space the selected blocks evenly across",
+             lambda: self._distribute("x")),
+        ):
+            action = bar.addAction(label)
+            action.setToolTip(tip)
+            action.triggered.connect(slot)
+        bar.addSeparator()
+
         # ── subsystem navigation ──
         self._up_action = bar.addAction("↑ Up")
         self._up_action.setToolTip("Leave this subsystem (Esc)")
@@ -250,6 +284,26 @@ class SimTab(QWidget, GuardedPanel):
         row.addWidget(self._progress)
         self._toolbar = bar
         return wrapper
+
+    # ── inspector ───────────────────────────────────────────────
+
+    def _on_block_selected(self, item) -> None:
+        self._inspector.show_block(item.block if item is not None else None)
+
+    def _apply_params(self, block_id: str, changes: dict) -> None:
+        """Route the inspector's edit through the canvas's undo stack."""
+        from . import commands as cmd
+
+        self._canvas.undo_stack.push(
+            cmd.SetParams(self._canvas, block_id, changes))
+
+    # ── arranging ───────────────────────────────────────────────
+
+    def _align(self, axis: str) -> None:
+        self._canvas.align_selection(axis)
+
+    def _distribute(self, axis: str) -> None:
+        self._canvas.distribute_selection(axis)
 
     # ── default model ───────────────────────────────────────────
 

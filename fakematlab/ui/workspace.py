@@ -55,18 +55,17 @@ class Workspace(str, Enum):
         }[self]
 
     @property
-    def glyph(self) -> str:
+    def key_hint(self) -> str:
         """
-        A drawn mark, not an emoji.
+        The shortcut digit, shown above the name on the rail.
 
-        Deliberately from the box-drawing and geometric ranges, which every
-        desktop font ships — the old `🔬` tab labels rendered as empty boxes
-        wherever the emoji font was missing, including in this project's own
-        screenshots.
+        Not a glyph. Any pictogram risks rendering as an empty box on a
+        machine without the font — which is exactly what the old `🔬 System`
+        tab labels did, including in this project's own screenshots — and the
+        rail is the application's primary navigation. A digit that matches
+        the keyboard shortcut teaches something instead.
         """
-        return {Workspace.ANALYSE: "◱",
-                Workspace.MODEL: "⛭",
-                Workspace.CONSOLE: "›_"}[self]
+        return self.shortcut.replace("Ctrl+", "⌃")
 
 
 class NavigationRail(QFrame):
@@ -92,7 +91,7 @@ class NavigationRail(QFrame):
             button.setCheckable(True)
             button.setAutoRaise(True)
             button.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
-            button.setText(f"{workspace.glyph}\n{workspace.value}")
+            button.setText(workspace.value)
             button.setToolTip(
                 f"{workspace.description}  ({workspace.shortcut})")
             button.setAccessibleName(workspace.value)

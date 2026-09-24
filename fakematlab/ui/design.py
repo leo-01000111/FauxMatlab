@@ -60,7 +60,7 @@ class Status(Enum):
     OK = ("#56C271", "●", "stable")
     WARNING = ("#E9C46A", "▲", "undefined")
     ERROR = ("#F4A261", "■", "failed")
-    CRITICAL = ("#F45B69", "✕", "unstable")
+    CRITICAL = ("#F45B69", "×", "unstable")
 
     @property
     def colour(self) -> str:

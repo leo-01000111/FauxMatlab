@@ -239,6 +239,10 @@ class SimCanvas(QGraphicsView):
             self._cancel_wire()
             self.status.emit("Wiring cancelled")
 
+        # Rubber-band only from empty canvas: starting one on top of a block
+        # would make blocks undraggable.
+        self.setDragMode(QGraphicsView.RubberBandDrag if item is None
+                         else QGraphicsView.NoDrag)
         super().mousePressEvent(event)
 
     def _start_wire(self, port: PortItem) -> None:
@@ -320,6 +324,54 @@ class SimCanvas(QGraphicsView):
         if self._rubber_wire is not None:
             self._scene.removeItem(self._rubber_wire)
             self._rubber_wire = None
+
+    # ── arranging ───────────────────────────────────────────────
+
+    def selected_blocks(self) -> list:
+        from .items import BlockItem
+
+        return [i for i in self._scene.selectedItems()
+                if isinstance(i, BlockItem)]
+
+    def align_selection(self, axis: str) -> int:
+        """
+        Line the selected blocks up. ``axis`` is ``"x"`` or ``"y"``.
+
+        Returns how many moved, so a caller can say nothing happened rather
+        than silently doing nothing.
+        """
+        blocks = self.selected_blocks()
+        if len(blocks) < 2:
+            self.status.emit("Select two or more blocks to align them")
+            return 0
+        if axis == "x":
+            target = sum(b.pos().x() for b in blocks) / len(blocks)
+            moves = [(b.block_id, target, b.pos().y()) for b in blocks]
+        else:
+            target = sum(b.pos().y() for b in blocks) / len(blocks)
+            moves = [(b.block_id, b.pos().x(), target) for b in blocks]
+        self.undo_stack.push(cmd.MoveBlocks(self, moves))
+        return len(moves)
+
+    def distribute_selection(self, axis: str) -> int:
+        """Space the selected blocks evenly along ``axis``."""
+        blocks = self.selected_blocks()
+        if len(blocks) < 3:
+            self.status.emit("Select three or more blocks to distribute them")
+            return 0
+        key = (lambda b: b.pos().x()) if axis == "x" else (lambda b: b.pos().y())
+        ordered = sorted(blocks, key=key)
+        first, last = key(ordered[0]), key(ordered[-1])
+        step = (last - first) / (len(ordered) - 1)
+        moves = []
+        for index, block in enumerate(ordered):
+            value = first + index * step
+            if axis == "x":
+                moves.append((block.block_id, value, block.pos().y()))
+            else:
+                moves.append((block.block_id, block.pos().x(), value))
+        self.undo_stack.push(cmd.MoveBlocks(self, moves))
+        return len(moves)
 
     # ── parameters ──────────────────────────────────────────────
 

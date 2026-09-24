@@ -56,12 +56,32 @@ def reset(request, app):
         return
     window = request.getfixturevalue("win")
     window._model_dock.hide()
+    window._lessons.hide()
+    # App docks too: one test leaving the PID Tuner open changes the next
+    # test's minimum window size, which is exactly what this file measures.
+    for dock in window._app_docks.values():
+        dock.hide()
     window.show_workspace(Workspace.ANALYSE)
+    # A known starting view, or one test's four open plots and another's
+    # classic-tab selection change the next test's minimum size. The pane
+    # *kinds* matter too: a pane left showing the Modern tab keeps that
+    # tab's much taller minimum.
+    window._view_tabs.setCurrentIndex(0)
+    window._grid.set_layout_size(1, ("step",))
     window.resize(1400, 850)
     for banner in window.findChildren(ErrorBanner):
         banner.clear()
     _settle(app)
     yield
+
+
+def _tallest(window, limit: int = 6) -> list[tuple[int, str]]:
+    """The widgets demanding the most vertical space — for failure messages."""
+    from PySide6.QtWidgets import QWidget
+
+    seen = [(w.minimumSizeHint().height(), type(w).__name__)
+            for w in window.findChildren(QWidget) if w.isVisible()]
+    return sorted(seen, reverse=True)[:limit]
 
 
 def _settle(app, rounds: int = 20) -> None:
@@ -442,7 +462,7 @@ def test_every_workspace_has_a_shortcut_and_a_description():
     assert shortcuts == {"Ctrl+1", "Ctrl+2", "Ctrl+3"}
     for workspace in Workspace:
         assert workspace.description
-        assert workspace.glyph
+        assert workspace.key_hint
 
 
 # ──────────────────────────────────────────────────────────────
@@ -616,3 +636,113 @@ def test_a_pane_hosting_a_tab_gets_its_own_instance(app, win, grid):
     _settle(app, 5)
     assert grid.panes[0]._content is not win._sys_tab
     assert win._tabs.widget(0) is win._sys_tab
+
+
+# ──────────────────────────────────────────────────────────────
+#  Polish: resolutions, labels, accessibility
+# ──────────────────────────────────────────────────────────────
+
+#: The plan asks for 1280×720 usable and 1920×1080 comfortable; 1366×768 is
+#: the laptop in between and the one the old 2038 px minimum ruled out hardest.
+RESOLUTIONS = ((1280, 720), (1366, 768), (1920, 1080))
+
+
+@pytest.mark.parametrize("size", RESOLUTIONS, ids=lambda s: f"{s[0]}x{s[1]}")
+def test_every_workspace_renders_at_every_supported_resolution(app, win, size):
+    width, height = size
+    win.resize(width, height)
+    for workspace in Workspace:
+        win.show_workspace(workspace)
+        _settle(app, 5)
+        assert (win.width(), win.height()) == (width, height), (
+            f"{workspace.value} would not fit {width}×{height}; "
+            f"tallest demands: {_tallest(win)}")
+        page = win._stack.page(workspace)
+        failed = [b.message for b in page.findChildren(ErrorBanner)
+                  if b.has_error]
+        assert not failed, f"{workspace.value} at {width}×{height}: {failed[0]}"
+
+
+@pytest.mark.parametrize("size", RESOLUTIONS, ids=lambda s: f"{s[0]}x{s[1]}")
+def test_the_pane_grid_survives_every_resolution(app, win, size):
+    win.resize(*size)
+    win.show_workspace(Workspace.ANALYSE)
+    win.set_pane_layout(4)
+    _settle(app, 8)
+    failed = [b.message for b in win._grid.findChildren(ErrorBanner)
+              if b.has_error]
+    assert not failed, failed[0]
+    assert win._grid.count == 4
+
+
+def test_no_control_or_tab_is_labelled_with_an_emoji(app, win):
+    """
+    Navigation must not depend on an emoji font.
+
+    Scoped to the things you *click* — buttons and tab labels — because that
+    is where a missing glyph strands you. Body text may use ✓ or ⚠ as marks;
+    those ship with ordinary text fonts and are paired with words anyway.
+    """
+    from PySide6.QtWidgets import QAbstractButton, QTabWidget
+
+    labels: list[tuple[str, str]] = []
+    for workspace in Workspace:
+        win.show_workspace(workspace)
+        _settle(app, 5)
+        for button in win.findChildren(QAbstractButton):
+            labels.append((type(button).__name__, button.text()))
+        for tabs in win.findChildren(QTabWidget):
+            for index in range(tabs.count()):
+                labels.append(("tab", tabs.tabText(index)))
+
+    offenders = [(kind, text, [c for c in text if _is_emoji(c)])
+                 for kind, text in labels
+                 if any(_is_emoji(c) for c in text)]
+    assert not offenders, offenders[:5]
+
+
+def _is_emoji(ch: str) -> bool:
+    """
+    Characters that need an *emoji* font, and so can render as an empty box.
+
+    Deliberately not all of Dingbats: ✓ and ✗ ship with ordinary text fonts
+    and read as marks rather than pictures. What this excludes is the
+    pictographic planes — `🔬`, `⛭`, `📌` — which is what actually went
+    missing in this project's own screenshots. Status is separately required
+    never to rest on a symbol alone; see the badge test.
+    """
+    code = ord(ch)
+    return (0x1F000 <= code <= 0x1FAFF          # emoticons and pictographs
+            or 0x2B00 <= code <= 0x2BFF         # misc symbols and arrows
+            or 0x2690 <= code <= 0x26FF         # misc symbols: ⚙ ⛭ ⚠ ⛓
+            or code == 0xFE0F)                  # variation selector-16
+
+
+def test_every_workspace_button_announces_itself(app, win):
+    for workspace in Workspace:
+        button = win._stack.rail.button(workspace)
+        assert button.text().strip() == workspace.value
+        assert button.accessibleName() == workspace.value
+        assert workspace.shortcut in button.toolTip()
+
+
+def test_the_modern_sections_say_what_they_are_for(app, win):
+    """
+    27 buttons and 35 labels: a newcomer's problem is not a missing control,
+    it is not knowing which section to start in.
+    """
+    tabs = win._mod_tab._tabs
+    names = [tabs.tabText(i) for i in range(tabs.count())]
+    assert names == ["Model", "Structure", "Design", "Estimation", "Discrete"]
+    for index in range(tabs.count()):
+        assert len(tabs.tabToolTip(index)) > 20, names[index]
+        assert tabs.widget(index).accessibleName()
+
+
+def test_the_simulink_workspace_explains_how_to_wire(app, win):
+    """The gesture was previously discoverable only by succeeding at it."""
+    win.show_workspace(Workspace.MODEL)
+    _settle(app, 5)
+    hint = win._sim_tab._hint.text().lower()
+    assert "drag" in hint and "click" in hint
+    assert win._sim_tab._hint.isVisible()

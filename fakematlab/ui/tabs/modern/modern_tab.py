@@ -85,14 +85,25 @@ class ModernTab(QWidget, GuardedPanel):
         self.feedback_view = FeedbackView(self.ctx)
         self.observer_view = ObserverView(self.ctx)
         self.discrete_view = DiscreteView(self.ctx)
-        for widget, title in (
-            (self.state_view, "State Space"),
-            (self.structure_view, "Structure"),
-            (self.feedback_view, "State Feedback"),
-            (self.observer_view, "Observer / Kalman"),
-            (self.discrete_view, "Discrete"),
+        # The plan's five task groups, and what each one is *for* — the
+        # Modern tab carries 27 buttons and 35 labels, and a newcomer's
+        # problem is not that a control is missing but that nothing says
+        # which section to start in.
+        for widget, title, purpose in (
+            (self.state_view, "Model",
+             "Enter or convert a state-space model, and change its realisation"),
+            (self.structure_view, "Structure",
+             "Controllability, observability, Gramians, balanced reduction"),
+            (self.feedback_view, "Design",
+             "Place poles, or solve an LQR/LQI problem"),
+            (self.observer_view, "Estimation",
+             "Luenberger and reduced-order observers, Kalman, the compensator"),
+            (self.discrete_view, "Discrete",
+             "Sample the model, test with Jury, design deadbeat control"),
         ):
-            self._tabs.addTab(widget, title)
+            index = self._tabs.addTab(widget, title)
+            self._tabs.setTabToolTip(index, purpose)
+            widget.setAccessibleName(f"{title}: {purpose}")
         root.addWidget(self._tabs, stretch=1)
 
         self._status = QLabel("")

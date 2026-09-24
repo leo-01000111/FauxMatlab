@@ -99,6 +99,26 @@ class MoveBlock(_ModelCommand):
         return True
 
 
+class MoveBlocks(_ModelCommand):
+    """
+    Move several blocks as one undo step.
+
+    Align and distribute move every selected block at once; pushing one
+    :class:`MoveBlock` each would make a single alignment take as many
+    presses of Ctrl+Z as there were blocks.
+    """
+
+    def __init__(self, canvas, moves: list[tuple[str, float, float]]) -> None:
+        super().__init__(canvas, f"arrange {len(moves)} blocks")
+        self.moves = list(moves)
+
+    def apply(self) -> None:
+        from .items import snap
+
+        for block_id, x, y in self.moves:
+            self.canvas.model.move(block_id, snap(x), snap(y))
+
+
 class SetParams(_ModelCommand):
     def __init__(self, canvas, block_id: str, params: dict[str, Any]) -> None:
         super().__init__(canvas, f"edit {block_id}")
