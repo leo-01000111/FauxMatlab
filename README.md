@@ -21,33 +21,55 @@ Requires Python 3.12+. The import package is `fakematlab`; the repository is `Fa
 
 ## What it does
 
-**Eight tabs, one live model.** Change the plant anywhere and every tab, plus the
-console, follows.
+**Three workspaces**, on a rail down the left — `Ctrl+1/2/3`. Switching never tears
+anything down: a running console session, a half-built diagram and a configured analysis
+all survive being navigated away from.
 
-| Tab | What's in it |
+| Workspace | What's in it |
 | --- | --- |
-| 🔬 **System** | Plant and controller entry, block diagram, pole/zero map, exact closed-loop transfer functions |
-| ⏱ **Time** | Step, impulse, ramp and arbitrary inputs; step metrics computed against the *exact* final value |
-| 〜 **Frequency** | Bode, Nyquist, Nichols; gain/phase/modulus margins; M-circles; design gabarits |
-| 🔒 **Stability** | Root locus with continuous branches, Routh–Hurwitz, symbolic stability ranges in K |
-| 📊 **Performance** | Error constants, system type, sensitivity/complementary sensitivity, the waterbed integral |
-| 🎛 **Design** | Lead, lag, lead-lag and PID synthesis; Ziegler–Nichols; before/after snapshots |
-| ⛓ **Simulink** | A real block-diagram editor and solver — see below |
-| ▦ **Modern** | State space, controllability/observability, Gramians, LQR/LQI, observers, Kalman, c2d/d2c, deadbeat |
+| **Analyse** | The current control system — responses, margins, stability, design, lessons |
+| **Model** | The block-diagram editor, its palette, inspector, scope and solver |
+| **Console** | Command window, workspace variables, figures and scripts |
 
-**A command window.** About sixty MATLAB-shaped commands — `tf`, `feedback`, `step`,
-`bode`, `margin`, `stepinfo`, `rlocus`, `lqr`, `place`, `c2d` — with a workspace browser,
-history, tab completion and a script editor. `s` is the Laplace variable, so
-`G = 1/(s**2 + 2*s + 1)` works. The console shares live references with the GUI: setting a
-block at the prompt changes what every tab analyses.
+**A context bar** across the top of Analyse says what is loaded and whether it works:
+
+```
+G(s)  = 4 / (s² + 1.2s + 4)
+K₂(s) = 2 · (s + 0.5) / s     ● stable    PM 60.0°   GM 11.9 dB   [Edit model ▾]
+```
+
+Factored transfer functions, an internal-stability verdict, and the headline margins.
+A quantity that is undefined shows an em dash with a tooltip explaining why, not `nan` —
+a phase margin that does not exist is not a failed calculation. The architecture diagram
+and block editor are a panel behind `Ctrl+\`, not a permanent column.
+
+**An analysis pane grid.** One, two or four panes, fourteen contents each, all reading the
+same live architecture — so one edit moves every visible view at once. A fresh 2×2 opens on
+step response, Bode, root locus and metrics, which is what tuning a controller actually
+needs side by side. The seven classic analysis tabs are still there beside the grid, for the
+workflows that are whole panels rather than one plot.
+
+| Pane contents | |
+| --- | --- |
+| Step · Impulse · Ramp | Bode · Nyquist · Nichols |
+| Pole-zero map · Root locus | Step metrics |
+| System overview · Stability & Routh | Performance · Design · Modern control |
+
+**A command window.** Fifty-nine MATLAB-shaped commands in ten groups — `tf`, `feedback`,
+`step`, `bode`, `margin`, `stepinfo`, `rlocus`, `lqr`, `place`, `c2d`, `pidtune` — with a
+workspace browser, history, tab completion and a script editor. `s` is the Laplace
+variable, so `G = 1/(s**2 + 2*s + 1)` works. The console shares live references with the
+GUI: setting a block at the prompt changes what every pane analyses.
 
 **A working Simulink.** Fifty block types, hierarchical subsystems, a drag-and-drop canvas
-with undo, RK4/RK45/Euler solvers, scopes, and `linearize()` to pull a state-space model
-out of a nonlinear diagram.
+with undo, RK4/RK45/Euler solvers, scopes, a properties inspector that leaves the diagram
+visible, and `linearize()` to pull a state-space model out of a nonlinear diagram. Wire two
+blocks by dragging between ports, or by clicking one and then the other.
 
-**Three apps**, from the Apps menu or the prompt:
+**Three design apps**, docked beside the analysis they edit, from the Apps menu or the
+prompt:
 
-- **LTI Viewer** (`ltiview`) — any set of systems, seven response types, right-click to add
+- **LTI Viewer** (`ltiview`) — any set of systems, eight response types, right-click to add
   characteristics. The menu offers only the ones that mean something for the response on
   screen: a rise time has nowhere to go on a Nyquist plot.
 - **Control System Designer** (`sisotool`) — drag a closed-loop pole along the root locus
@@ -56,8 +78,12 @@ out of a nonlinear diagram.
 - **PID Tuner** (`pidtuner`) — response time and transient behaviour on two sliders, with
   a before/after overlay.
 
-A **snapshot bar** sits above the tabs: freeze the whole architecture under a name, restore
-it from any tab, and Compare throws every stored design into the LTI Viewer at once.
+A **snapshot bar** above the analysis area freezes the whole architecture under a name,
+restores it from anywhere, and Compare throws every stored design into the LTI Viewer at
+once. Window geometry, workspace, dock layout and pane arrangement are remembered between
+runs; View ▸ Reset layout puts them back.
+
+It fits a **1280 × 720** screen, and is tested at 1366 × 768 and 1920 × 1080 too.
 
 ---
 
@@ -89,7 +115,7 @@ loops, which is exactly what real hardware does.
 ### 3. Figures are described, not drawn
 
 The console API builds a `FigureSpec` and hands it to an installed *sink*. The GUI installs
-one that opens a docked plot; the default just records. That is what makes `step(G)` both
+one that opens a figure tab in the Console workspace; the default just records. That is what makes `step(G)` both
 headlessly testable and drawable, from one implementation — and why the API never imports Qt.
 
 The apps follow the same split, which is what lets the PID tuner make a strong claim and
@@ -109,7 +135,7 @@ rather than merely inaccurate.
 pytest
 ```
 
-587 tests, plus `ruff check .`. They are mostly *golden* tests: analytic values computed by
+684 tests, plus `ruff check .`. They are mostly *golden* tests: analytic values computed by
 hand or by an independent route, not snapshots of whatever the code printed first. The
 numeric signal solver and the symbolic one check each other; `python-control` acts as a
 third opinion.
@@ -128,8 +154,14 @@ Several are there to pin down a bug that was genuinely hard to see:
 - A pyqtgraph plot **title** long enough to outgrow its panel lays the whole plot out wider
   than the scene it sits in, pushing every curve off the right-hand edge. The panel looks
   blank, every value in it is correct, and nothing reports an error.
+- Qt flattens a `str`-mixin enum through `QVariant`, so `QComboBox.currentData()` hands back
+  a plain `str` that compares and hashes equal to the member — every dict lookup keeps
+  working and the only symptom is `.value` raising somewhere else entirely.
+- A **word-wrapped label is taller the narrower it gets**, so a panel that fits at 1400 px
+  can demand more window height at 1280 px. Invisible to any check that measures at one
+  width.
 
-Run `python debug_runner.py` for a headless end-to-end sweep (175 checks) that builds every
+Run `python debug_runner.py` for a headless end-to-end sweep (176 checks) that builds every
 tab and exercises every core path without a display.
 
 ---
@@ -159,10 +191,19 @@ means the numbers agree with the theory, not merely that nothing raised.
 
 ## Status
 
-All eight phases of [`PLAN.md`](PLAN.md) are done: correctness, the classical half, modern
-control, the simulator, the command window, the apps, the course lessons and packaging.
+Two plans, both complete.
 
-`PLAN.md` records what was deliberately **not** built, and why. The one worth repeating:
+[`PLAN.md`](PLAN.md) — the engine, in eight phases: correctness, the classical half, modern
+control, the simulator, the command window, the apps, the course lessons, packaging.
+
+[`UI-PLAN.md`](UI-PLAN.md) — the interface, in eight more. The application had grown to
+28 modules and 8 tabs while keeping the layout of a 6-tab viewer, and its minimum window
+size had reached **2038 × 643** — wider than a 1920 monitor, because the Simulink toolbar
+was one unbreakable row and a tab bar is as wide as its widest tab. That plan's status
+table records what is done, what is partial, and the two items left: retrofitting the
+classic analysis tabs onto the shared design system, and a bundled icon set.
+
+Both files record what was deliberately **not** built, and why. The one worth repeating:
 there is no Python Function block, because a block that executes arbitrary text from a
 shared model file is a code-execution surface, not a feature.
 

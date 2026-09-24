@@ -266,3 +266,71 @@ def test_the_course_material_is_not_packaged_or_committed():
     """
     gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
     assert "COURSE MATERIAL/" in gitignore
+
+
+# ──────────────────────────────────────────────────────────────
+#  The README
+# ──────────────────────────────────────────────────────────────
+
+def _readme() -> str:
+    return (ROOT / "README.md").read_text(encoding="utf-8")
+
+
+def test_the_readme_quotes_the_real_test_count():
+    """
+    A README that overstates the suite is worse than one that says nothing.
+    Allowed to lag a little, not to be wrong by a phase.
+    """
+    import re
+
+    claimed = re.search(r"(\d+) tests, plus `ruff check", _readme())
+    assert claimed, "the README no longer states a test count"
+    actual = _collect_count()
+    assert abs(int(claimed.group(1)) - actual) <= 10, (
+        f"README says {claimed.group(1)} tests, the suite collects {actual}")
+
+
+def _collect_count() -> int:
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", "--collect-only"],
+        cwd=ROOT, capture_output=True, text=True, timeout=600)
+    import re
+
+    match = re.search(r"(\d+) tests collected", result.stdout)
+    assert match, result.stdout[-500:]
+    return int(match.group(1))
+
+
+def test_the_readme_does_not_describe_the_old_layout():
+    """
+    The UI rework replaced eight tabs with three workspaces. A README still
+    showing the old emoji tab table would contradict the interface *and*
+    `test_no_control_or_tab_is_labelled_with_an_emoji`.
+    """
+    text = _readme()
+    for stale in ("Eight tabs", "eight tabs", "🔬", "⛓", "▦"):
+        assert stale not in text, f"README still mentions {stale!r}"
+    for current in ("Three workspaces", "context bar", "pane grid"):
+        assert current in text.lower() or current in text, current
+
+
+def test_the_readme_counts_match_the_code():
+    """Numbers the README states, checked against what they count."""
+    from fakematlab.console.api import _GROUPS
+    from fakematlab.sim.block import block_types
+    from fakematlab.ui.panes import PANE_KINDS
+
+    text = _readme()
+    assert f"{len(PANE_KINDS)} contents" in text.replace("fourteen",
+                                                         str(len(PANE_KINDS)))
+    assert len(block_types()) == 50 and "Fifty block types" in text
+    assert sum(len(v) for v in _GROUPS.values()) == 59
+    assert "Fifty-nine MATLAB-shaped commands in ten groups" in text
+    assert len(_GROUPS) == 10
+
+
+def test_both_plans_are_referenced():
+    text = _readme()
+    assert "PLAN.md" in text and "UI-PLAN.md" in text
+    assert (ROOT / "PLAN.md").exists()
+    assert (ROOT / "UI-PLAN.md").exists()
