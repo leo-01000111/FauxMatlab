@@ -497,7 +497,16 @@ class MainWindow(QMainWindow):
             dock.setAllowedAreas(Qt.RightDockWidgetArea |
                                  Qt.LeftDockWidgetArea |
                                  Qt.BottomDockWidgetArea)
-            dock.setWidget(widget)
+            # Scrolled. These apps were designed as ~1100 px windows, and a
+            # dock adds its content's minimum to the window's — docking two
+            # of them took the minimum width from 920 to 1634, undoing the
+            # whole point of UI-1. The dock can now be any width and the app
+            # scrolls inside it.
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QScrollArea.NoFrame)
+            scroll.setWidget(widget)
+            dock.setWidget(scroll)
             self.addDockWidget(area, dock)
             # Tab them together rather than stacking three narrow columns.
             siblings = [d for k, d in self._app_docks.items() if k != key]
@@ -505,7 +514,16 @@ class MainWindow(QMainWindow):
                 self.tabifyDockWidget(siblings[-1], dock)
             self._app_docks[key] = dock
         else:
-            dock.setWidget(widget)
+            # Only if it actually changed. `QScrollArea.setWidget` takes
+            # ownership and deletes whatever was there, so handing it the
+            # widget it already holds churns — and briefly leaves the app
+            # parentless, which is to say a floating window.
+            holder = dock.widget()
+            if isinstance(holder, QScrollArea):
+                if holder.widget() is not widget:
+                    holder.setWidget(widget)
+            elif holder is not widget:
+                dock.setWidget(widget)
 
         dock.show()
         dock.raise_()

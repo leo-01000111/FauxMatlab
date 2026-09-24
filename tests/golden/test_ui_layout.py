@@ -17,6 +17,7 @@ import control as ctl
 from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import QApplication
 
+from fakematlab.console.apps import AppRequest
 from fakematlab.core.architecture import CourseArchitecture
 from fakematlab.ui.design import (
     NORMAL,
@@ -746,3 +747,103 @@ def test_the_simulink_workspace_explains_how_to_wire(app, win):
     hint = win._sim_tab._hint.text().lower()
     assert "drag" in hint and "click" in hint
     assert win._sim_tab._hint.isVisible()
+
+
+def test_docking_every_app_does_not_break_the_size_budget(app, win):
+    """
+    A dock adds its content's minimum to the window's. These apps were built
+    as ~1100 px windows, so docking two of them took the minimum width from
+    920 to 1634 — undoing UI-1 by way of UI-5. They scroll inside their docks.
+    """
+    win.show_workspace(Workspace.ANALYSE)
+    win._open_lti_viewer()
+    win._open_designer()
+    win._open_pid_tuner()
+    _settle(app, 15)
+
+    assert win.minimumSizeHint().width() <= TARGET_W, (
+        f"with the apps docked the window needs "
+        f"{win.minimumSizeHint().width()} px")
+    win.resize(TARGET_W, TARGET_H)
+    _settle(app, 10)
+    assert (win.width(), win.height()) == (TARGET_W, TARGET_H)
+
+
+def test_the_apps_open_as_docks_not_windows(app, win):
+    """
+    Three parentless top-level windows became three tabbed docks. With the
+    main window, the lesson dock and the model dock that was six independent
+    surfaces, none of which remembered a position.
+    """
+    from PySide6.QtWidgets import QDockWidget
+
+    win._open_lti_viewer()
+    win._open_designer()
+    win._open_pid_tuner()
+    _settle(app, 10)
+
+    assert set(win._app_docks) == {"ltiview", "sisotool", "pidtuner"}
+    assert all(isinstance(d, QDockWidget) for d in win._app_docks.values())
+
+    # The apps the user opened, specifically. Scanning every top-level widget
+    # instead would also catch the panes' own compact LTIViewers, which are
+    # created unparented and then added to a layout — those are pane content,
+    # not windows anybody sees.
+    floating = [key for key, widget in win._apps.items() if widget.isWindow()]
+    assert not floating, f"{floating} opened as separate windows"
+    for key, widget in win._apps.items():
+        assert widget.window() is win, f"{key} is not inside the main window"
+
+
+def test_opening_an_app_shows_the_workspace_its_edits_land_in(app, win):
+    win.show_workspace(Workspace.CONSOLE)
+    _settle(app, 5)
+    win.open_app(AppRequest("sisotool", {}))
+    _settle(app, 10)
+    assert win._stack.current is Workspace.ANALYSE
+
+
+def test_the_block_inspector_edits_with_the_diagram_visible(app, win):
+    """
+    UI-6's acceptance. Parameters were a modal dialog on double-click, so you
+    could not see the block you were editing.
+    """
+    win.show_workspace(Workspace.MODEL)
+    _settle(app, 10)
+    canvas = win._sim_tab._canvas
+    inspector = win._sim_tab._inspector
+    assert inspector.block_id is None
+
+    block_id = next(iter(canvas._blocks))
+    canvas._blocks[block_id].setSelected(True)
+    _settle(app, 10)
+    assert inspector.block_id == block_id
+    assert canvas.isVisible(), "the diagram must stay visible"
+
+
+def test_an_inspector_edit_is_undoable_like_any_other(app, win):
+    win.show_workspace(Workspace.MODEL)
+    _settle(app, 10)
+    canvas = win._sim_tab._canvas
+    depth = canvas.undo_stack.index()
+
+    win._sim_tab._apply_params("G", {"num": "2"})
+    _settle(app, 10)
+    assert canvas.undo_stack.index() == depth + 1
+    assert canvas.model.block("G").params["num"] == "2"
+
+    canvas.undo_stack.undo()
+    _settle(app, 5)
+    assert canvas.model.block("G").params["num"] != "2"
+
+
+def test_ports_are_easier_to_hit_than_they_are_to_see(app):
+    """
+    A 5 px dot is a 10 px target and half of it overlaps the block body.
+    The hit area is widened without widening the mark.
+    """
+    from fakematlab.ui.sim.items import PORT_HIT_MARGIN, PORT_R
+
+    assert PORT_HIT_MARGIN > 0
+    assert PORT_R + PORT_HIT_MARGIN >= 2 * PORT_R, \
+        "the clickable radius should be at least double the drawn one"
