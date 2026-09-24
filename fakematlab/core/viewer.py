@@ -43,6 +43,7 @@ class ResponseKind(str, Enum):
     NYQUIST = "Nyquist"
     NICHOLS = "Nichols"
     PZMAP = "Pole-zero map"
+    RLOCUS = "Root locus"
 
 
 class Characteristic(str, Enum):
@@ -70,6 +71,7 @@ CHARACTERISTICS: dict[ResponseKind, tuple[Characteristic, ...]] = {
     ResponseKind.NYQUIST: (Characteristic.MARGINS,),
     ResponseKind.NICHOLS: (Characteristic.MARGINS,),
     ResponseKind.PZMAP: (),
+    ResponseKind.RLOCUS: (),
 }
 
 #: Response kinds drawn against a logarithmic frequency axis.
@@ -146,6 +148,7 @@ def compute(collection: SystemCollection, kind: ResponseKind,
         ResponseKind.NYQUIST: _nyquist,
         ResponseKind.NICHOLS: _nichols,
         ResponseKind.PZMAP: _pzmap,
+        ResponseKind.RLOCUS: _rlocus,
     }[kind]
     return builder(collection, kind, wanted, t_final)
 
@@ -170,7 +173,12 @@ def _time(collection: SystemCollection, kind: ResponseKind,
         ResponseKind.RAMP: ramp_response,
     }[kind]
 
+    skipped: list[str] = []
     for entry in collection.visible:
+        reason = _no_time_response(entry.tf)
+        if reason:
+            skipped.append(f"{entry.name}: {reason}")
+            continue
         resp = compute_response(entry.tf, t=t, label=entry.name)
         y = np.atleast_2d(resp.y)[0]
         data.curves.append(Curve(entry.name, resp.t, y, entry.colour))
@@ -192,7 +200,33 @@ def _time(collection: SystemCollection, kind: ResponseKind,
         t_ref = data.curves[0].x
         data.curves.append(Curve("reference r(t) = t", t_ref, t_ref,
                                  colour=-1, style="dashed"))
+    if skipped:
+        data.note = "; ".join(skipped)
     return data
+
+
+def _no_time_response(tf) -> str:
+    """
+    Why this system has no time response, or ``""`` if it has one.
+
+    A **non-proper** transfer function — more zeros than poles — has no
+    state-space realisation and no step response: it would have to
+    differentiate its input. That is a real property of the system, not a
+    failure to compute, and it is easy to reach by accident. Closing the
+    unity-feedback loop around the course's non-minimum-phase plant
+    ``(1−s)/(1+s)`` gives ``T = (1−s)/2``, which is exactly this case.
+    """
+    try:
+        num = np.atleast_1d(tf.num[0][0])
+        den = np.atleast_1d(tf.den[0][0])
+    except (AttributeError, IndexError, TypeError):
+        return ""
+    if len(num) > len(den):
+        excess = len(num) - len(den)
+        return (f"non-proper (numerator exceeds denominator by {excess}), "
+                f"so it has no time response — it would have to "
+                f"differentiate its input")
+    return ""
 
 
 def _common_tspan(collection: SystemCollection,
@@ -206,7 +240,8 @@ def _common_tspan(collection: SystemCollection,
     """
     if t_final and t_final > 0:
         return np.linspace(0.0, float(t_final), 2000)
-    spans = [float(_auto_tspan(entry.tf)[-1]) for entry in collection.visible]
+    spans = [float(_auto_tspan(entry.tf)[-1]) for entry in collection.visible
+             if not _no_time_response(entry.tf)]
     if not spans:
         return None
     end = min(max(spans), 50.0 * min(spans))
@@ -367,4 +402,44 @@ def _pzmap(collection: SystemCollection, kind: ResponseKind,
         if len(zeros):
             data.curves.append(Curve(f"{entry.name} zeros", zeros.real,
                                      zeros.imag, entry.colour, style="zeros"))
+    return data
+
+
+def _rlocus(collection: SystemCollection, kind: ResponseKind,
+            wanted: set[Characteristic], _t) -> ViewerData:
+    """
+    Each system's root locus, treating it as the open loop ``L(s)``.
+
+    Branches come from :func:`fakematlab.core.stability.root_locus`, which
+    tracks them by continuity rather than by sorting — ``np.sort_complex`` at
+    each gain re-orders the roots and produces branches that teleport between
+    physical poles.
+    """
+    from .stability import root_locus
+
+    data = ViewerData(kind=kind, xlabel="Re", ylabel="Im")
+    for entry in collection.visible:
+        locus = root_locus(entry.tf)
+        for branch in range(locus.roots.shape[1]):
+            roots = locus.roots[:, branch]
+            ok = np.isfinite(roots)
+            data.curves.append(Curve(
+                entry.name if branch == 0 else "",
+                roots[ok].real, roots[ok].imag, entry.colour))
+
+        poles = np.atleast_1d(ctl.poles(entry.tf))
+        zeros = np.atleast_1d(ctl.zeros(entry.tf))
+        if len(poles):
+            data.curves.append(Curve(f"{entry.name} open-loop poles",
+                                     poles.real, poles.imag, entry.colour,
+                                     style="poles"))
+        if len(zeros):
+            data.curves.append(Curve(f"{entry.name} open-loop zeros",
+                                     zeros.real, zeros.imag, entry.colour,
+                                     style="zeros"))
+
+        if np.isfinite(locus.K_marginal):
+            data.note = (f"crosses the imaginary axis at "
+                         f"K = {locus.K_marginal:.4g}, "
+                         f"ω = {locus.omega_marginal:.4g} rad/s")
     return data

@@ -1,5 +1,10 @@
 """
-The docks: command window + workspace + script editor, and a figure area.
+The command window, the workspace browser, the script editor, the figures.
+
+These are plain widgets, not docks. They used to be two docks
+hidden by default, which meant the console — a first-class way to drive this
+application — was a panel you had to know existed. They are now the contents
+of the **Console workspace**, reachable with Ctrl+3.
 """
 
 from __future__ import annotations
@@ -9,7 +14,6 @@ from pathlib import Path
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
-    QDockWidget,
     QFileDialog,
     QHBoxLayout,
     QLabel,
@@ -23,6 +27,7 @@ from PySide6.QtWidgets import (
 
 from ...console.figures import FigureSpec, set_figure_sink
 from ...console.interpreter import Interpreter
+from ..design import EmptyState
 from .console_widget import ConsoleWidget
 from .figure_view import FigureView
 from .workspace_widget import WorkspaceWidget
@@ -32,20 +37,27 @@ from .workspace_widget import WorkspaceWidget
 MAX_FIGURES = 12
 
 
-class FigureDock(QDockWidget):
+class FigureArea(QWidget):
     """Where ``step(G)`` and ``bode(L)`` draw."""
 
+    #: A figure arrived — the workspace uses it to reveal itself.
+    figure_added = Signal()
+
     def __init__(self, parent=None) -> None:
-        super().__init__("Figures", parent)
-        self.setObjectName("FigureDock")
-        self.setAllowedAreas(Qt.RightDockWidgetArea | Qt.LeftDockWidgetArea
-                             | Qt.BottomDockWidgetArea)
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
         self._tabs = QTabWidget()
         self._tabs.setTabsClosable(True)
         self._tabs.setDocumentMode(True)
         self._tabs.tabCloseRequested.connect(self._close_tab)
-        self.setWidget(self._tabs)
+        layout.addWidget(self._tabs)
         self._count = 0
+        self._placeholder = EmptyState(
+            "No figures yet",
+            "Plot commands draw here — try step(G) or bode(L) at the prompt.")
+        layout.addWidget(self._placeholder)
+        self._sync_placeholder()
 
     def show_figure(self, spec: FigureSpec) -> FigureView:
         """Render a figure spec as a new tab, and bring it to the front."""
@@ -56,8 +68,8 @@ class FigureDock(QDockWidget):
         self._tabs.setCurrentIndex(index)
         while self._tabs.count() > MAX_FIGURES:
             self._close_tab(0)
-        if not self.isVisible():
-            self.show()
+        self._sync_placeholder()
+        self.figure_added.emit()
         return view
 
     def _close_tab(self, index: int) -> None:
@@ -65,10 +77,17 @@ class FigureDock(QDockWidget):
         self._tabs.removeTab(index)
         if widget is not None:
             widget.deleteLater()
+        self._sync_placeholder()
 
     def close_all(self) -> None:
         while self._tabs.count():
             self._close_tab(0)
+
+    def _sync_placeholder(self) -> None:
+        """An empty tab strip is indistinguishable from a broken panel."""
+        empty = self._tabs.count() == 0
+        self._tabs.setVisible(not empty)
+        self._placeholder.setVisible(empty)
 
     @property
     def figure_count(self) -> int:
@@ -147,7 +166,7 @@ class ScriptEditor(QWidget):
         return self._editor.toPlainText()
 
 
-class ConsoleDock(QDockWidget):
+class ConsolePanel(QWidget):
     """Command window on the left, workspace on the right, script behind."""
 
     #: A system in the workspace was double-clicked.
@@ -155,17 +174,14 @@ class ConsoleDock(QDockWidget):
     #: A Simulink model in the workspace was double-clicked.
     open_model = Signal(str, object)
 
-    def __init__(self, figures: FigureDock, extra: dict | None = None,
+    def __init__(self, figures: FigureArea, extra: dict | None = None,
                  parent=None) -> None:
-        super().__init__("Command Window", parent)
-        self.setObjectName("ConsoleDock")
-        self.setAllowedAreas(Qt.BottomDockWidgetArea | Qt.TopDockWidgetArea)
+        super().__init__(parent)
 
         self.interpreter = Interpreter(extra)
         self.figures = figures
 
-        body = QWidget()
-        layout = QVBoxLayout(body)
+        layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
         self._tabs = QTabWidget()
@@ -185,7 +201,6 @@ class ConsoleDock(QDockWidget):
         self._tabs.addTab(self.editor, "Script")
 
         layout.addWidget(self._tabs)
-        self.setWidget(body)
 
         self.console.executed.connect(self.workspace.refresh)
         self.workspace.open_system.connect(self.open_system)
@@ -214,7 +229,5 @@ class ConsoleDock(QDockWidget):
         return result
 
     def focus(self) -> None:
-        self.show()
-        self.raise_()
         self._tabs.setCurrentIndex(0)
         self.console.focus_input()

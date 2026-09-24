@@ -29,6 +29,7 @@ from fakematlab.ui.design import (
 )
 from fakematlab.ui.guard import ErrorBanner
 from fakematlab.ui.mainwindow import MainWindow
+from fakematlab.ui.workspace import Workspace
 
 #: The plan's target: usable at 1280×720, comfortable at 1920×1080.
 TARGET_W, TARGET_H = 1280, 720
@@ -55,6 +56,7 @@ def reset(request, app):
         return
     window = request.getfixturevalue("win")
     window._model_dock.hide()
+    window.show_workspace(Workspace.ANALYSE)
     window.resize(1400, 850)
     for banner in window.findChildren(ErrorBanner):
         banner.clear()
@@ -94,15 +96,27 @@ def test_the_window_actually_resizes_to_the_target(app, win):
     assert win.height() == TARGET_H
 
 
-@pytest.mark.parametrize("index", range(8))
-def test_every_tab_renders_at_the_target_size(app, win, index):
+@pytest.mark.parametrize("index", range(len(MainWindow._TABS)))
+def test_every_analysis_tab_renders_at_the_target_size(app, win, index):
     win.resize(TARGET_W, TARGET_H)
+    win.show_workspace(Workspace.ANALYSE)
     win._tabs.setCurrentIndex(index)
     _settle(app, 5)
     tab = win._tabs.widget(index)
     failed = [b.message for b in tab.findChildren(ErrorBanner) if b.has_error]
     assert not failed, f"{win._tabs.tabText(index)}: {failed[0]}"
     assert tab.minimumSizeHint().width() <= TARGET_W
+
+
+@pytest.mark.parametrize("workspace", list(Workspace))
+def test_every_workspace_renders_at_the_target_size(app, win, workspace):
+    win.resize(TARGET_W, TARGET_H)
+    win.show_workspace(workspace)
+    _settle(app, 5)
+    page = win._stack.page(workspace)
+    failed = [b.message for b in page.findChildren(ErrorBanner) if b.has_error]
+    assert not failed, f"{workspace.value}: {failed[0]}"
+    assert page.minimumSizeHint().width() <= TARGET_W
 
 
 def test_no_single_panel_dictates_the_window_width(win):
@@ -126,8 +140,11 @@ def test_the_analysis_area_gets_the_window(app, win):
     window — on every tab, including the two that analyse a different model.
     """
     win.resize(TARGET_W, TARGET_H)
+    win.show_workspace(Workspace.ANALYSE)
     _settle(app)
-    share = win._tabs.width() / win.width()
+    # `_view_tabs` is the analysis area: the pane grid and the classic tabs.
+    # The navigation rail is the only other thing competing for the width.
+    share = win._view_tabs.width() / win.width()
     assert share >= 0.85, f"analysis area is only {share:.0%} of the window"
 
 
@@ -327,3 +344,275 @@ def test_a_metric_shows_a_dash_for_an_undefined_value(app):
     assert metric._value.text() == "—"
     metric.set_value(60.0, "{:.1f}")
     assert metric._value.text() == "60.0 °"
+
+
+# ──────────────────────────────────────────────────────────────
+#  Workspaces
+# ──────────────────────────────────────────────────────────────
+
+def test_the_three_workspaces_exist_and_are_reachable(app, win):
+    for workspace in Workspace:
+        win.show_workspace(workspace)
+        _settle(app, 3)
+        assert win._stack.current is workspace
+        assert win._stack.page(workspace) is not None
+
+
+def test_switching_workspaces_preserves_state(app, win):
+    """
+    The plan's UI-3 acceptance. A stacked page keeps its widgets alive, so a
+    console session, a diagram and a chosen analysis all survive navigation.
+    """
+    win.show_workspace(Workspace.CONSOLE)
+    win._console.execute("marker = 1234")
+    _settle(app, 5)
+
+    win.show_workspace(Workspace.MODEL)
+    win._sim_tab._canvas.add_block("Gain")
+    blocks_before = len(win._sim_tab._canvas.model.blocks)
+    _settle(app, 5)
+
+    win.show_workspace(Workspace.ANALYSE)
+    win._tabs.setCurrentIndex(2)
+    _settle(app, 5)
+
+    # ...and back again: nothing was rebuilt.
+    win.show_workspace(Workspace.CONSOLE)
+    _settle(app, 3)
+    assert win._console.interpreter.namespace.get("marker") == 1234
+
+    win.show_workspace(Workspace.MODEL)
+    _settle(app, 3)
+    assert len(win._sim_tab._canvas.model.blocks) == blocks_before
+
+    win.show_workspace(Workspace.ANALYSE)
+    _settle(app, 3)
+    assert win._tabs.currentIndex() == 2
+
+
+def test_the_rail_and_the_view_menu_agree_with_the_stack(app, win):
+    for workspace in Workspace:
+        win.show_workspace(workspace)
+        _settle(app, 3)
+        assert win._stack.rail.current is workspace
+        checked = [w for w, a in win._workspace_actions.items()
+                   if a.isChecked()]
+        assert checked == [workspace]
+
+
+def test_clicking_the_rail_changes_workspace(app, win):
+    win.show_workspace(Workspace.ANALYSE)
+    win._stack.rail.button(Workspace.MODEL).click()
+    _settle(app, 3)
+    assert win._stack.current is Workspace.MODEL
+
+
+def test_simulink_is_a_workspace_not_a_tab(win):
+    """
+    It has its own model, undo stack and file format. Listing it beside six
+    views of a different system said they were alternatives to one another.
+    """
+    assert "Simulink" not in [win._tabs.tabText(i)
+                              for i in range(win._tabs.count())]
+    assert win._stack.page(Workspace.MODEL) is win._sim_tab
+
+
+def test_a_figure_pulls_the_console_workspace_into_view(app, win):
+    """Otherwise `step(G)` draws somewhere the user cannot see."""
+    win.show_workspace(Workspace.ANALYSE)
+    win._console.execute("step(tf([1], [1, 1]))")
+    _settle(app, 10)
+    assert win._stack.current is Workspace.CONSOLE
+    assert win._figures.figure_count >= 1
+
+
+def test_the_workspace_is_remembered(app, win, scratch_settings):
+    win.show_workspace(Workspace.MODEL)
+    win.save_layout()
+    win.show_workspace(Workspace.ANALYSE)
+    _settle(app, 3)
+
+    assert win.restore_layout()
+    _settle(app, 3)
+    assert win._stack.current is Workspace.MODEL
+
+
+def test_every_workspace_has_a_shortcut_and_a_description():
+    shortcuts = {w.shortcut for w in Workspace}
+    assert shortcuts == {"Ctrl+1", "Ctrl+2", "Ctrl+3"}
+    for workspace in Workspace:
+        assert workspace.description
+        assert workspace.glyph
+
+
+# ──────────────────────────────────────────────────────────────
+#  The analysis pane grid
+# ──────────────────────────────────────────────────────────────
+
+from fakematlab.ui.panes import (  # noqa: E402
+    DEFAULT_LAYOUT,
+    LAYOUTS,
+    PANE_KINDS,
+    Source,
+)
+
+
+@pytest.fixture
+def grid(app, win):
+    win.show_workspace(Workspace.ANALYSE)
+    win._view_tabs.setCurrentIndex(0)
+    _settle(app, 3)
+    return win._grid
+
+
+@pytest.mark.parametrize("count", sorted(LAYOUTS))
+def test_one_two_and_four_pane_layouts(app, win, grid, count):
+    win.set_pane_layout(count)
+    _settle(app, 5)
+    assert grid.count == count
+    failed = [b.message for b in grid.findChildren(ErrorBanner) if b.has_error]
+    assert not failed, failed[0]
+
+
+def test_a_fresh_two_by_two_opens_on_the_tuning_four(app, win, grid):
+    """
+    The plan's UI-4 acceptance names them: step response, Bode, root locus
+    and metrics — the four views a tuning loop actually needs at once.
+    """
+    win.set_pane_layout(4)
+    _settle(app, 5)
+    assert grid.keys == DEFAULT_LAYOUT
+    assert grid.keys == ("step", "bode", "rlocus", "metrics")
+
+
+def test_one_architecture_edit_updates_every_pane(app, win, grid):
+    """
+    The point of the grid. Each pane must read the *live* architecture, not a
+    copy taken when it was created.
+    """
+    win.set_pane_layout(4)
+    _settle(app, 5)
+
+    before = _pane_fingerprints(grid)
+    win._arch.set_block("K2", ctl.tf([12], [1]))
+    win._update_all_tabs()
+    _settle(app, 10)
+    after = _pane_fingerprints(grid)
+
+    assert before != after, "no pane noticed the controller change"
+    changed = sum(1 for a, b in zip(before, after) if a != b)
+    assert changed >= 3, f"only {changed} of 4 panes updated"
+
+    failed = [b.message for b in grid.findChildren(ErrorBanner) if b.has_error]
+    assert not failed, failed[0]
+
+
+def _pane_fingerprints(grid) -> list[str]:
+    """
+    Something per pane that has to move when the architecture does.
+
+    For a plot pane it is the head of every curve the pane's own collection
+    and response type produce; for the others it is the text they show.
+    """
+    import numpy as np
+    from PySide6.QtWidgets import QLabel
+
+    from fakematlab.core.viewer import compute
+    from fakematlab.ui.apps.lti_viewer import LTIViewer
+
+    out: list[str] = []
+    for pane in grid.panes:
+        content = pane._content
+        if isinstance(content, LTIViewer):
+            curves = compute(content.collection, content._kind,
+                             content._characteristics).curves
+            samples = [value for curve in curves
+                       for value in list(curve.y[:4])]
+            out.append(repr(np.round(np.array(samples or [0.0]), 6)))
+        else:
+            labels = content.findChildren(QLabel) if content else []
+            out.append("".join(label.text() for label in labels[:6]))
+    return out
+
+
+@pytest.mark.parametrize("kind", PANE_KINDS, ids=lambda k: k.key)
+def test_every_pane_kind_renders(app, win, grid, kind):
+    """
+    "Every existing response type remains reachable" — the six tabs became
+    pane types, and nothing was dropped on the way.
+    """
+    win.set_pane_layout(1)
+    _settle(app, 3)
+    pane = grid.panes[0]
+    pane.set_kind(kind.key)
+    _settle(app, 8)
+    assert pane.key == kind.key
+    failed = [b.message for b in pane.findChildren(ErrorBanner) if b.has_error]
+    assert not failed, f"{kind.label}: {failed[0]}"
+
+
+def test_changing_the_layout_keeps_what_was_chosen(app, win, grid):
+    win.set_pane_layout(2)
+    _settle(app, 3)
+    grid.panes[0].set_kind("nyquist")
+    grid.panes[1].set_kind("performance")
+    _settle(app, 5)
+
+    win.set_pane_layout(4)
+    _settle(app, 5)
+    assert grid.keys[:2] == ("nyquist", "performance")
+
+
+def test_each_kind_arrives_pointing_at_the_right_signal(app, win, grid):
+    """
+    A Bode plot of the closed loop is a legitimate thing to want, but it is
+    not what anyone means by "the Bode plot".
+    """
+    win.set_pane_layout(1)
+    _settle(app, 3)
+    pane = grid.panes[0]
+
+    pane.set_kind("bode")
+    _settle(app, 5)
+    assert pane.source is Source.OPEN_LOOP
+
+    pane.set_kind("step")
+    _settle(app, 5)
+    assert pane.source is Source.CLOSED_LOOP
+
+
+def test_the_source_survives_the_qvariant_round_trip(app, win, grid):
+    """
+    Qt flattens a `str`-mixin enum through QVariant, which is how the LTI
+    Viewer's response picker broke. The pane rebuilds it from the text.
+    """
+    win.set_pane_layout(1)
+    _settle(app, 3)
+    pane = grid.panes[0]
+    for source in Source:
+        pane._source.setCurrentText(source.value)
+        _settle(app, 3)
+        assert isinstance(pane.source, Source)
+        assert pane.source is source
+
+
+def test_the_tabs_are_still_reachable(app, win):
+    """The grid is the primary view; the whole-workflow tabs remain."""
+    win.show_workspace(Workspace.ANALYSE)
+    win._view_tabs.setCurrentIndex(1)
+    _settle(app, 5)
+    assert win._view_tabs.tabText(1) == "Tabs"
+    assert win._tabs.count() == len(MainWindow._TABS)
+
+
+def test_a_pane_hosting_a_tab_gets_its_own_instance(app, win, grid):
+    """
+    A widget lives in exactly one place. Handing the grid the tab that is
+    already inside the Tabs view would move it out of there.
+    """
+    win.set_pane_layout(1)
+    _settle(app, 3)
+    grid.panes[0].set_kind("system")
+    _settle(app, 5)
+    assert grid.panes[0]._content is not win._sys_tab
+    assert win._tabs.widget(0) is win._sys_tab

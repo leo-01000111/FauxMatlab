@@ -554,3 +554,39 @@ def test_the_apps_group_is_advertised_and_real():
     assert "Apps" in _GROUPS
     for name in _GROUPS["Apps"]:
         assert callable(namespace[name])
+
+
+def test_a_non_proper_system_is_explained_not_raised():
+    """
+    Closing the unity-feedback loop around the course's non-minimum-phase
+    plant gives ``T = (1 − s)/2``, which has more zeros than poles. That has
+    no state-space realisation and no step response — it would have to
+    differentiate its input — but it is a property of the system, not a
+    failure to compute, and it is reached by loading a preset.
+    """
+    collection = SystemCollection()
+    collection.add("T", ctl.tf([-1, 1], [2]))
+    data = compute(collection, ResponseKind.STEP)
+    assert data.curves == []
+    assert "non-proper" in data.note
+    assert "differentiate" in data.note
+
+
+def test_a_proper_system_alongside_a_non_proper_one_still_draws():
+    collection = SystemCollection()
+    collection.add("good", ctl.tf([1], [1, 1]))
+    collection.add("improper", ctl.tf([1, 1], [1]))
+    data = compute(collection, ResponseKind.STEP)
+    assert [c.name for c in data.curves] == ["good"]
+    assert "improper" in data.note
+
+
+def test_root_locus_is_a_viewer_response_kind():
+    """Added so the analysis panes and the LTI Viewer share one renderer."""
+    collection = SystemCollection()
+    collection.add("L", LOCUS_PLANT)
+    data = compute(collection, ResponseKind.RLOCUS)
+    assert data.curves
+    # 1/(s(s+1)(s+2)) crosses the imaginary axis at K = 6, ω = √2.
+    assert "K = 6" in data.note
+    assert "1.414" in data.note

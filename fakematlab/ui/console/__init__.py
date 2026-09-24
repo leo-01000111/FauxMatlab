@@ -1,5 +1,5 @@
-"""The command window, workspace browser, figure windows and script editor."""
+"""The command window, workspace browser, figures and script editor."""
 
-from .console_dock import ConsoleDock, FigureDock
+from .console_dock import ConsolePanel, FigureArea
 
-__all__ = ["ConsoleDock", "FigureDock"]
+__all__ = ["ConsolePanel", "FigureArea"]

@@ -35,6 +35,7 @@ from ...core.viewer import (
     ViewerData,
     compute,
 )
+from ..design import EmptyState
 from ..guard import GuardedPanel, guard
 from ..plots import (
     COLORS,
@@ -58,10 +59,21 @@ class LTIViewer(QWidget, GuardedPanel):
     open_requested = Signal(str, object)
 
     def __init__(self, collection: SystemCollection | None = None,
-                 parent=None) -> None:
+                 compact: bool = False, parent=None) -> None:
+        """
+        ``compact`` hides the system list and the response picker, leaving
+        just the plot.
+
+        That is what lets an analysis pane *be* an LTI Viewer rather than a
+        second implementation of the same plots — the viewer becomes the
+        multi-system form of the analysis area, and the pane the one-system
+        form, off one renderer.
+        """
         super().__init__(parent)
         self.setWindowTitle("LTI Viewer")
-        self.resize(1080, 680)
+        self.compact = compact
+        if not compact:
+            self.resize(1080, 680)
         self.collection = collection or SystemCollection()
         self._kind = ResponseKind.STEP
         self._characteristics: set[Characteristic] = set()
@@ -106,7 +118,8 @@ class LTIViewer(QWidget, GuardedPanel):
         right_lay.setContentsMargins(0, 0, 0, 0)
 
         top = QHBoxLayout()
-        top.addWidget(QLabel("Response:"))
+        self._kind_label = QLabel("Response:")
+        top.addWidget(self._kind_label)
         self._kind_combo = QComboBox()
         for kind in ResponseKind:
             self._kind_combo.addItem(kind.value)
@@ -134,6 +147,14 @@ class LTIViewer(QWidget, GuardedPanel):
         split.setStretchFactor(0, 0)
         split.setStretchFactor(1, 1)
 
+        if self.compact:
+            # The pane's own header already says what is shown and which
+            # signal it is shown for; repeating it inside would be noise.
+            left.hide()
+            self._kind_combo.hide()
+            self._kind_label.hide()
+            outer.setContentsMargins(0, 0, 0, 0)
+
     # ── collection management ───────────────────────────────────
 
     def add_system(self, name: str, system) -> None:
@@ -143,6 +164,12 @@ class LTIViewer(QWidget, GuardedPanel):
     def set_collection(self, collection: SystemCollection) -> None:
         self.collection = collection
         self.refresh()
+
+    def set_response(self, kind: ResponseKind) -> None:
+        """Choose the response type from outside — what a pane does."""
+        self._kind_combo.setCurrentText(kind.value)
+        self._kind = kind
+        self._draw()
 
     def _selected_name(self) -> str | None:
         item = self._list.currentItem()
@@ -241,6 +268,13 @@ class LTIViewer(QWidget, GuardedPanel):
         data = compute(self.collection, self._kind, self._characteristics)
         self._note.setText(data.note)
         self._clear_plots()
+        if not data.curves:
+            # An empty plot is indistinguishable from a broken one. Say why
+            # there is nothing rather than drawing empty axes.
+            self._plot_lay.addWidget(EmptyState(
+                f"Nothing to show as {self._kind.value.lower()}",
+                data.note or "Add a system, or tick one in the list."))
+            return
         if len(data.panels) == 2:
             self._draw_two_panels(data)
         else:

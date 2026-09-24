@@ -464,3 +464,35 @@ This plan does not require:
 - Replacing native Qt behavior where it is already reliable.
 
 The goal is a clearer, more professional, more responsive interface around the existing capabilities.
+
+---
+
+## Implementation status
+
+Tracked here rather than by editing the phases above, so the plan stays as written.
+
+| Phase | State | Notes |
+|---|---|---|
+| UI-1 — Make it fit | **done** | Simulink toolbar is a `QToolBar` with overflow. Window minimum 2038×643 → 840×685; the app resizes to 1280×720. Regression test asserts the budget and that no single panel dictates the window width. |
+| UI-2 — Context bar and model panel | **done** | `ui/context_bar.py`: factored transfer functions, internal-stability badge, PM/GM/ωc. Diagram and block editor moved to a dock behind Ctrl+\. Analysis area is 99 % of the width at 1280 px. |
+| UI-3 — Workspaces and persistence | **done** | `ui/workspace.py`: Analyse / Model / Console on a rail, Ctrl+1/2/3. `QStackedWidget`, so switching preserves live state. `QSettings` on close; View ▸ Reset layout. The console and figures stopped being hidden docks and became the Console workspace. |
+| UI-4 — Analysis pane grid | **done** | `ui/panes.py`: 1 / 1×2 / 2×2, fourteen pane kinds. Plot panes *are* `LTIViewer` in compact mode, so the viewer is the multi-system form of the same renderer. Root locus added to `core/viewer.py` as a response kind. The classic tabs remain beside the grid. |
+| UI-5 — Dockable applications | not started | |
+| UI-6 — Simulink ergonomics | partial | Click-click wiring fixed and tested; properties inspector, alignment tools and wire routing outstanding. |
+| UI-7 — Modern Control regrouping | not started | |
+| UI-8 — Visual polish and hardening | partial | `ui/design.py` exists (spacing scale, `PanelHeader`, `SectionCard`, `StatusBadge`, `MetricLabel`, `EmptyState`) and new surfaces use it; the existing tabs are not yet retrofitted. Emoji navigation removed. No bundled icon set yet. |
+
+### Two things found while implementing
+
+**Qt flattens a `str`-mixin enum through `QVariant`.** `QComboBox.currentData()` returns a
+plain `str` that compares and hashes equal to the member, so every dict lookup keeps working
+and the only symptom is `.value` raising somewhere else entirely. It bit the LTI Viewer's
+response picker and then the pane's source picker; both now rebuild the member from the
+combo's text.
+
+**A non-proper closed loop has no time response.** Closing the unity-feedback loop around the
+course's non-minimum-phase plant `(1−s)/(1+s)` gives `T = (1−s)/2` — more zeros than poles, no
+state-space realisation, no step response. It is reachable from the Presets menu, and it used
+to surface as a raw `ValueError` in an error banner. It is a property of the system, not a
+failure to compute, so `core/viewer.py` now says so and the pane shows an empty state with the
+reason.

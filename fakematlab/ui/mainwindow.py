@@ -36,10 +36,14 @@ from PySide6.QtWidgets import (
     QApplication,
     QDockWidget,
     QFileDialog,
+    QHBoxLayout,
+    QLabel,
     QMainWindow,
     QMessageBox,
+    QSplitter,
     QStatusBar,
     QTabWidget,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -57,11 +61,12 @@ from ..core.tf_utils import (
 )
 from .apps import ControlSystemDesigner, LTIViewer, PIDTuner, SnapshotBar
 from .block_editor import BlockEditor
-from .console import ConsoleDock, FigureDock
+from .console import ConsolePanel, FigureArea
 from .context_bar import ContextBar
-from .design import NORMAL, TIGHT
+from .design import TIGHT
 from .diagram.fixed_diagram import FixedDiagramView
 from .lesson_dock import LessonDock
+from .panes import DEFAULT_LAYOUT, PaneGrid
 from .sim.sim_tab import SimTab
 from .tabs.design_tab import DesignTab
 from .tabs.frequency_tab import FrequencyTab
@@ -70,6 +75,7 @@ from .tabs.performance_tab import PerformanceTab
 from .tabs.stability_tab import StabilityTab
 from .tabs.system_tab import SystemTab
 from .tabs.time_tab import TimeTab
+from .workspace import Workspace, WorkspaceStack
 
 
 class MainWindow(QMainWindow):
@@ -109,15 +115,39 @@ class MainWindow(QMainWindow):
         ("_stab_tab", "Stability"),
         ("_perf_tab", "Performance"),
         ("_des_tab", "Design"),
-        ("_sim_tab", "Simulink"),
         ("_mod_tab", "Modern"),
     )
 
     def _build_ui(self) -> None:
+        self._stack = WorkspaceStack()
+        self.setCentralWidget(self._stack)
+        self._stack.changed.connect(self._on_workspace_changed)
+
+        self._stack.add_page(Workspace.ANALYSE, self._build_analyse())
+        # The Simulink tab becomes the Model workspace outright: it is a
+        # different model with its own undo stack and file format, not another
+        # view of the architecture the other panels share.
+        self._sim_tab = SimTab()
+        self._stack.add_page(Workspace.MODEL, self._sim_tab)
+        self._stack.add_page(Workspace.CONSOLE, self._build_console())
+
+        # ── Connections ──
+        self._diagram.block_selected.connect(self._on_block_selected)
+        self._diagram.signal_selected.connect(self._on_signal_selected)
+        self._diagram.architecture_changed.connect(self._on_arch_changed)
+        self._editor.tf_changed.connect(self._on_tf_edited)
+        self._des_tab.controller_changed.connect(self._on_controller_designed)
+        self._sim_tab.linearised.connect(self._on_linearised)
+        self._mod_tab.ctx.status.connect(
+            lambda m: self._status.showMessage(m, 6000))
+        self._mod_tab.model_sent_to_analysis.connect(
+            self._on_modern_model_sent)
+        self._tabs.currentChanged.connect(self._on_tab_changed)
+
+    def _build_analyse(self) -> QWidget:
         central = QWidget()
-        self.setCentralWidget(central)
         main_lay = QVBoxLayout(central)
-        main_lay.setContentsMargins(NORMAL, TIGHT, NORMAL, TIGHT)
+        main_lay.setContentsMargins(0, 0, 0, 0)
         main_lay.setSpacing(TIGHT)
 
         # ── the model context bar ──
@@ -140,22 +170,33 @@ class MainWindow(QMainWindow):
         self._snapshot_bar.compare_requested.connect(self._compare_snapshots)
         main_lay.addWidget(self._snapshot_bar)
 
-        self._tabs = QTabWidget()
-        self._tabs.setDocumentMode(True)
-
+        # The tabs still exist — they are whole workflows, and a pane can
+        # host one — but they are no longer the only way to look at the
+        # system. The grid is, because tuning is watching the step response
+        # and the Bode plot and the locus move *together*, which six tabs
+        # turn into a sequence of glances and a memory test.
         self._sys_tab  = SystemTab(self._arch)
         self._time_tab = TimeTab(self._arch)
         self._freq_tab = FrequencyTab(self._arch)
         self._stab_tab = StabilityTab(self._arch)
         self._perf_tab = PerformanceTab(self._arch)
         self._des_tab  = DesignTab(self._arch)
-        self._sim_tab  = SimTab()
         self._mod_tab  = ModernTab(self._arch)
 
+        self._tabs = QTabWidget()
+        self._tabs.setDocumentMode(True)
         for attribute, label in self._TABS:
             self._tabs.addTab(getattr(self, attribute), label)
 
-        main_lay.addWidget(self._tabs, stretch=1)
+        self._grid = PaneGrid(self._arch, tab_factory=self._make_tab)
+
+        self._view_tabs = QTabWidget()
+        self._view_tabs.setDocumentMode(True)
+        self._view_tabs.addTab(self._wrap_grid(), "Panes")
+        self._view_tabs.addTab(self._tabs, "Tabs")
+        self._view_tabs.currentChanged.connect(
+            lambda _i: self._update_all_tabs())
+        main_lay.addWidget(self._view_tabs, stretch=1)
 
         # ── the model panel, as a dock ──
         self._model_dock = QDockWidget("Model", self)
@@ -177,41 +218,92 @@ class MainWindow(QMainWindow):
         self._model_dock.setWidget(panel)
         self.addDockWidget(Qt.LeftDockWidgetArea, self._model_dock)
         self._model_dock.hide()
+        return central
 
-        # ── Connections ──
-        self._diagram.block_selected.connect(self._on_block_selected)
-        self._diagram.signal_selected.connect(self._on_signal_selected)
-        self._diagram.architecture_changed.connect(self._on_arch_changed)
-        self._editor.tf_changed.connect(self._on_tf_edited)
-        self._des_tab.controller_changed.connect(self._on_controller_designed)
-        self._sim_tab.linearised.connect(self._on_linearised)
-        self._mod_tab.ctx.status.connect(
-            lambda m: self._status.showMessage(m, 6000))
-        self._mod_tab.model_sent_to_analysis.connect(
-            self._on_modern_model_sent)
-        self._tabs.currentChanged.connect(self._on_tab_changed)
+
+    def _wrap_grid(self) -> QWidget:
+        """The pane grid with its layout selector above it."""
+        holder = QWidget()
+        column = QVBoxLayout(holder)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(TIGHT)
+
+        row = QHBoxLayout()
+        row.setSpacing(TIGHT)
+        row.addWidget(QLabel("Panes:"))
+        self._layout_buttons = {}
+        for count, label in ((1, "1"), (2, "1 × 2"), (4, "2 × 2")):
+            button = QToolButton()
+            button.setText(label)
+            button.setCheckable(True)
+            button.setAutoRaise(True)
+            button.setToolTip(f"Show {count} analysis pane"
+                              f"{'s' if count > 1 else ''}")
+            button.setAccessibleName(f"{count} panes")
+            button.clicked.connect(
+                lambda _checked=False, n=count: self.set_pane_layout(n))
+            row.addWidget(button)
+            self._layout_buttons[count] = button
+        row.addStretch()
+        column.addLayout(row)
+        column.addWidget(self._grid, stretch=1)
+        return holder
+
+    def set_pane_layout(self, count: int) -> None:
+        """1, 2 or 4 panes. A fresh 2×2 opens on step, Bode, locus, metrics."""
+        keys = None if self._grid.count else DEFAULT_LAYOUT
+        self._grid.set_layout_size(count, keys)
+        for size, button in self._layout_buttons.items():
+            button.blockSignals(True)
+            button.setChecked(size == count)
+            button.blockSignals(False)
+        self._status.showMessage(
+            f"{count} analysis pane{'s' if count > 1 else ''}", 3000)
+
+    #: Which widget a pane gets when it asks for a whole tab.
+    def _make_tab(self, name: str, arch):
+        from .tabs.design_tab import DesignTab as _Design
+        from .tabs.performance_tab import PerformanceTab as _Performance
+        from .tabs.stability_tab import StabilityTab as _Stability
+        from .tabs.system_tab import SystemTab as _System
+
+        # A new instance rather than the shared one: a widget lives in one
+        # place, so handing the grid the tab that is already inside the Tabs
+        # view would move it out of there.
+        factory = {"system": _System, "stability": _Stability,
+                   "performance": _Performance, "design": _Design,
+                   "modern": ModernTab}.get(name)
+        return factory(arch) if factory else None
+
+    def _build_console(self) -> QWidget:
+        """
+        The Console workspace: transcript and variables over the figures.
+
+        The console used to be a dock hidden by default, which made a
+        first-class way of driving this application into a panel you had to
+        know existed. Plot commands drew into a second hidden dock.
+        """
+        self._figures = FigureArea()
+        self._console = ConsolePanel(self._figures,
+                                     extra=self._console_state())
+        self._console.open_system.connect(self._on_console_system)
+        self._console.open_model.connect(self._on_console_model)
+        # A figure drawn from anywhere pulls the workspace into view, so
+        # `step(G)` typed on the Analyse page does not draw somewhere unseen.
+        self._figures.figure_added.connect(
+            lambda: self._stack.set_current(Workspace.CONSOLE))
+
+        split = QSplitter(Qt.Vertical)
+        split.addWidget(self._console)
+        split.addWidget(self._figures)
+        split.setStretchFactor(0, 3)
+        split.setStretchFactor(1, 2)
+        return split
 
     # ── Docks ────────────────────────────────────────────────
 
     def _build_docks(self) -> None:
-        """
-        The command window and the figure area.
-
-        Both start hidden: the app opens on the analysis tabs, and a console
-        nobody asked for would take a third of the window on first launch.
-        View ▸ Command Window (Ctrl+`) brings it up.
-        """
-        self._figures = FigureDock(self)
-        self.addDockWidget(Qt.RightDockWidgetArea, self._figures)
-        self._figures.hide()
-
-        self._console = ConsoleDock(self._figures, extra=self._console_state())
-        self.addDockWidget(Qt.BottomDockWidgetArea, self._console)
-        self._console.hide()
-
-        self._console.open_system.connect(self._on_console_system)
-        self._console.open_model.connect(self._on_console_model)
-
+        """The lesson panel — the only remaining dock."""
         self._lessons = LessonDock(self)
         self.addDockWidget(Qt.RightDockWidgetArea, self._lessons)
         self._lessons.hide()
@@ -239,6 +331,7 @@ class MainWindow(QMainWindow):
         self._diagram.build()
         self._update_all_tabs()
         self._refresh_status()
+        self._stack.set_current(Workspace.ANALYSE)
         self._tabs.setCurrentWidget(self._sys_tab)
         self._status.showMessage(f"{name} loaded as G(s)", 6000)
 
@@ -246,7 +339,7 @@ class MainWindow(QMainWindow):
         """A Simulink model was double-clicked: open it on the canvas."""
         self._sim_tab._canvas.set_model(model)
         self._sim_tab._canvas.fit_all()
-        self._tabs.setCurrentWidget(self._sim_tab)
+        self._stack.set_current(Workspace.MODEL)
         self._status.showMessage(f"{name} opened on the canvas", 6000)
 
     # ── Layout ───────────────────────────────────────────────
@@ -279,6 +372,7 @@ class MainWindow(QMainWindow):
         settings.setValue("windowState", self.saveState())
         settings.setValue("currentTab", self._tabs.currentIndex())
         settings.setValue("modelPanel", self._model_dock.isVisible())
+        settings.setValue("workspace", self._stack.current.value)
 
     def restore_layout(self) -> bool:
         """Put it back. Returns whether anything was restored."""
@@ -297,6 +391,12 @@ class MainWindow(QMainWindow):
                 self._tabs.setCurrentIndex(int(index))
             except (TypeError, ValueError):
                 pass
+        saved = settings.value("workspace")
+        if saved:
+            try:
+                self._stack.set_current(Workspace(saved))
+            except ValueError:
+                pass
         # `restoreState` brings back dock *visibility* too, so the menu check
         # marks have to be re-synchronised or they disagree with the window.
         self._sync_view_menu()
@@ -311,25 +411,26 @@ class MainWindow(QMainWindow):
         this, the only fix is deleting a registry key.
         """
         self._settings().clear()
-        for dock in (self._model_dock, self._console, self._figures,
-                     self._lessons):
+        for dock in (self._model_dock, self._lessons):
             dock.hide()
         self.removeDockWidget(self._model_dock)
         self.addDockWidget(Qt.LeftDockWidgetArea, self._model_dock)
-        self.addDockWidget(Qt.BottomDockWidgetArea, self._console)
-        self.addDockWidget(Qt.RightDockWidgetArea, self._figures)
         self.addDockWidget(Qt.RightDockWidgetArea, self._lessons)
         self.resize(1400, 850)
         self._tabs.setCurrentIndex(0)
+        self._stack.set_current(Workspace.ANALYSE)
         self._sync_view_menu()
         self._status.showMessage("Layout reset", 4000)
 
     def _sync_view_menu(self) -> None:
-        for action, dock in ((self._act_model, self._model_dock),
-                             (self._act_console, self._console),
-                             (self._act_figures, self._figures)):
+        self._act_model.blockSignals(True)
+        self._act_model.setChecked(self._model_dock.isVisible())
+        self._act_model.blockSignals(False)
+
+        current = self._stack.current
+        for workspace, action in self._workspace_actions.items():
             action.blockSignals(True)
-            action.setChecked(dock.isVisible())
+            action.setChecked(workspace is current)
             action.blockSignals(False)
 
     def closeEvent(self, event) -> None:
@@ -438,9 +539,14 @@ class MainWindow(QMainWindow):
         self._diagram.build()
         self._refresh_status()
 
-        tab = getattr(self, self._TAB_BY_NAME.get(lesson.tab, "_sys_tab"), None)
-        if tab is not None:
-            self._tabs.setCurrentWidget(tab)
+        if lesson.tab == "Simulink":
+            self._stack.set_current(Workspace.MODEL)
+        else:
+            self._stack.set_current(Workspace.ANALYSE)
+            tab = getattr(self,
+                          self._TAB_BY_NAME.get(lesson.tab, "_sys_tab"), None)
+            if tab is not None:
+                self._tabs.setCurrentWidget(tab)
         self._update_all_tabs()
 
         self._lessons.show_lesson(lesson, self._arch)
@@ -450,7 +556,7 @@ class MainWindow(QMainWindow):
 
     def _run_lesson_snippet(self, commands: tuple[str, ...]) -> None:
         """Send a lesson's snippet to the console, one line at a time."""
-        self._act_console.setChecked(True)
+        self._stack.set_current(Workspace.CONSOLE)
         self._console.focus()
         for command in commands:
             self._console.execute(command)
@@ -512,17 +618,26 @@ class MainWindow(QMainWindow):
         self._act_model = act_model
         view_menu.addAction(act_model)
 
-        act_console = QAction("&Command Window", self, checkable=True)
-        act_console.setShortcut("Ctrl+`")
-        act_console.toggled.connect(self._toggle_console)
-        self._act_console = act_console
-        view_menu.addAction(act_console)
+        view_menu.addSeparator()
 
-        act_figures = QAction("&Figures", self, checkable=True)
-        act_figures.toggled.connect(
-            lambda on: self._figures.setVisible(on))
-        self._act_figures = act_figures
-        view_menu.addAction(act_figures)
+        # The three workspaces. Ctrl+1/2/3, plus Ctrl+` for the console
+        # because that is the key everyone's fingers already know.
+        self._workspace_actions: dict[Workspace, QAction] = {}
+        for workspace in Workspace:
+            action = QAction(workspace.value, self, checkable=True)
+            action.setShortcut(workspace.shortcut)
+            action.setStatusTip(workspace.description)
+            action.triggered.connect(
+                lambda _checked=False, w=workspace:
+                self._stack.set_current(w))
+            view_menu.addAction(action)
+            self._workspace_actions[workspace] = action
+
+        console_shortcut = QAction("Command window", self)
+        console_shortcut.setShortcut("Ctrl+`")
+        console_shortcut.triggered.connect(
+            lambda: self._stack.set_current(Workspace.CONSOLE))
+        self.addAction(console_shortcut)
 
         view_menu.addSeparator()
         view_menu.addAction(QAction(
@@ -619,13 +734,17 @@ class MainWindow(QMainWindow):
 
     def _on_tab_changed(self, idx: int) -> None:
         arch = self._arch
-        tab_widgets = [
-            self._sys_tab, self._time_tab, self._freq_tab,
-            self._stab_tab, self._perf_tab, self._des_tab, self._sim_tab,
-            self._mod_tab,
-        ]
+        tab_widgets = [getattr(self, attribute)
+                       for attribute, _ in self._TABS]
         if 0 <= idx < len(tab_widgets):
             tab_widgets[idx].refresh(arch)
+
+    def _refresh_analyse(self) -> None:
+        """Whichever view of the Analyse page is showing."""
+        if self._view_tabs.currentIndex() == 0:
+            self._grid.refresh(self._arch)
+        else:
+            self._on_tab_changed(self._tabs.currentIndex())
 
     def _on_modern_model_sent(self) -> None:
         """The Modern tab pushed its state-space model back as G(s)."""
@@ -646,6 +765,7 @@ class MainWindow(QMainWindow):
         self._diagram.build()
         self._update_all_tabs()
         self._refresh_status()
+        self._stack.set_current(Workspace.ANALYSE)
         self._tabs.setCurrentWidget(self._sys_tab)
         self._status.showMessage(
             "Linearised model loaded as G(s) — " +
@@ -654,14 +774,21 @@ class MainWindow(QMainWindow):
     # ── Full refresh ──────────────────────────────────────────
 
     def _update_all_tabs(self) -> None:
-        """Refresh only the currently visible tab immediately; others lazily."""
-        idx = self._tabs.currentIndex()
-        self._on_tab_changed(idx)
+        """Refresh what is on screen now; the rest lazily when selected."""
+        self._context.refresh()
+        self._refresh_analyse()
 
-    def _toggle_console(self, visible: bool) -> None:
-        self._console.setVisible(visible)
-        if visible:
+    def _on_workspace_changed(self, workspace) -> None:
+        """Refresh whatever the new page shows, and tell the menu."""
+        if workspace is Workspace.ANALYSE:
+            self._update_all_tabs()
+        elif workspace is Workspace.CONSOLE:
             self._console.focus()
+        self._sync_view_menu()
+        self._status.showMessage(workspace.description, 4000)
+
+    def show_workspace(self, workspace) -> None:
+        self._stack.set_current(workspace)
 
     def _push_to_console(self) -> None:
         """Put the current plant and loop into the workspace under short names."""
@@ -673,7 +800,7 @@ class MainWindow(QMainWindow):
             T=self._arch.get_closed_loop_tf("r", "y"),
             model=self._sim_tab._canvas.root_model(),
         )
-        self._act_console.setChecked(True)
+        self._stack.set_current(Workspace.CONSOLE)
         self._status.showMessage(
             "G, K2, L, T, arch and model are now in the workspace", 6000)
 
