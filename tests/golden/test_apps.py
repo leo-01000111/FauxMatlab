@@ -38,6 +38,7 @@ from fakematlab.core.pidtune import (
     crossover_for,
     default_crossover,
     phase_margin_for,
+    reference_to_output,
     tune,
     tune_by_sliders,
 )
@@ -490,6 +491,36 @@ def test_a_pi_on_a_type_one_plant_is_flagged():
     result = tune_by_sliders(ctl.tf([1], [1, 1, 0]), PIDKind.PI)
     assert result.feasible
     assert "already contains an integrator" in result.note
+
+
+def test_the_tuner_closes_the_loop_through_the_sensor():
+    """
+    With H ≠ 1 the controller sees G·H, so that is where the margins must be
+    met; and T must be the real r → y map, K₁·C·G / (1 + C·G·H).
+    """
+    H = ctl.tf([1], [0.1, 1])
+    K1 = ctl.tf([2], [1])
+    result = tune(THIRD_ORDER, PIDKind.PID, wc=0.8, pm_deg=55.0,
+                  sensor=H, feedforward=K1)
+    assert result.feasible and result.stable
+    margins = bode(result.C * THIRD_ORDER * H)
+    assert margins.wc == pytest.approx(0.8, rel=1e-3)
+    assert margins.pm_deg == pytest.approx(55.0, abs=0.1)
+    expected = K1 * ctl.feedback(result.C * THIRD_ORDER, H)
+    for w in (0.1, 1.0, 10.0):
+        assert complex(result.T(1j * w)) == pytest.approx(
+            complex(expected(1j * w)), rel=1e-9)
+
+
+def test_proportional_feedback_on_a_type_zero_plant_settles_short():
+    """
+    The case that looked like a bug: K₂ = 1 around 1/(s+1) settles at 0.5,
+    because a P loop on a type-0 plant keeps a steady-state error
+    1/(1 + K·G(0)). Unity H and K₁ must reduce to plain L/(1+L).
+    """
+    G = ctl.tf([1], [1, 1])
+    T = reference_to_output(ctl.tf([1], [1]), G)
+    assert float(ctl.dcgain(T)) == pytest.approx(0.5)
 
 
 # ──────────────────────────────────────────────────────────────

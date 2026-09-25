@@ -29,7 +29,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ...core.pidtune import PIDKind, TuneResult, crossover_for, phase_margin_for, tune
+from ...core.pidtune import (
+    PIDKind,
+    TuneResult,
+    crossover_for,
+    phase_margin_for,
+    reference_to_output,
+    tune,
+)
 from ...core.timeresp import step_response
 from ..guard import GuardedPanel, guard
 from ..plots import (
@@ -55,12 +62,20 @@ class PIDTuner(QWidget, GuardedPanel):
 
     def __init__(self, plant: ctl.TransferFunction | None = None,
                  baseline: ctl.TransferFunction | None = None,
-                 kind: PIDKind | str = PIDKind.PI, parent=None) -> None:
+                 kind: PIDKind | str = PIDKind.PI,
+                 sensor: ctl.TransferFunction | None = None,
+                 feedforward: ctl.TransferFunction | None = None,
+                 parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle("PID Tuner")
         self.resize(1050, 700)
         self._plant = plant if plant is not None else ctl.tf([1], [1, 3, 3, 1])
         self._baseline = baseline
+        #: H and K₁ of the loop the controller will live in. Without them the
+        #: curves would silently assume both are 1, and disagree with the
+        #: Time tab the moment either is not.
+        self._sensor = sensor
+        self._feedforward = feedforward
         self.result: TuneResult | None = None
         self._build_ui()
         self._kind_combo.setCurrentText(PIDKind(kind).value)
@@ -155,10 +170,20 @@ class PIDTuner(QWidget, GuardedPanel):
     # ── state ───────────────────────────────────────────────────
 
     def set_plant(self, plant: ctl.TransferFunction,
-                  baseline: ctl.TransferFunction | None = None) -> None:
+                  baseline: ctl.TransferFunction | None = None,
+                  sensor: ctl.TransferFunction | None = None,
+                  feedforward: ctl.TransferFunction | None = None) -> None:
         self._plant = plant
         self._baseline = baseline
+        self._sensor = sensor
+        self._feedforward = feedforward
         self.retune()
+
+    def _seen_plant(self) -> ctl.TransferFunction:
+        """``G·H`` — the plant as the controller sees it, round the loop."""
+        if self._sensor is None:
+            return self._plant
+        return self._plant * self._sensor
 
     @property
     def kind(self) -> PIDKind:
@@ -185,7 +210,7 @@ class PIDTuner(QWidget, GuardedPanel):
     @guard("PID tuner")
     def retune(self, *_ignored) -> None:
         pm = phase_margin_for(self.transient)
-        wc = crossover_for(self._plant, self.speed, pm, self.kind)
+        wc = crossover_for(self._seen_plant(), self.speed, pm, self.kind)
         self._speed_label.setText(
             f"Response time — target ωc = {wc:.4g} rad/s "
             f"(≈ {2.0 / wc:.3g} s)")
@@ -193,7 +218,8 @@ class PIDTuner(QWidget, GuardedPanel):
             f"Transient behaviour — target phase margin = {pm:.1f}°")
 
         result = tune(self._plant, self.kind, wc=wc, pm_deg=pm,
-                      Tf=float(self._tf_spin.value()))
+                      Tf=float(self._tf_spin.value()),
+                      sensor=self._sensor, feedforward=self._feedforward)
         self.result = result
         self._readout.setPlainText(result.describe())
         self._draw(result)
@@ -214,12 +240,20 @@ class PIDTuner(QWidget, GuardedPanel):
         plot.clear()
         plot.addLegend(offset=(-10, 10))
 
+        # The plant's own step is the yardstick: what y does with no loop at
+        # all. An unstable or integrating plant would run off to infinity and
+        # flatten the other two curves, so it is only drawn when it settles.
         curves: list[tuple[str, ctl.TransferFunction, int]] = []
+        if _settles(self._plant):
+            curves.append(("plant G (open loop)", self._plant, 2))
         if self._baseline is not None:
-            curves.append(("before", ctl.feedback(self._baseline * self._plant,
-                                                  1), 1))
+            before = reference_to_output(self._baseline, self._plant,
+                                         self._sensor, self._feedforward)
+            if _settles(before):
+                curves.append(("closed loop, current K₂", before, 1))
         if result.feasible and result.stable:
-            curves.append((f"after ({result.kind.value})", result.T, 0))
+            curves.append((f"closed loop, tuned {result.kind.value}",
+                           result.T, 0))
 
         for label, system, colour in curves:
             try:
@@ -245,9 +279,10 @@ class PIDTuner(QWidget, GuardedPanel):
         loops: list[tuple[str, ctl.TransferFunction, int]] = [
             ("plant G", self._plant, 2)]
         if self._baseline is not None:
-            loops.append(("before", self._baseline * self._plant, 1))
+            loops.append(("current K₂", self._baseline * self._seen_plant(),
+                          1))
         if result.feasible:
-            loops.append(("after", result.L, 0))
+            loops.append((f"tuned {result.kind.value}", result.L, 0))
 
         for label, system, colour in loops:
             bd = _bode(system)
@@ -257,6 +292,12 @@ class PIDTuner(QWidget, GuardedPanel):
         if result.feasible and np.isfinite(result.achieved_wc):
             freq_vline(plot, result.achieved_wc, color="#F4A261",
                        label=f"ωc {result.achieved_wc:.3g}")
+
+
+def _settles(system: ctl.TransferFunction) -> bool:
+    """Every pole strictly in the left half-plane."""
+    poles = np.atleast_1d(ctl.poles(system))
+    return bool(np.all(poles.real < 0))
 
 
 def _ends(left: str, right: str) -> QWidget:

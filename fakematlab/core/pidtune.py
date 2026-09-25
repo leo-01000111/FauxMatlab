@@ -202,7 +202,9 @@ def crossover_for(G: ctl.TransferFunction, speed: float,
 def tune(G: ctl.TransferFunction, kind: PIDKind | str = PIDKind.PI,
          wc: float | None = None, pm_deg: float = 60.0,
          Tf: float = 0.0,
-         ti_over_td: float = DEFAULT_TI_OVER_TD) -> TuneResult:
+         ti_over_td: float = DEFAULT_TI_OVER_TD,
+         sensor: ctl.TransferFunction | None = None,
+         feedforward: ctl.TransferFunction | None = None) -> TuneResult:
     """
     Tune a controller of type ``kind`` for crossover ``wc`` and margin
     ``pm_deg``.
@@ -210,8 +212,17 @@ def tune(G: ctl.TransferFunction, kind: PIDKind | str = PIDKind.PI,
     ``Tf`` filters the derivative term. It is applied *after* the gains are
     solved, so it perturbs the achieved margin slightly; the result reports
     what was actually achieved, not what was asked for.
+
+    ``sensor`` (H) and ``feedforward`` (K₁) place the controller in the
+    course's 2-DOF loop. The margins belong to the loop the controller
+    actually closes, ``L = C·G·H``, and ``T`` is the true reference-to-output
+    map ``K₁·C·G / (1 + C·G·H)`` — not ``L/(1+L)``, which is only the same
+    thing when both are 1.
     """
     kind = PIDKind(kind)
+    H = sensor if sensor is not None else _unity()
+    K1 = feedforward if feedforward is not None else _unity()
+    G_plant, G = G, G * H          # from here on, G is what the controller sees
     if wc is None:
         wc = default_crossover(G, pm_deg, NEUTRAL_PHASE[kind.value])
     wc = float(wc)
@@ -222,7 +233,7 @@ def tune(G: ctl.TransferFunction, kind: PIDKind | str = PIDKind.PI,
     gain_G = float(magnitude[0])
     phase_G = float(np.degrees(phase[0]))
     if gain_G < 1e-300:
-        return _infeasible(kind, G, wc, pm_deg, float("nan"),
+        return _infeasible(kind, G_plant, H, K1, wc, pm_deg, float("nan"),
                            "The plant has zero gain at this frequency, so no "
                            "finite controller gain can make it cross 0 dB.")
 
@@ -237,10 +248,10 @@ def tune(G: ctl.TransferFunction, kind: PIDKind | str = PIDKind.PI,
     }[kind]
     params, problem = builder(M, theta, wc, ti_over_td)
     if problem:
-        return _infeasible(kind, G, wc, pm_deg, theta, problem)
+        return _infeasible(kind, G_plant, H, K1, wc, pm_deg, theta, problem)
 
     params.Tf = float(Tf) if kind in (PIDKind.PD, PIDKind.PID) else 0.0
-    return _finish(kind, params, G, wc, pm_deg, theta)
+    return _finish(kind, params, G_plant, H, K1, wc, pm_deg, theta)
 
 
 def _tune_p(M: float, theta: float, wc: float,
@@ -319,12 +330,14 @@ def _tune_pid(M: float, theta: float, wc: float,
 # ──────────────────────────────────────────────────────────────
 
 def _finish(kind: PIDKind, params: PIDParams, G: ctl.TransferFunction,
+            H: ctl.TransferFunction, K1: ctl.TransferFunction,
             wc: float, pm_deg: float, theta: float) -> TuneResult:
     C = pid_tf(params)
-    L = C * G
-    T = ctl.feedback(L, 1)
+    L = C * G * H
+    T = reference_to_output(C, G, H, K1)
     bd = bode(L)
-    poles = np.atleast_1d(ctl.poles(T))
+    # Stability is the loop's, so K₁ (outside it) must not hide or add modes.
+    poles = np.atleast_1d(ctl.poles(ctl.feedback(L, 1)))
     stable = bool(len(poles)) and all(p.real < 0 for p in poles)
 
     metrics = None
@@ -344,7 +357,7 @@ def _finish(kind: PIDKind, params: PIDParams, G: ctl.TransferFunction,
             f"A P controller has one free parameter, so the crossover is met "
             f"and the margin is whatever the plant gives there "
             f"({bd.pm_deg:.1f}°).")
-    elif params.Ki and _has_integrator(G):
+    elif params.Ki and _has_integrator(G * H):
         note = (note + "  " if note else "") + (
             "The plant already contains an integrator, so the controller's "
             "adds a second one and the loop starts at −180°. That is why the "
@@ -361,16 +374,38 @@ def _finish(kind: PIDKind, params: PIDParams, G: ctl.TransferFunction,
     )
 
 
-def _infeasible(kind: PIDKind, G: ctl.TransferFunction, wc: float,
+def _infeasible(kind: PIDKind, G: ctl.TransferFunction,
+                H: ctl.TransferFunction, K1: ctl.TransferFunction, wc: float,
                 pm_deg: float, theta: float, why: str) -> TuneResult:
-    unity = ctl.TransferFunction([1], [1])
+    unity = _unity()
     return TuneResult(
-        kind=kind, params=PIDParams(Kp=0.0), C=unity, L=G, T=ctl.feedback(G, 1),
+        kind=kind, params=PIDParams(Kp=0.0), C=unity, L=G * H,
+        T=reference_to_output(unity, G, H, K1),
         target_wc=wc, target_pm_deg=pm_deg,
         achieved_wc=float("nan"), achieved_pm_deg=float("nan"),
         achieved_gm_dB=float("nan"), required_phase_deg=theta,
         feasible=False, stable=False, note=why,
     )
+
+
+def reference_to_output(C: ctl.TransferFunction, G: ctl.TransferFunction,
+                        H: ctl.TransferFunction | None = None,
+                        K1: ctl.TransferFunction | None = None
+                        ) -> ctl.TransferFunction:
+    """
+    ``r → y`` of the course loop with controller ``C``:
+    ``K₁·C·G / (1 + C·G·H)``.
+
+    The one formula both the tuner's "before" and "after" curves go through,
+    so the two are always drawn for the same architecture.
+    """
+    H = H if H is not None else _unity()
+    K1 = K1 if K1 is not None else _unity()
+    return K1 * ctl.feedback(C * G, H)
+
+
+def _unity() -> ctl.TransferFunction:
+    return ctl.TransferFunction([1], [1])
 
 
 def _has_integrator(G: ctl.TransferFunction) -> bool:

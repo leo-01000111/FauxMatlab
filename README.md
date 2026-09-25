@@ -76,7 +76,7 @@ prompt:
   and watch the Bode plot and step response follow. Or ask directly for the gain that gives
   ζ = 0.5, or 16% overshoot.
 - **PID Tuner** (`pidtuner`) — response time and transient behaviour on two sliders, with
-  a before/after overlay.
+  the plant, the current loop and the tuned loop overlaid (K₁ and H included).
 
 A **snapshot bar** above the analysis area freezes the whole architecture under a name,
 restores it from anywhere, and Compare throws every stored design into the LTI Viewer at

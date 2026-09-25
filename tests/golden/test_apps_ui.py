@@ -349,6 +349,41 @@ def test_apply_from_the_tuner_reaches_the_architecture(app, win):
                        expected)
 
 
+def _step_curves(tuner) -> dict[str, np.ndarray]:
+    plot = tuner._step_widget.getPlotItem()
+    return {item.name(): item.getData()[1] for item in plot.listDataItems()
+            if item.name()}
+
+
+def test_the_tuner_shows_the_plant_and_both_closed_loops(app, win):
+    tuner = win._open_pid_tuner()
+    _settle(app, 3)
+    names = set(_step_curves(tuner))
+    assert "plant G (open loop)" in names
+    assert "closed loop, current K₂" in names
+    assert any(n.startswith("closed loop, tuned") for n in names)
+
+
+def test_the_current_loop_curve_matches_the_architecture(app, win):
+    """
+    "Current K₂" must be the same r → y the Time tab shows — K₁ and H
+    included, not a hand-rolled unity-feedback loop.
+    """
+    saved = {b: win._arch.block_tf(b) for b in ("K1", "K2", "H")}
+    try:
+        win._arch.set_block("K1", ctl.tf([3], [1]))
+        win._arch.set_block("K2", ctl.tf([2], [1]))
+        win._arch.set_block("H", ctl.tf([1], [0.2, 1]))
+        tuner = win._open_pid_tuner()
+        _settle(app, 3)
+        y = _step_curves(tuner)["closed loop, current K₂"]
+        expected = float(ctl.dcgain(win._arch.get_closed_loop_tf("r", "y")))
+        assert y[-1] == pytest.approx(expected, rel=2e-2)
+    finally:
+        for block, tf in saved.items():
+            win._arch.set_block(block, tf)
+
+
 # ──────────────────────────────────────────────────────────────
 #  Snapshots, across tabs
 # ──────────────────────────────────────────────────────────────

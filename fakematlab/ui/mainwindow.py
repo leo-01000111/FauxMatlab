@@ -573,11 +573,15 @@ class MainWindow(QMainWindow):
         if not isinstance(tuner, PIDTuner):
             tuner = PIDTuner(
                 plant=systems.get("plant", self._arch.block_tf("G")),
-                baseline=self._arch.block_tf("K2"), kind=kind)
+                baseline=self._arch.block_tf("K2"), kind=kind,
+                sensor=self._arch.block_tf("H"),
+                feedforward=self._arch.block_tf("K1"))
             tuner.controller_applied.connect(self._on_controller_designed)
         else:
             tuner.set_plant(systems.get("plant", self._arch.block_tf("G")),
-                            self._arch.block_tf("K2"))
+                            self._arch.block_tf("K2"),
+                            sensor=self._arch.block_tf("H"),
+                            feedforward=self._arch.block_tf("K1"))
         return self._show("pidtuner", tuner)
 
     # ── Lessons ──────────────────────────────────────────────
