@@ -75,13 +75,23 @@ def test_every_lesson_loads_cleanly_and_all_its_claims_hold(app, win, les):
         f"{len(les.claims)}/{len(les.claims)} hold"
 
 
-def test_a_lesson_brings_its_own_tab_forward(app, win):
+def test_a_lesson_brings_its_own_pane_kind_forward(app, win):
     win.load_lesson(lesson("ch6-margins"))
     _settle(app, 5)
-    assert win._tabs.currentWidget() is win._freq_tab
+    assert win._grid.panes[0].key == "frequency"
     win.load_lesson(lesson("ch8-ziegler-nichols"))
     _settle(app, 5)
-    assert win._tabs.currentWidget() is win._des_tab
+    assert win._grid.panes[0].key == "design"
+
+
+def test_every_lesson_tab_name_maps_to_a_pane_kind(app, win):
+    """A lesson naming a tab the panes cannot show would silently do nothing."""
+    from fakematlab.ui.panes import PANE_KINDS
+
+    keys = {k.key for k in PANE_KINDS}
+    for les in all_lessons():
+        if les.tab != "Simulink":
+            assert win._PANE_BY_LESSON_TAB[les.tab] in keys, les.key
 
 
 def test_a_lesson_loads_its_blocks_into_the_live_architecture(app, win):

@@ -34,6 +34,9 @@ class BlockInspector(QWidget):
     #: ``(block_id, {name: value})`` — the canvas turns it into an undoable
     #: command, so the inspector never edits a block directly.
     apply_requested = Signal(str, dict)
+    #: The user pressed "Tune…" on a PID; the canvas owns the loop, so it
+    #: does the linearising and opens the dialog.
+    tune_requested = Signal(str)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -59,6 +62,13 @@ class BlockInspector(QWidget):
         self._apply.setEnabled(False)
         outer.addWidget(self._apply)
 
+        self._tune = QPushButton("Tune…")
+        self._tune.setToolTip(
+            "Tune this PID against the plant it drives, read from the diagram")
+        self._tune.clicked.connect(
+            lambda: self.block_id and self.tune_requested.emit(self.block_id))
+        outer.addWidget(self._tune)
+
         self._status = QLabel("")
         self._status.setWordWrap(True)
         self._status.setStyleSheet("color: palette(mid);")
@@ -72,6 +82,7 @@ class BlockInspector(QWidget):
         self.block_id = None
         self._form = None
         self._apply.setEnabled(False)
+        self._tune.setVisible(False)
         self.header.set_subtitle("")
         self._scroll.setWidget(EmptyState(
             "No block selected",
@@ -86,6 +97,7 @@ class BlockInspector(QWidget):
         self.block_id = block.block_id
         self.header.set_subtitle(f"{block.type_name} · {block.block_id}")
         self._form = ParamForm(block)
+        self._tune.setVisible(block.type_name == "PID")
         if not block.params_spec:
             self._scroll.setWidget(EmptyState(
                 f"{block.type_name} has no parameters",

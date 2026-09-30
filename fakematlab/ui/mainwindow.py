@@ -43,7 +43,6 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QSplitter,
     QStatusBar,
-    QTabWidget,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -67,15 +66,9 @@ from .context_bar import ContextBar
 from .design import TIGHT
 from .diagram.fixed_diagram import FixedDiagramView
 from .lesson_dock import LessonDock
-from .panes import DEFAULT_LAYOUT, PaneGrid
+from .panes import DEFAULT_LAYOUT, LAYOUTS, PANE_KINDS, PaneGrid, Source
 from .sim.sim_tab import SimTab
-from .tabs.design_tab import DesignTab
-from .tabs.frequency_tab import FrequencyTab
 from .tabs.modern import ModernTab
-from .tabs.performance_tab import PerformanceTab
-from .tabs.stability_tab import StabilityTab
-from .tabs.system_tab import SystemTab
-from .tabs.time_tab import TimeTab
 from .workspace import Workspace, WorkspaceStack
 
 
@@ -106,20 +99,6 @@ class MainWindow(QMainWindow):
 
     # ── UI construction ───────────────────────────────────────
 
-    #: Tab labels. Words, not emoji: the old `🔬 System` rendered as an empty
-    #: box wherever the emoji font was missing — including in this project's
-    #: own headless screenshots — and an emoji is not a navigable label for
-    #: anything that reads the interface aloud.
-    _TABS = (
-        ("_sys_tab", "System"),
-        ("_time_tab", "Time"),
-        ("_freq_tab", "Frequency"),
-        ("_stab_tab", "Stability"),
-        ("_perf_tab", "Performance"),
-        ("_des_tab", "Design"),
-        ("_mod_tab", "Modern"),
-    )
-
     def _build_ui(self) -> None:
         self._stack = WorkspaceStack()
         self.setCentralWidget(self._stack)
@@ -138,13 +117,7 @@ class MainWindow(QMainWindow):
         self._diagram.signal_selected.connect(self._on_signal_selected)
         self._diagram.architecture_changed.connect(self._on_arch_changed)
         self._editor.tf_changed.connect(self._on_tf_edited)
-        self._des_tab.controller_changed.connect(self._on_controller_designed)
         self._sim_tab.linearised.connect(self._on_linearised)
-        self._mod_tab.ctx.status.connect(
-            lambda m: self._status.showMessage(m, 6000))
-        self._mod_tab.model_sent_to_analysis.connect(
-            self._on_modern_model_sent)
-        self._tabs.currentChanged.connect(self._on_tab_changed)
 
     def _build_analyse(self) -> QWidget:
         central = QWidget()
@@ -172,42 +145,14 @@ class MainWindow(QMainWindow):
         self._snapshot_bar.compare_requested.connect(self._compare_snapshots)
         main_lay.addWidget(self._snapshot_bar)
 
-        # The tabs still exist — they are whole workflows, and a pane can
-        # host one — but they are no longer the only way to look at the
-        # system. The grid is, because tuning is watching the step response
-        # and the Bode plot and the locus move *together*, which six tabs
-        # turn into a sequence of glances and a memory test.
-        self._sys_tab  = SystemTab(self._arch)
-        self._time_tab = TimeTab(self._arch)
-        self._freq_tab = FrequencyTab(self._arch)
-        self._stab_tab = StabilityTab(self._arch)
-        self._perf_tab = PerformanceTab(self._arch)
-        self._des_tab  = DesignTab(self._arch)
-        self._mod_tab  = ModernTab(self._arch)
-
-        self._tabs = QTabWidget()
-        self._tabs.setDocumentMode(True)
-        for attribute, label in self._TABS:
-            self._tabs.addTab(getattr(self, attribute), label)
-
+        # The pane grid *is* the analysis area. It used to sit beside a
+        # second "Tabs" view of the same widgets; every workflow that view
+        # held (System, Time, Frequency, ...) is now a pane kind, so nothing
+        # is reachable only from a tab bar, and tuning stays a matter of
+        # watching several views move together.
         self._grid = PaneGrid(self._arch, tab_factory=self._make_tab)
-
-        self._view_tabs = QTabWidget()
-        self._view_tabs.setDocumentMode(True)
-        self._view_tabs.addTab(self._wrap_grid(), "Panes")
-        # Scrolled, so the classic tabs cannot set the window's minimum
-        # height. Their control columns carry wrapped help text, and a
-        # word-wrapped label is taller the narrower it gets — at 1280 px the
-        # Design and Frequency tabs alone wanted 748 px of window, which is
-        # more than the screen the application is supposed to fit.
-        tab_scroll = QScrollArea()
-        tab_scroll.setWidgetResizable(True)
-        tab_scroll.setFrameShape(QScrollArea.NoFrame)
-        tab_scroll.setWidget(self._tabs)
-        self._view_tabs.addTab(tab_scroll, "Tabs")
-        self._view_tabs.currentChanged.connect(
-            lambda _i: self._update_all_tabs())
-        main_lay.addWidget(self._view_tabs, stretch=1)
+        main_lay.addWidget(self._wrap_grid(), stretch=1)
+        self._sync_layout_buttons()
 
         # ── the model panel, as a dock ──
         self._model_dock = QDockWidget("Model", self)
@@ -264,27 +209,46 @@ class MainWindow(QMainWindow):
         """1, 2 or 4 panes. A fresh 2×2 opens on step, Bode, locus, metrics."""
         keys = None if self._grid.count else DEFAULT_LAYOUT
         self._grid.set_layout_size(count, keys)
-        for size, button in self._layout_buttons.items():
-            button.blockSignals(True)
-            button.setChecked(size == count)
-            button.blockSignals(False)
+        self._sync_layout_buttons()
         self._status.showMessage(
             f"{count} analysis pane{'s' if count > 1 else ''}", 3000)
 
-    #: Which widget a pane gets when it asks for a whole tab.
-    def _make_tab(self, name: str, arch):
-        from .tabs.design_tab import DesignTab as _Design
-        from .tabs.performance_tab import PerformanceTab as _Performance
-        from .tabs.stability_tab import StabilityTab as _Stability
-        from .tabs.system_tab import SystemTab as _System
+    def _sync_layout_buttons(self) -> None:
+        for size, button in self._layout_buttons.items():
+            button.blockSignals(True)
+            button.setChecked(size == self._grid.count)
+            button.blockSignals(False)
 
-        # A new instance rather than the shared one: a widget lives in one
-        # place, so handing the grid the tab that is already inside the Tabs
-        # view would move it out of there.
-        factory = {"system": _System, "stability": _Stability,
-                   "performance": _Performance, "design": _Design,
+    def _make_tab(self, name: str, arch):
+        """
+        Which widget a pane gets when it asks for a whole workflow.
+
+        Each pane owns its own instance (a widget lives in one place), so the
+        signals that used to be wired once, at construction, are wired here,
+        once per instance the grid creates.
+        """
+        from .tabs.design_tab import DesignTab
+        from .tabs.frequency_tab import FrequencyTab
+        from .tabs.performance_tab import PerformanceTab
+        from .tabs.stability_tab import StabilityTab
+        from .tabs.system_tab import SystemTab
+        from .tabs.time_tab import TimeTab
+
+        factory = {"system": SystemTab, "time": TimeTab,
+                   "frequency": FrequencyTab, "stability": StabilityTab,
+                   "performance": PerformanceTab, "design": DesignTab,
                    "modern": ModernTab}.get(name)
-        return factory(arch) if factory else None
+        if factory is None:
+            return None
+        widget = factory(arch)
+        if name == "design":
+            widget.controller_changed.connect(self._on_controller_designed)
+        elif name == "modern":
+            widget.ctx.status.connect(
+                lambda m: self._status.showMessage(m, 6000))
+            widget.model_sent_to_analysis.connect(
+                self._on_modern_model_sent)
+        return widget
 
     def _build_console(self) -> QWidget:
         """
@@ -343,7 +307,6 @@ class MainWindow(QMainWindow):
         self._update_all_tabs()
         self._refresh_status()
         self._stack.set_current(Workspace.ANALYSE)
-        self._tabs.setCurrentWidget(self._sys_tab)
         self._status.showMessage(f"{name} loaded as G(s)", 6000)
 
     def _on_console_model(self, name: str, model) -> None:
@@ -381,7 +344,9 @@ class MainWindow(QMainWindow):
         settings = self._settings()
         settings.setValue("geometry", self.saveGeometry())
         settings.setValue("windowState", self.saveState())
-        settings.setValue("currentTab", self._tabs.currentIndex())
+        settings.setValue("paneKeys", list(self._grid.keys))
+        settings.setValue("paneSources",
+                          [source.name for source in self._grid.sources])
         settings.setValue("modelPanel", self._model_dock.isVisible())
         settings.setValue("workspace", self._stack.current.value)
 
@@ -396,12 +361,8 @@ class MainWindow(QMainWindow):
             self.restoreGeometry(geometry)
         if state is not None:
             self.restoreState(state)
-        index = settings.value("currentTab")
-        if index is not None:
-            try:
-                self._tabs.setCurrentIndex(int(index))
-            except (TypeError, ValueError):
-                pass
+        self._restore_panes(settings.value("paneKeys"),
+                            settings.value("paneSources"))
         saved = settings.value("workspace")
         if saved:
             try:
@@ -412,6 +373,29 @@ class MainWindow(QMainWindow):
         # marks have to be re-synchronised or they disagree with the window.
         self._sync_view_menu()
         return True
+
+    def _restore_panes(self, keys, sources) -> None:
+        """
+        Put the pane grid back: how many, what each shows, and of which system.
+
+        Saved settings are untrusted input (an older build, a hand-edited
+        key), so anything unrecognised is dropped and the grid keeps what it
+        has rather than failing the whole restore.
+        """
+        if isinstance(keys, str):       # QSettings collapses 1-element lists
+            keys = [keys]
+        if isinstance(sources, str):
+            sources = [sources]
+        if not keys or len(keys) not in LAYOUTS:
+            return
+        known = {k.key for k in PANE_KINDS}
+        if any(key not in known for key in keys):
+            return
+        chosen = []
+        for name in list(sources or [])[:len(keys)]:
+            chosen.append(Source[name] if name in Source.__members__ else None)
+        self._grid.set_layout_size(len(keys), tuple(keys), tuple(chosen))
+        self._sync_layout_buttons()
 
     def reset_layout(self) -> None:
         """
@@ -429,7 +413,8 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.LeftDockWidgetArea, self._model_dock)
         self.addDockWidget(Qt.RightDockWidgetArea, self._lessons)
         self.resize(1400, 850)
-        self._tabs.setCurrentIndex(0)
+        self._grid.set_layout_size(1, ("step",), (None,))
+        self._sync_layout_buttons()
         self._stack.set_current(Workspace.ANALYSE)
         self._sync_view_menu()
         self._status.showMessage("Layout reset", 4000)
@@ -586,11 +571,11 @@ class MainWindow(QMainWindow):
 
     # ── Lessons ──────────────────────────────────────────────
 
-    #: Lesson tab names → the attribute holding that tab.
-    _TAB_BY_NAME = {
-        "System": "_sys_tab", "Time": "_time_tab", "Frequency": "_freq_tab",
-        "Stability": "_stab_tab", "Performance": "_perf_tab",
-        "Design": "_des_tab", "Simulink": "_sim_tab", "Modern": "_mod_tab",
+    #: Lesson tab names -> the pane kind that shows that workflow.
+    _PANE_BY_LESSON_TAB = {
+        "System": "system", "Time": "time", "Frequency": "frequency",
+        "Stability": "stability", "Performance": "performance",
+        "Design": "design", "Modern": "modern",
     }
 
     def load_lesson(self, lesson: Lesson) -> None:
@@ -615,16 +600,19 @@ class MainWindow(QMainWindow):
             self._stack.set_current(Workspace.MODEL)
         else:
             self._stack.set_current(Workspace.ANALYSE)
-            tab = getattr(self,
-                          self._TAB_BY_NAME.get(lesson.tab, "_sys_tab"), None)
-            if tab is not None:
-                self._tabs.setCurrentWidget(tab)
+            self._show_in_first_pane(
+                self._PANE_BY_LESSON_TAB.get(lesson.tab, "system"))
         self._update_all_tabs()
 
         self._lessons.show_lesson(lesson, self._arch)
         self._status.showMessage(
             f"Chapter {lesson.chapter}: {lesson.title}  "
             f"({lesson.slides})", 10000)
+
+    def _show_in_first_pane(self, key: str) -> None:
+        """Point the first pane at ``key`` -- the old "switch to that tab"."""
+        if self._grid.panes and self._grid.panes[0].key != key:
+            self._grid.panes[0].set_kind(key)
 
     def _run_lesson_snippet(self, commands: tuple[str, ...]) -> None:
         """Send a lesson's snippet to the console, one line at a time."""
@@ -785,10 +773,8 @@ class MainWindow(QMainWindow):
 
     def _on_signal_selected(self, signal_id: str) -> None:
         self._status.showMessage(f"Signal tap: {signal_id}", 2000)
-        self._sys_tab.set_active_signal(signal_id)
-        self._time_tab.set_active_signal(signal_id)
-        self._freq_tab.set_active_signal(signal_id)
-        self._on_tab_changed(self._tabs.currentIndex())
+        self._grid.set_active_signal(signal_id)
+        self._grid.refresh(self._arch)
 
     def _on_tf_edited(self, block_id: str, tf: ctl.TransferFunction) -> None:
         self._diagram.update_block(block_id, tf)
@@ -804,19 +790,9 @@ class MainWindow(QMainWindow):
         self._update_all_tabs()
         self._refresh_status()
 
-    def _on_tab_changed(self, idx: int) -> None:
-        arch = self._arch
-        tab_widgets = [getattr(self, attribute)
-                       for attribute, _ in self._TABS]
-        if 0 <= idx < len(tab_widgets):
-            tab_widgets[idx].refresh(arch)
-
     def _refresh_analyse(self) -> None:
-        """Whichever view of the Analyse page is showing."""
-        if self._view_tabs.currentIndex() == 0:
-            self._grid.refresh(self._arch)
-        else:
-            self._on_tab_changed(self._tabs.currentIndex())
+        """Refresh every pane of the Analyse page."""
+        self._grid.refresh(self._arch)
 
     def _on_modern_model_sent(self) -> None:
         """The Modern tab pushed its state-space model back as G(s)."""
@@ -838,7 +814,6 @@ class MainWindow(QMainWindow):
         self._update_all_tabs()
         self._refresh_status()
         self._stack.set_current(Workspace.ANALYSE)
-        self._tabs.setCurrentWidget(self._sys_tab)
         self._status.showMessage(
             "Linearised model loaded as G(s) — " +
             description.splitlines()[0], 8000)
@@ -945,14 +920,11 @@ class MainWindow(QMainWindow):
         self._status.showMessage(f"Report written to {path}", 4000)
 
     def _export_plot_png(self) -> None:
-        """Export the visible tab as a PNG."""
-        widget = self._tabs.currentWidget()
-        if widget is None:
-            return
-        default = f"fakematlab-{self._tabs.tabText(self._tabs.currentIndex())}.png"
-        default = "".join(c for c in default if c.isalnum() or c in "-_.")
+        """Export the analysis pane grid as a PNG."""
+        widget = self._grid
         path, _ = QFileDialog.getSaveFileName(
-            self, "Export tab as PNG", default, "PNG images (*.png)")
+            self, "Export analysis as PNG", "fakematlab-analysis.png",
+            "PNG images (*.png)")
         if not path:
             return
         if widget.grab().save(path):

@@ -24,6 +24,7 @@ from enum import Enum
 import control as ctl
 import numpy as np
 
+from .asymptotes import BodeAsymptotes, bode_asymptotes
 from .collection import Entry, SystemCollection
 from .freqresp import bode, nichols, nyquist
 from .timeresp import (
@@ -54,6 +55,7 @@ class Characteristic(str, Enum):
     MARGINS = "Stability margins"
     PEAK_GAIN = "Peak gain"
     BANDWIDTH = "Bandwidth (−3 dB)"
+    ASYMPTOTES = "Asymptotes"
 
 
 #: Which characteristics mean anything for which response.
@@ -67,7 +69,7 @@ CHARACTERISTICS: dict[ResponseKind, tuple[Characteristic, ...]] = {
     ResponseKind.IMPULSE: (Characteristic.PEAK,),
     ResponseKind.RAMP: (),
     ResponseKind.BODE: (Characteristic.MARGINS, Characteristic.PEAK_GAIN,
-                        Characteristic.BANDWIDTH),
+                        Characteristic.BANDWIDTH, Characteristic.ASYMPTOTES),
     ResponseKind.NYQUIST: (Characteristic.MARGINS,),
     ResponseKind.NICHOLS: (Characteristic.MARGINS,),
     ResponseKind.PZMAP: (),
@@ -88,6 +90,14 @@ class Curve:
     colour: int = 0
     style: str = "line"        # "line" | "dashed" | "poles" | "zeros"
     panel: str = "main"        # "main" | "phase"
+    #: The independent variable a point of this curve was computed at, when
+    #: it is not the x axis itself: ω along a Nyquist or Nichols locus, the
+    #: gain K along a root-locus branch. Raw values, like everything here.
+    param: np.ndarray | None = None
+    #: What the curve *is*, so a hover can word its readout: "time",
+    #: "bode_mag", "bode_phase", "nyquist", "nichols", "rlocus", "pole",
+    #: "zero" or plain "xy".
+    quantity: str = "xy"
 
 
 @dataclass
@@ -101,6 +111,23 @@ class Mark:
     colour: int = 0
     panel: str = "main"
     kind: str = "point"        # "point" | "vline" | "hline"
+    #: What to print on the plot itself. ``label`` is the full statement and
+    #: is what a hover shows; a pane with six characteristics on it cannot
+    #: afford six full sentences. Empty means "same as ``label``".
+    short: str = ""
+
+    @property
+    def caption(self) -> str:
+        return self.short or self.label
+
+
+@dataclass
+class AsymptoteSet:
+    """The classical asymptotes of one system, ready to draw."""
+
+    name: str
+    colour: int
+    asymptotes: BodeAsymptotes
 
 
 @dataclass
@@ -115,6 +142,7 @@ class ViewerData:
     aspect_locked: bool = False
     panels: tuple[str, ...] = ("main",)
     note: str = ""
+    asymptotes: list[AsymptoteSet] = field(default_factory=list)
 
     def curves_on(self, panel: str) -> list[Curve]:
         return [c for c in self.curves if c.panel == panel]
@@ -181,7 +209,8 @@ def _time(collection: SystemCollection, kind: ResponseKind,
             continue
         resp = compute_response(entry.tf, t=t, label=entry.name)
         y = np.atleast_2d(resp.y)[0]
-        data.curves.append(Curve(entry.name, resp.t, y, entry.colour))
+        data.curves.append(Curve(entry.name, resp.t, y, entry.colour,
+                                 quantity="time"))
 
         if kind is ResponseKind.RAMP:
             # The reference itself, so the steady-state lag is visible.
@@ -192,14 +221,14 @@ def _time(collection: SystemCollection, kind: ResponseKind,
                 data.marks.append(Mark(
                     entry.name, float(resp.t[idx]), float(y[idx]),
                     f"peak {y[idx]:.4g} at t={resp.t[idx]:.3g} s",
-                    entry.colour))
+                    entry.colour, short=f"pk {y[idx]:.3g}"))
             continue
         _step_marks(data, entry, resp, wanted)
 
     if kind is ResponseKind.RAMP and data.curves:
         t_ref = data.curves[0].x
         data.curves.append(Curve("reference r(t) = t", t_ref, t_ref,
-                                 colour=-1, style="dashed"))
+                                 colour=-1, style="dashed", quantity="time"))
     if skipped:
         data.note = "; ".join(skipped)
     return data
@@ -262,24 +291,29 @@ def _step_marks(data: ViewerData, entry: Entry, resp,
             f"peak {metrics.y_max:.4g} at t={metrics.tp:.3g} s"
             + (f"  ({metrics.Mp_pct:.1f}% overshoot)"
                if np.isfinite(metrics.Mp_pct) else ""),
-            entry.colour))
+            entry.colour,
+            short=(f"Mp {metrics.Mp_pct:.0f}%"
+                   if np.isfinite(metrics.Mp_pct) else "peak")))
 
     if Characteristic.SETTLING in wanted and np.isfinite(metrics.ts_2pct):
         idx = int(np.argmin(np.abs(resp.t - metrics.ts_2pct)))
         data.marks.append(Mark(
             entry.name, metrics.ts_2pct, float(y[idx]),
-            f"ts(±2%) = {metrics.ts_2pct:.3g} s", entry.colour))
+            f"ts(±2%) = {metrics.ts_2pct:.3g} s", entry.colour,
+            short=f"ts {metrics.ts_2pct:.3g}s"))
 
     if Characteristic.RISE in wanted and np.isfinite(metrics.tr_1090):
         idx = int(np.argmin(np.abs(resp.t - metrics.tr_1090)))
         data.marks.append(Mark(
             entry.name, metrics.tr_1090, float(y[idx]),
-            f"tr(10–90%) = {metrics.tr_1090:.3g} s", entry.colour))
+            f"tr(10–90%) = {metrics.tr_1090:.3g} s", entry.colour,
+            short=f"tr {metrics.tr_1090:.3g}s"))
 
     if Characteristic.STEADY_STATE in wanted and np.isfinite(metrics.y_inf):
         data.marks.append(Mark(
             entry.name, float(resp.t[-1]), metrics.y_inf,
-            f"y∞ = {metrics.y_inf:.4g}", entry.colour, kind="hline"))
+            f"y∞ = {metrics.y_inf:.4g}", entry.colour, kind="hline",
+            short=f"y∞ {metrics.y_inf:.3g}"))
 
 
 # ──────────────────────────────────────────────────────────────
@@ -296,36 +330,54 @@ def _bode(collection: SystemCollection, kind: ResponseKind,
     for entry in collection.visible:
         bd = bode(entry.tf)
         data.curves.append(Curve(entry.name, bd.omega, bd.mag_dB,
-                                 entry.colour))
+                                 entry.colour, quantity="bode_mag"))
         data.curves.append(Curve(entry.name, bd.omega, bd.phase_deg,
-                                 entry.colour, panel="phase"))
+                                 entry.colour, panel="phase",
+                                 quantity="bode_phase"))
+
+        if Characteristic.ASYMPTOTES in wanted:
+            try:
+                asym = bode_asymptotes(entry.tf, float(bd.omega[0]),
+                                       float(bd.omega[-1]),
+                                       phase_anchor=float(bd.phase_deg[0]))
+            except Exception:       # a sketch is a bonus, never a failure
+                asym = None
+            if asym is not None and asym.magnitude:
+                data.asymptotes.append(
+                    AsymptoteSet(entry.name, entry.colour, asym))
 
         if Characteristic.MARGINS in wanted:
             if np.isfinite(bd.wc) and bd.wc > 0:
                 data.marks.append(Mark(
                     entry.name, bd.wc, 0.0,
-                    f"ωc = {bd.wc:.4g} rad/s", entry.colour))
+                    f"ωc = {bd.wc:.4g} rad/s", entry.colour,
+                    short=f"ωc {bd.wc:.3g}"))
                 data.marks.append(Mark(
                     entry.name, bd.wc, -180.0 + bd.pm_deg,
-                    f"PM = {bd.pm_deg:.1f}°", entry.colour, panel="phase"))
+                    f"PM = {bd.pm_deg:.1f}° at ωc = {bd.wc:.4g} rad/s",
+                    entry.colour, panel="phase",
+                    short=f"PM {bd.pm_deg:.0f}°"))
             if np.isfinite(bd.w180) and bd.w180 > 0 and np.isfinite(bd.gm_dB):
                 data.marks.append(Mark(
                     entry.name, bd.w180, -bd.gm_dB,
-                    f"GM = {bd.gm_dB:.2f} dB", entry.colour))
+                    f"GM = {bd.gm_dB:.2f} dB at ω180 = {bd.w180:.4g} rad/s",
+                    entry.colour, short=f"GM {bd.gm_dB:.1f} dB"))
 
         if Characteristic.PEAK_GAIN in wanted:
             idx = int(np.argmax(bd.mag_dB))
             data.marks.append(Mark(
                 entry.name, float(bd.omega[idx]), float(bd.mag_dB[idx]),
                 f"peak |G| = {bd.mag_dB[idx]:.2f} dB "
-                f"at ω={bd.omega[idx]:.4g}", entry.colour))
+                f"at ω={bd.omega[idx]:.4g}", entry.colour,
+                short=f"peak {bd.mag_dB[idx]:.1f} dB"))
 
         if Characteristic.BANDWIDTH in wanted:
             w_bw = _bandwidth(bd.omega, bd.mag_dB)
             if np.isfinite(w_bw):
                 data.marks.append(Mark(
                     entry.name, w_bw, bd.mag_dB[0] - 3.0,
-                    f"ω(−3 dB) = {w_bw:.4g} rad/s", entry.colour))
+                    f"ω(−3 dB) = {w_bw:.4g} rad/s", entry.colour,
+                    short=f"BW {w_bw:.3g}"))
     return data
 
 
@@ -357,17 +409,43 @@ def _nyquist(collection: SystemCollection, kind: ResponseKind,
     for entry in collection.visible:
         nd = nyquist(entry.tf)
         data.curves.append(Curve(entry.name, nd.H_pos.real, nd.H_pos.imag,
-                                 entry.colour))
+                                 entry.colour, param=nd.omega,
+                                 quantity="nyquist"))
         data.curves.append(Curve(f"{entry.name} (ω<0)", nd.H_neg.real,
-                                 nd.H_neg.imag, entry.colour, style="dashed"))
-        if Characteristic.MARGINS in wanted and np.isfinite(nd.modulus_margin):
-            idx = int(np.argmin(np.abs(nd.omega - nd.w_modulus)))
-            point = nd.H_pos[idx]
-            data.marks.append(Mark(
-                entry.name, float(point.real), float(point.imag),
-                f"modulus margin = {nd.modulus_margin:.3g} "
-                f"at ω={nd.w_modulus:.4g}", entry.colour))
+                                 nd.H_neg.imag, entry.colour, style="dashed",
+                                 param=-nd.omega, quantity="nyquist"))
+        if Characteristic.MARGINS in wanted:
+            _nyquist_margin_marks(data, entry, nd)
     return data
+
+
+def _nyquist_margin_marks(data: ViewerData, entry: Entry, nd) -> None:
+    """
+    The margins where they live on the Nyquist plane: the phase margin is at
+    the point of the locus that crosses the unit circle, the gain margin at
+    the point that crosses the negative real axis (at ``−1/GM``), and the
+    modulus margin at the point closest to −1.
+    """
+    if np.isfinite(nd.wc) and nd.wc > 0 and np.isfinite(nd.pm_deg):
+        idx = int(np.argmin(np.abs(nd.omega - nd.wc)))
+        point = nd.H_pos[idx]
+        data.marks.append(Mark(
+            entry.name, float(point.real), float(point.imag),
+            f"PM = {nd.pm_deg:.1f}° at ωc = {nd.wc:.4g} rad/s",
+            entry.colour, short=f"PM {nd.pm_deg:.0f}°"))
+    if np.isfinite(nd.w180) and nd.w180 > 0 and np.isfinite(nd.gm_dB):
+        data.marks.append(Mark(
+            entry.name, float(-10 ** (-nd.gm_dB / 20.0)), 0.0,
+            f"GM = {nd.gm_dB:.2f} dB at ω180 = {nd.w180:.4g} rad/s",
+            entry.colour, short=f"GM {nd.gm_dB:.1f} dB"))
+    if np.isfinite(nd.modulus_margin):
+        idx = int(np.argmin(np.abs(nd.omega - nd.w_modulus)))
+        point = nd.H_pos[idx]
+        data.marks.append(Mark(
+            entry.name, float(point.real), float(point.imag),
+            f"modulus margin = {nd.modulus_margin:.3g} "
+            f"at ω={nd.w_modulus:.4g}", entry.colour,
+            short=f"|1+L| {nd.modulus_margin:.2f}"))
 
 
 def _nichols(collection: SystemCollection, kind: ResponseKind,
@@ -376,17 +454,20 @@ def _nichols(collection: SystemCollection, kind: ResponseKind,
     for entry in collection.visible:
         nd = nichols(entry.tf)
         data.curves.append(Curve(entry.name, nd.phase_deg, nd.mag_dB,
-                                 entry.colour))
+                                 entry.colour, param=nd.omega,
+                                 quantity="nichols"))
         if Characteristic.MARGINS in wanted:
             bd = bode(entry.tf)
             if np.isfinite(bd.wc) and bd.wc > 0:
                 data.marks.append(Mark(
                     entry.name, -180.0 + bd.pm_deg, 0.0,
-                    f"PM = {bd.pm_deg:.1f}°", entry.colour))
+                    f"PM = {bd.pm_deg:.1f}° at ωc = {bd.wc:.4g} rad/s",
+                    entry.colour, short=f"PM {bd.pm_deg:.0f}°"))
             if np.isfinite(bd.gm_dB):
                 data.marks.append(Mark(
                     entry.name, -180.0, -bd.gm_dB,
-                    f"GM = {bd.gm_dB:.2f} dB", entry.colour))
+                    f"GM = {bd.gm_dB:.2f} dB at ω180 = {bd.w180:.4g} rad/s",
+                    entry.colour, short=f"GM {bd.gm_dB:.1f} dB"))
     return data
 
 
@@ -398,10 +479,12 @@ def _pzmap(collection: SystemCollection, kind: ResponseKind,
         poles = np.atleast_1d(ctl.poles(tf))
         zeros = np.atleast_1d(ctl.zeros(tf))
         data.curves.append(Curve(f"{entry.name} poles", poles.real,
-                                 poles.imag, entry.colour, style="poles"))
+                                 poles.imag, entry.colour, style="poles",
+                                 quantity="pole"))
         if len(zeros):
             data.curves.append(Curve(f"{entry.name} zeros", zeros.real,
-                                     zeros.imag, entry.colour, style="zeros"))
+                                     zeros.imag, entry.colour, style="zeros",
+                                     quantity="zero"))
     return data
 
 
@@ -425,18 +508,20 @@ def _rlocus(collection: SystemCollection, kind: ResponseKind,
             ok = np.isfinite(roots)
             data.curves.append(Curve(
                 entry.name if branch == 0 else "",
-                roots[ok].real, roots[ok].imag, entry.colour))
+                roots[ok].real, roots[ok].imag, entry.colour,
+                param=np.asarray(locus.K_values, dtype=float)[ok],
+                quantity="rlocus"))
 
         poles = np.atleast_1d(ctl.poles(entry.tf))
         zeros = np.atleast_1d(ctl.zeros(entry.tf))
         if len(poles):
             data.curves.append(Curve(f"{entry.name} open-loop poles",
                                      poles.real, poles.imag, entry.colour,
-                                     style="poles"))
+                                     style="poles", quantity="pole"))
         if len(zeros):
             data.curves.append(Curve(f"{entry.name} open-loop zeros",
                                      zeros.real, zeros.imag, entry.colour,
-                                     style="zeros"))
+                                     style="zeros", quantity="zero"))
 
         if np.isfinite(locus.K_marginal):
             data.note = (f"crosses the imaginary axis at "

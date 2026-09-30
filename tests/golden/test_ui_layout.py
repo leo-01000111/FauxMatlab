@@ -30,6 +30,7 @@ from fakematlab.ui.design import (
 )
 from fakematlab.ui.guard import ErrorBanner
 from fakematlab.ui.mainwindow import MainWindow
+from fakematlab.ui.panes import PANE_KINDS, Source
 from fakematlab.ui.workspace import Workspace
 
 #: The plan's target: usable at 1280×720, comfortable at 1920×1080.
@@ -64,10 +65,9 @@ def reset(request, app):
         dock.hide()
     window.show_workspace(Workspace.ANALYSE)
     # A known starting view, or one test's four open plots and another's
-    # classic-tab selection change the next test's minimum size. The pane
+    # pane selection change the next test's minimum size. The pane
     # *kinds* matter too: a pane left showing the Modern tab keeps that
     # tab's much taller minimum.
-    window._view_tabs.setCurrentIndex(0)
     window._grid.set_layout_size(1, ("step",))
     window.resize(1400, 850)
     for banner in window.findChildren(ErrorBanner):
@@ -117,15 +117,20 @@ def test_the_window_actually_resizes_to_the_target(app, win):
     assert win.height() == TARGET_H
 
 
-@pytest.mark.parametrize("index", range(len(MainWindow._TABS)))
-def test_every_analysis_tab_renders_at_the_target_size(app, win, index):
+#: The pane kinds that host a whole workflow widget (the former tabs).
+HOSTED_KINDS = tuple(k.key for k in PANE_KINDS if k.tab)
+
+
+@pytest.mark.parametrize("key", HOSTED_KINDS)
+def test_every_analysis_pane_renders_at_the_target_size(app, win, key):
     win.resize(TARGET_W, TARGET_H)
     win.show_workspace(Workspace.ANALYSE)
-    win._tabs.setCurrentIndex(index)
+    pane = win._grid.panes[0]
+    pane.set_kind(key)
     _settle(app, 5)
-    tab = win._tabs.widget(index)
+    tab = pane.content
     failed = [b.message for b in tab.findChildren(ErrorBanner) if b.has_error]
-    assert not failed, f"{win._tabs.tabText(index)}: {failed[0]}"
+    assert not failed, f"{key}: {failed[0]}"
     assert tab.minimumSizeHint().width() <= TARGET_W
 
 
@@ -142,14 +147,15 @@ def test_every_workspace_renders_at_the_target_size(app, win, workspace):
 
 def test_no_single_panel_dictates_the_window_width(win):
     """
-    Each tab must fit the budget on its own. One oversized panel used to set
-    the minimum for every other view in the application.
+    Each hosted workflow must fit the budget on its own. One oversized panel
+    used to set the minimum for every other view in the application.
     """
-    oversized = {
-        win._tabs.tabText(i): win._tabs.widget(i).minimumSizeHint().width()
-        for i in range(win._tabs.count())
-        if win._tabs.widget(i).minimumSizeHint().width() > TARGET_W
-    }
+    oversized = {}
+    for key in HOSTED_KINDS:
+        win._grid.panes[0].set_kind(key)
+        width = win._grid.panes[0].content.minimumSizeHint().width()
+        if width > TARGET_W:
+            oversized[key] = width
     assert not oversized, oversized
 
 
@@ -163,9 +169,9 @@ def test_the_analysis_area_gets_the_window(app, win):
     win.resize(TARGET_W, TARGET_H)
     win.show_workspace(Workspace.ANALYSE)
     _settle(app)
-    # `_view_tabs` is the analysis area: the pane grid and the classic tabs.
-    # The navigation rail is the only other thing competing for the width.
-    share = win._view_tabs.width() / win.width()
+    # The pane grid is the analysis area. The navigation rail is the only
+    # other thing competing for the width.
+    share = win._grid.width() / win.width()
     assert share >= 0.85, f"analysis area is only {share:.0%} of the window"
 
 
@@ -264,16 +270,17 @@ def test_editing_a_block_still_reaches_every_tab(app, win):
 #  Labels
 # ──────────────────────────────────────────────────────────────
 
-def test_tab_labels_are_words_not_emoji(win):
+def test_pane_labels_are_words_not_emoji(win):
     """
     `🔬 System` renders as an empty box wherever the emoji font is missing —
     as it does in this project's own headless screenshots — and it is not a
-    label anything can read aloud.
+    label anything can read aloud. The pane picker inherited the old tab
+    bar's job, so it inherits the rule.
     """
-    for index in range(win._tabs.count()):
-        label = win._tabs.tabText(index)
-        assert label.isascii(), f"{label!r} contains non-ASCII characters"
-        assert label.strip()
+    for entry in PANE_KINDS:
+        assert entry.label.isascii(), (
+            f"{entry.label!r} contains non-ASCII characters")
+        assert entry.label.strip()
 
 
 # ──────────────────────────────────────────────────────────────
@@ -291,20 +298,36 @@ def scratch_settings(monkeypatch):
 
 def test_layout_is_saved_and_restored(app, win, scratch_settings):
     win.resize(1310, 742)
-    win._tabs.setCurrentIndex(3)
+    win.set_pane_layout(2)
+    win._grid.panes[0].set_kind("frequency")
+    win._grid.panes[1].set_kind("bode")
+    win._grid.panes[1].set_source(Source.PLANT)
     win.toggle_model_panel()
     _settle(app)
     win.save_layout()
 
     win.resize(900, 600)
-    win._tabs.setCurrentIndex(0)
+    win.set_pane_layout(1)
+    win._grid.panes[0].set_kind("step")
     win._model_dock.hide()
     _settle(app)
 
     assert win.restore_layout()
     _settle(app)
-    assert win._tabs.currentIndex() == 3
+    assert win._grid.keys == ("frequency", "bode")
+    assert win._grid.sources[1] is Source.PLANT
+    assert win._layout_buttons[2].isChecked()
     assert win._model_dock.isVisible()
+
+
+def test_a_corrupt_saved_pane_layout_is_ignored(app, win, scratch_settings):
+    """Saved settings outlive the build that wrote them."""
+    win.save_layout()
+    settings = QSettings(MainWindow.SETTINGS_ORG, MainWindow.SETTINGS_APP)
+    settings.setValue("paneKeys", ["no-such-kind", "step"])
+    win._grid.set_layout_size(1, ("bode",))
+    assert win.restore_layout()
+    assert win._grid.keys == ("bode",)
 
 
 def test_restore_reports_when_there_is_nothing_saved(win, scratch_settings):
@@ -320,7 +343,8 @@ def test_reset_layout_clears_the_saved_state(app, win, scratch_settings):
     win.reset_layout()
     _settle(app)
     assert not win._model_dock.isVisible()
-    assert win._tabs.currentIndex() == 0
+    assert win._grid.keys == ("step",)
+    assert win._grid.count == 1
     assert win.restore_layout() is False, "reset must forget what was saved"
 
 
@@ -394,7 +418,7 @@ def test_switching_workspaces_preserves_state(app, win):
     _settle(app, 5)
 
     win.show_workspace(Workspace.ANALYSE)
-    win._tabs.setCurrentIndex(2)
+    win._grid.panes[0].set_kind("frequency")
     _settle(app, 5)
 
     # ...and back again: nothing was rebuilt.
@@ -408,7 +432,7 @@ def test_switching_workspaces_preserves_state(app, win):
 
     win.show_workspace(Workspace.ANALYSE)
     _settle(app, 3)
-    assert win._tabs.currentIndex() == 2
+    assert win._grid.panes[0].key == "frequency"
 
 
 def test_the_rail_and_the_view_menu_agree_with_the_stack(app, win):
@@ -428,13 +452,13 @@ def test_clicking_the_rail_changes_workspace(app, win):
     assert win._stack.current is Workspace.MODEL
 
 
-def test_simulink_is_a_workspace_not_a_tab(win):
+def test_simulink_is_a_workspace_not_a_pane_kind(win):
     """
-    It has its own model, undo stack and file format. Listing it beside six
+    It has its own model, undo stack and file format. Listing it beside the
     views of a different system said they were alternatives to one another.
     """
-    assert "Simulink" not in [win._tabs.tabText(i)
-                              for i in range(win._tabs.count())]
+    assert not any("simulink" in k.key or "Simulink" in k.label
+                   for k in PANE_KINDS)
     assert win._stack.page(Workspace.MODEL) is win._sim_tab
 
 
@@ -474,14 +498,12 @@ from fakematlab.ui.panes import (  # noqa: E402
     DEFAULT_LAYOUT,
     LAYOUTS,
     PANE_KINDS,
-    Source,
 )
 
 
 @pytest.fixture
 def grid(app, win):
     win.show_workspace(Workspace.ANALYSE)
-    win._view_tabs.setCurrentIndex(0)
     _settle(app, 3)
     return win._grid
 
@@ -584,22 +606,59 @@ def test_changing_the_layout_keeps_what_was_chosen(app, win, grid):
     assert grid.keys[:2] == ("nyquist", "performance")
 
 
-def test_each_kind_arrives_pointing_at_the_right_signal(app, win, grid):
+def test_a_new_pane_arrives_pointing_at_its_kinds_default_signal(app, win):
     """
     A Bode plot of the closed loop is a legitimate thing to want, but it is
-    not what anyone means by "the Bode plot".
+    not what anyone means by "the Bode plot" -- so a pane *created* on a kind
+    starts on the signal that kind is normally read on. (Changing the kind of
+    an existing pane keeps the user's source; see the next test.)
+    """
+    from fakematlab.ui.panes import AnalysisPane
+
+    assert AnalysisPane(win._arch, "bode").source is Source.OPEN_LOOP
+    assert AnalysisPane(win._arch, "step").source is Source.CLOSED_LOOP
+
+
+def test_the_source_survives_a_change_of_kind(app, win, grid):
+    """
+    Bode of the plant, flipped to its step response, is still the plant.
+    Resetting to the kind's default threw the user's choice away, and the
+    same in reverse: the choice survives a kind that ignores the source.
     """
     win.set_pane_layout(1)
     _settle(app, 3)
     pane = grid.panes[0]
-
     pane.set_kind("bode")
-    _settle(app, 5)
-    assert pane.source is Source.OPEN_LOOP
-
+    pane.set_source(Source.PLANT)
     pane.set_kind("step")
+    _settle(app, 3)
+    assert pane.source is Source.PLANT
+    pane.set_kind("system")          # ignores the source: combo disabled
+    assert not pane._source.isEnabled()
+    pane.set_kind("bode")
+    _settle(app, 3)
+    assert pane.source is Source.PLANT
+
+
+def test_relayout_keeps_each_panes_source(app, win, grid):
+    win.set_pane_layout(2)
+    _settle(app, 3)
+    grid.panes[0].set_source(Source.PLANT)
+    grid.panes[1].set_source(Source.SENSITIVITY)
+    win.set_pane_layout(4)
     _settle(app, 5)
-    assert pane.source is Source.CLOSED_LOOP
+    assert grid.sources[:2] == (Source.PLANT, Source.SENSITIVITY)
+    win.set_pane_layout(1)
+    _settle(app, 3)
+    assert grid.sources == (Source.PLANT,)
+
+
+def test_an_explicit_source_beats_the_kind_default(app, win):
+    from fakematlab.ui.panes import AnalysisPane
+
+    pane = AnalysisPane(win._arch, "bode", source=Source.PLANT)
+    assert pane.source is Source.PLANT
+    assert AnalysisPane(win._arch, "bode").source is Source.OPEN_LOOP
 
 
 def test_the_source_survives_the_qvariant_round_trip(app, win, grid):
@@ -617,26 +676,54 @@ def test_the_source_survives_the_qvariant_round_trip(app, win, grid):
         assert pane.source is source
 
 
-def test_the_tabs_are_still_reachable(app, win):
-    """The grid is the primary view; the whole-workflow tabs remain."""
-    win.show_workspace(Workspace.ANALYSE)
-    win._view_tabs.setCurrentIndex(1)
-    _settle(app, 5)
-    assert win._view_tabs.tabText(1) == "Tabs"
-    assert win._tabs.count() == len(MainWindow._TABS)
+def test_the_tabs_view_is_gone_and_every_workflow_is_a_pane_kind(win):
+    """
+    "Kill tabs, panes are superior": the Analyse page is the pane grid alone,
+    and nothing the old tab bar held became unreachable. Time and Frequency
+    were the two the panes lacked.
+    """
+    assert not hasattr(win, "_view_tabs")
+    assert not hasattr(win, "_tabs")
+    keys = {k.key for k in PANE_KINDS}
+    for old_tab in ("system", "time", "frequency", "stability",
+                    "performance", "design", "modern"):
+        assert old_tab in keys, f"{old_tab} is no longer reachable"
 
 
 def test_a_pane_hosting_a_tab_gets_its_own_instance(app, win, grid):
     """
-    A widget lives in exactly one place. Handing the grid the tab that is
-    already inside the Tabs view would move it out of there.
+    A widget lives in exactly one place, so two panes showing the same
+    workflow must each build their own, not share one.
     """
-    win.set_pane_layout(1)
+    win.set_pane_layout(2)
     _settle(app, 3)
-    grid.panes[0].set_kind("system")
+    grid.panes[0].set_kind("time")
+    grid.panes[1].set_kind("time")
     _settle(app, 5)
-    assert grid.panes[0]._content is not win._sys_tab
-    assert win._tabs.widget(0) is win._sys_tab
+    assert grid.panes[0].content is not grid.panes[1].content
+
+
+def test_a_diagram_signal_click_reaches_every_pane_that_can_use_it(
+        app, win, grid):
+    win.set_pane_layout(2)
+    grid.panes[0].set_kind("time")
+    grid.panes[1].set_kind("frequency")
+    _settle(app, 5)
+    seen = []
+    for pane in grid.panes:
+        pane.content.set_active_signal = seen.append
+    win._on_signal_selected("y")
+    assert seen == ["y", "y"]
+
+
+def test_export_grabs_the_pane_grid(app, win, grid, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QFileDialog
+
+    target = tmp_path / "out.png"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName",
+                        lambda *a, **k: (str(target), ""))
+    win._export_plot_png()
+    assert target.exists() and target.stat().st_size > 0
 
 
 # ──────────────────────────────────────────────────────────────
@@ -732,7 +819,8 @@ def test_the_modern_sections_say_what_they_are_for(app, win):
     27 buttons and 35 labels: a newcomer's problem is not a missing control,
     it is not knowing which section to start in.
     """
-    tabs = win._mod_tab._tabs
+    win._grid.panes[0].set_kind("modern")
+    tabs = win._grid.panes[0].content._tabs
     names = [tabs.tabText(i) for i in range(tabs.count())]
     assert names == ["Model", "Structure", "Design", "Estimation", "Discrete"]
     for index in range(tabs.count()):

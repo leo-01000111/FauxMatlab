@@ -208,16 +208,21 @@ def _check_ui(report: Report, say) -> None:
         for _ in range(20):
             app.processEvents()
 
-        for index in range(window._tabs.count()):
-            window._tabs.setCurrentIndex(index)
+        # Every pane kind, in the first pane — the Tabs view is gone, and
+        # the pane picker is now the one way to reach each workflow.
+        from .ui.panes import PANE_KINDS
+
+        pane = window._grid.panes[0]
+        for entry in PANE_KINDS:
+            pane.set_kind(entry.key)
             for _ in range(5):
                 app.processEvents()
-            name = window._tabs.tabText(index)
-            broken = [b.message for b in
-                      window._tabs.widget(index).findChildren(ErrorBanner)
+            broken = [b.message for b in pane.findChildren(ErrorBanner)
                       if b.has_error]
-            report.record(not broken, f"tab {name!r}: {broken[0] if broken else ''}")
-            say(f"      {name:16s} {'clean' if not broken else broken[0][:44]}")
+            report.record(not broken,
+                          f"pane {entry.label!r}: {broken[0] if broken else ''}")
+            say(f"      {entry.label[:28]:28s} "
+                f"{'clean' if not broken else broken[0][:44]}")
 
         window.hide()
     except Exception as exc:                                    # noqa: BLE001

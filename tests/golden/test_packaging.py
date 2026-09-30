@@ -321,11 +321,11 @@ def test_the_readme_counts_match_the_code():
     from fakematlab.ui.panes import PANE_KINDS
 
     text = _readme()
-    assert f"{len(PANE_KINDS)} contents" in text.replace("fourteen",
+    assert f"{len(PANE_KINDS)} contents" in text.replace("seventeen",
                                                          str(len(PANE_KINDS)))
     assert len(block_types()) == 50 and "Fifty block types" in text
-    assert sum(len(v) for v in _GROUPS.values()) == 59
-    assert "Fifty-nine MATLAB-shaped commands in ten groups" in text
+    assert sum(len(v) for v in _GROUPS.values()) == 60
+    assert "Sixty MATLAB-shaped commands in ten groups" in text
     assert len(_GROUPS) == 10
 
 

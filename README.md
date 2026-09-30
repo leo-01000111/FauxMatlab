@@ -43,19 +43,32 @@ A quantity that is undefined shows an em dash with a tooltip explaining why, not
 a phase margin that does not exist is not a failed calculation. The architecture diagram
 and block editor are a panel behind `Ctrl+\`, not a permanent column.
 
-**An analysis pane grid.** One, two or four panes, fourteen contents each, all reading the
+**An analysis pane grid.** One, two or four panes, seventeen contents each, all reading the
 same live architecture — so one edit moves every visible view at once. A fresh 2×2 opens on
 step response, Bode, root locus and metrics, which is what tuning a controller actually
-needs side by side. The seven classic analysis tabs are still there beside the grid, for the
-workflows that are whole panels rather than one plot.
+needs side by side. Each pane remembers which system it shows (plant, open loop, closed
+loop, sensitivity) when you change what it draws, so the plant's Bode plot becomes the
+plant's step response. The workflows that are whole panels rather than one plot — the time
+analysis with its signal pairs and parameter sweep, the frequency analysis with templates
+and overlays — are pane contents too; the grid is the only analysis view.
+
+Every plot reads out the point under the mouse — ω and |L| on a Bode plot, t and y on a
+step, ω on a Nyquist curve, K on a root locus. Phase axes tick at multiples of 90° (45°
+zoomed in) and dB axes at multiples of 20; margins, crossover, peak and settling are marked
+by default. Bode plots carry the classical straight-line **asymptotes**, and hovering one
+gives its slope and end points.
 
 | Pane contents | |
 | --- | --- |
 | Step · Impulse · Ramp | Bode · Nyquist · Nichols |
-| Pole-zero map · Root locus | Step metrics |
-| System overview · Stability & Routh | Performance · Design · Modern control |
+| Pole-zero map · Root locus | Step metrics · Minimum-phase split |
+| System overview · Time analysis · Frequency analysis | Stability & Routh · Performance · Design · Modern control |
 
-**A command window.** Fifty-nine MATLAB-shaped commands in ten groups — `tf`, `feedback`,
+The **minimum-phase split** is ch.4's G(s) = G_allpass(s)·G_mp(s): RHP zeros are mirrored into
+the left half-plane, G_allpass = ñ⁺/ñ⁻ carries all the extra phase lag at unit gain, and
+|G| = |G_mp| everywhere. At the prompt it is `Gap, Gmp = mpsplit(G)`.
+
+**A command window.** Sixty MATLAB-shaped commands in ten groups — `tf`, `feedback`,
 `step`, `bode`, `margin`, `stepinfo`, `rlocus`, `lqr`, `place`, `c2d`, `pidtune` — with a
 workspace browser, history, tab completion and a script editor. `s` is the Laplace
 variable, so `G = 1/(s**2 + 2*s + 1)` works. The console shares live references with the
@@ -64,7 +77,12 @@ GUI: setting a block at the prompt changes what every pane analyses.
 **A working Simulink.** Fifty block types, hierarchical subsystems, a drag-and-drop canvas
 with undo, RK4/RK45/Euler solvers, scopes, a properties inspector that leaves the diagram
 visible, and `linearize()` to pull a state-space model out of a nonlinear diagram. Wire two
-blocks by dragging between ports, or by clicking one and then the other.
+blocks by dragging between ports, or by clicking one and then the other. A dragged block
+snaps into line with its neighbours' centres and edges (hold Alt to place it freely); the
+scope opens on `r.out` and `G.out`; the palette folds away to a strip (Ctrl+B) once the
+blocks are placed; and a PID block's **Tune…** — right-click or the inspector — opens a small
+tuner on the plant it actually sees, linearised from the diagram with the loop cut at the
+PID, and writes the gains back as one undoable step.
 
 **Three design apps**, docked beside the analysis they edit, from the Apps menu or the
 prompt:
@@ -135,7 +153,7 @@ rather than merely inaccurate.
 pytest
 ```
 
-684 tests, plus `ruff check .`. They are mostly *golden* tests: analytic values computed by
+804 tests, plus `ruff check .`. They are mostly *golden* tests: analytic values computed by
 hand or by an independent route, not snapshots of whatever the code printed first. The
 numeric signal solver and the symbolic one check each other; `python-control` acts as a
 third opinion.

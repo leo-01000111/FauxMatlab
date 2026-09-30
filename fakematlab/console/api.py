@@ -26,6 +26,7 @@ import numpy as np
 
 from ..core import discrete as _discrete
 from ..core import freqresp as _freq
+from ..core import minphase as _minphase
 from ..core import observers as _obs
 from ..core import performance as _perf
 from ..core import stability as _stab
@@ -167,6 +168,39 @@ def damp(sys):
     wn = np.abs(poles)
     zeta = np.where(wn > 1e-12, -np.real(poles) / np.maximum(wn, 1e-300), 1.0)
     return DampTable((wn, zeta, poles))
+
+
+class MinPhasePair(tuple):
+    """
+    ``(G_allpass, G_mp)`` whose ``repr`` is the explanation.
+
+    Same device as :class:`DampTable`: ``mpsplit(G)`` on its own prints what
+    was split and why, ``Gap, Gmp = mpsplit(G)`` unpacks the two systems. The
+    full :class:`~fakematlab.core.minphase.MinPhaseSplit` is on ``.split``.
+    """
+
+    split = None
+
+    def __repr__(self) -> str:
+        gap, gmp = self
+        return "\n".join([
+            self.split.explanation,
+            f"  G_allpass = {_tfu.factored_str(gap)}",
+            f"  G_mp      = {_tfu.factored_str(gmp)}",
+        ])
+
+
+def mpsplit(sys):
+    """
+    Dissolve ``G`` into ``G_allpass * G_mp`` (ch.4, slides 44/46).
+
+    ``Gap, Gmp = mpsplit(G)``: ``|Gap(jw)| = 1`` and ``Gmp`` is minimum phase,
+    so ``|G| = |Gmp|`` while ``Gap`` carries the extra phase lag.
+    """
+    split = _minphase.minimum_phase_split(sys)
+    pair = MinPhasePair((split.allpass, split.minphase))
+    pair.split = split
+    return pair
 
 
 def stepinfo(sys, t=None, **kwargs) -> dict[str, float]:
@@ -709,7 +743,8 @@ _GROUPS: dict[str, tuple[str, ...]] = {
               "lag"),
     "Connect": ("series", "parallel", "feedback", "minreal"),
     "Inspect": ("pole", "zero", "damp", "dcgain", "stepinfo", "margin",
-                "allmargin", "bandwidth", "routh", "jury", "errconst"),
+                "allmargin", "bandwidth", "routh", "jury", "errconst",
+                "mpsplit"),
     "Time": ("step", "impulse", "lsim", "initial", "ramp"),
     "Frequency": ("bode", "nyquist", "nichols", "pzmap", "rlocus"),
     "State space": ("ctrb", "obsv", "gram", "hsvd", "balred", "canon",

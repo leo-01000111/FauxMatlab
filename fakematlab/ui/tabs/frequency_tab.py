@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 )
 
 from ...core.architecture import CourseArchitecture
+from ...core.asymptotes import bode_asymptotes
 from ...core.freqresp import bode, nichols, nyquist
 from ..guard import GuardedPanel, guard
 from ..plots import (
@@ -36,9 +37,11 @@ from ..plots import (
     add_vline,
     apply_theme,
     curve_pen,
+    draw_asymptotes,
     freq_marker,
     freq_text,
     freq_vline,
+    install_hover_readout,
     make_freq_plot,
     make_plot,
     plot_freq,
@@ -87,7 +90,12 @@ class FrequencyTab(QWidget, GuardedPanel):
         self._ov_S  = QCheckBox("Sensitivity S")
         self._ov_T  = QCheckBox("Compl. sensitivity T")
         self._ov_L  = QCheckBox("Loop L")
-        for cb in [self._ov_S, self._ov_T, self._ov_L]:
+        self._ov_asym = QCheckBox("Asymptotes (classical)")
+        self._ov_asym.setChecked(True)
+        self._ov_asym.setToolTip(
+            "The straight-line Bode sketch from the poles and zeros. "
+            "Hover a segment for its slope and end points.")
+        for cb in [self._ov_S, self._ov_T, self._ov_L, self._ov_asym]:
             cb.stateChanged.connect(self._defer_refresh)
             ov_lay.addWidget(cb)
         ctrl_lay.addWidget(grp_overlay)
@@ -143,8 +151,10 @@ class FrequencyTab(QWidget, GuardedPanel):
 
         bode_w = QWidget()
         bode_lay = QVBoxLayout(bode_w)
-        self._bode_mag   = make_freq_plot("Bode — Magnitude", "|G| (dB)")
-        self._bode_phase = make_freq_plot("Bode — Phase",     "Phase (°)")
+        self._bode_mag   = make_freq_plot("Bode — Magnitude", "|G| (dB)",
+                                        y_unit="db")
+        self._bode_phase = make_freq_plot("Bode — Phase", "Phase (°)",
+                                          y_unit="phase")
         self._bode_mag.setXLink(self._bode_phase)   # pan/zoom the pair together
         bode_lay.addWidget(self._bode_mag)
         bode_lay.addWidget(self._bode_phase)
@@ -160,7 +170,8 @@ class FrequencyTab(QWidget, GuardedPanel):
         nichols_w = QWidget()
         nichols_lay = QVBoxLayout(nichols_w)
         self._nichols_plot = make_plot("Nichols Chart",
-                                       "Open-loop phase (°)", "|L| (dB)")
+                                       "Open-loop phase (°)", "|L| (dB)",
+                                       x_unit="phase", y_unit="db")
         nichols_lay.addWidget(self._nichols_plot)
         self._sub_tabs.addTab(nichols_w, "Nichols")
 
@@ -213,12 +224,31 @@ class FrequencyTab(QWidget, GuardedPanel):
         pi_mag.clear()
         apply_theme(pi_mag, "Bode — Magnitude", "ω (rad/s)", "|G| (dB)")
         pi_mag.addLegend(offset=(-10, 10))
+        hov_mag = install_hover_readout(pi_mag, log_x=True)
+        sig_name = self._sig_combo.currentText()
         plot_freq(pi_mag, bd.omega, bd.mag_dB, pen=curve_pen(0, 2.2),
-                  name=self._sig_combo.currentText())
+                  name=sig_name)
+        hov_mag.model.add_curve(bd.omega, bd.mag_dB, quantity="bode_mag",
+                                name=sig_name, colour=COLORS[0])
         for i, (name, otf) in enumerate(overlays):
             obd = bode(otf)
             plot_freq(pi_mag, obd.omega, obd.mag_dB,
                       pen=curve_pen(i + 1, 1.6), name=name)
+            hov_mag.model.add_curve(obd.omega, obd.mag_dB,
+                                    quantity="bode_mag", name=name,
+                                    colour=COLORS[(i + 1) % len(COLORS)])
+
+        asym = None
+        if self._ov_asym.isChecked():
+            try:
+                asym = bode_asymptotes(tf, float(bd.omega[0]),
+                                       float(bd.omega[-1]),
+                                       phase_anchor=float(bd.phase_deg[0]))
+            except Exception:       # the sketch is a bonus, never a failure
+                asym = None
+        if asym is not None:
+            draw_asymptotes(pi_mag, asym.magnitude, COLORS[0],
+                            hover=hov_mag, corners=asym.breaks)
 
         add_hline(pi_mag, 0.0, color="#888888", width=0.8)
         if self._tpl_show.isChecked():
@@ -226,32 +256,54 @@ class FrequencyTab(QWidget, GuardedPanel):
 
         if np.isfinite(bd.wc):
             freq_vline(pi_mag, bd.wc, color="#F4A261", label=f"ωc={bd.wc:.3g}")
+            hov_mag.model.add_mark(bd.wc, 0.0,
+                                   f"ωc = {bd.wc:.4g} rad/s (0 dB crossover)",
+                                   colour="#F4A261")
         if np.isfinite(bd.w180) and np.isfinite(bd.gm_dB):
             freq_vline(pi_mag, bd.w180, color="#F45B69",
                        label=f"ω₁₈₀={bd.w180:.3g}")
             freq_text(pi_mag, bd.w180, float(np.min(bd.mag_dB)) + 5,
                       f"GM={bd.gm_dB:.2f} dB", "#F45B69")
+            hov_mag.model.add_mark(
+                bd.w180, -bd.gm_dB,
+                f"GM = {bd.gm_dB:.2f} dB at ω180 = {bd.w180:.4g} rad/s",
+                colour="#F45B69")
         if np.isfinite(bd.wr) and np.isfinite(bd.Mr):
             mr_dB = 20 * np.log10(max(bd.Mr, 1e-10))
             freq_marker(pi_mag, bd.wr, mr_dB, symbol="star", color="#9B72CF")
             freq_text(pi_mag, bd.wr, mr_dB + 2, f"Mr={bd.Mr:.3g}", "#9B72CF")
+            hov_mag.model.add_mark(
+                bd.wr, mr_dB,
+                f"Mr = {bd.Mr:.3g} ({mr_dB:.2f} dB) at ωr = {bd.wr:.4g} rad/s",
+                colour="#9B72CF")
 
         # ── Phase ──
         pi_ph = self._bode_phase.getPlotItem()
         pi_ph.clear()
         apply_theme(pi_ph, "Bode — Phase", "ω (rad/s)", "Phase (°)")
+        hov_ph = install_hover_readout(pi_ph, log_x=True)
         plot_freq(pi_ph, bd.omega, bd.phase_deg, pen=curve_pen(0, 2.2))
-        for i, (_name, otf) in enumerate(overlays):
+        hov_ph.model.add_curve(bd.omega, bd.phase_deg, quantity="bode_phase",
+                               name=sig_name, colour=COLORS[0])
+        for i, (name, otf) in enumerate(overlays):
             obd = bode(otf)
             plot_freq(pi_ph, obd.omega, obd.phase_deg, pen=curve_pen(i + 1, 1.6))
+            hov_ph.model.add_curve(obd.omega, obd.phase_deg,
+                                   quantity="bode_phase", name=name,
+                                   colour=COLORS[(i + 1) % len(COLORS)])
+        if asym is not None:
+            draw_asymptotes(pi_ph, asym.phase, COLORS[0], hover=hov_ph)
 
         add_hline(pi_ph, -180.0, color="#888888", width=0.8)
         if np.isfinite(bd.wc):
             freq_vline(pi_ph, bd.wc, color="#F4A261",
                        label=f"PM={bd.pm_deg:.1f}°")
-            freq_marker(pi_ph, bd.wc,
-                        float(np.interp(bd.wc, bd.omega, bd.phase_deg)),
-                        symbol="d", color="#F4A261")
+            phase_c = float(np.interp(bd.wc, bd.omega, bd.phase_deg))
+            freq_marker(pi_ph, bd.wc, phase_c, symbol="d", color="#F4A261")
+            hov_ph.model.add_mark(
+                bd.wc, phase_c,
+                f"PM = {bd.pm_deg:.1f}° at ωc = {bd.wc:.4g} rad/s",
+                colour="#F4A261")
 
         self._margins_label.setText(self._margin_text(bd))
 
@@ -366,14 +418,23 @@ class FrequencyTab(QWidget, GuardedPanel):
                                      width=0.8, style=Qt.DotLine),
                         name=f"|T|={M:g}")
 
+        hover = install_hover_readout(pi)
         pi.plot(nd.H_pos.real, nd.H_pos.imag, pen=curve_pen(0, 2.0),
                 name="L(jω), ω>0")
+        hover.model.add_curve(nd.H_pos.real, nd.H_pos.imag,
+                              quantity="nyquist", param=nd.omega,
+                              colour=COLORS[0])
         pi.plot(nd.H_neg.real, nd.H_neg.imag,
                 pen=pg.mkPen(COLORS[0], width=1.2, style=Qt.DashLine),
                 name="L(−jω)")
+        hover.model.add_curve(nd.H_neg.real, nd.H_neg.imag,
+                              quantity="nyquist", param=-nd.omega,
+                              colour=COLORS[0])
 
         add_marker(pi, -1.0, 0.0, symbol="x", color="#FF4444", size=14)
         add_text_annotation(pi, -1.0, 0.05, "−1", "#FF4444")
+        hover.model.add_mark(-1.0, 0.0, "critical point −1 + j0",
+                             colour="#FF4444")
 
         theta = np.linspace(0, 2 * np.pi, 200)
         pi.plot(np.cos(theta), np.sin(theta),
@@ -385,6 +446,10 @@ class FrequencyTab(QWidget, GuardedPanel):
             pi.plot([-1.0, nd.H_pos[i].real], [0.0, nd.H_pos[i].imag],
                     pen=pg.mkPen("#26BFBF", width=1.6, style=Qt.DashLine),
                     name=f"modulus margin = {nd.modulus_margin:.3g}")
+            hover.model.add_mark(
+                float(nd.H_pos[i].real), float(nd.H_pos[i].imag),
+                f"modulus margin = {nd.modulus_margin:.3g} "
+                f"at ω = {nd.w_modulus:.4g} rad/s", colour="#26BFBF")
 
         add_vline(pi, 0.0, "#555555", width=0.6)
         add_hline(pi, 0.0, "#555555", width=0.6)
@@ -424,12 +489,17 @@ class FrequencyTab(QWidget, GuardedPanel):
                                      width=0.8, style=Qt.DotLine),
                         name=f"|T|={M:g}")
 
+        hover = install_hover_readout(pi)
         pi.plot(nc.phase_deg, nc.mag_dB, pen=curve_pen(0, 2.2),
                 name=self._sig_combo.currentText())
+        hover.model.add_curve(nc.phase_deg, nc.mag_dB, quantity="nichols",
+                              param=nc.omega, colour=COLORS[0])
 
         add_vline(pi, -180.0, "#FF4444", width=0.8)
         add_hline(pi, 0.0,    "#888888", width=0.8)
         add_marker(pi, -180.0, 0.0, symbol="x", color="#FF4444", size=12)
+        hover.model.add_mark(-180.0, 0.0, "critical point (−180°, 0 dB)",
+                             colour="#FF4444")
 
     # ── Helpers ───────────────────────────────────────────────
 

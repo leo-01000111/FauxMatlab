@@ -33,6 +33,7 @@ from ...core.timeresp import (
 )
 from ..guard import GuardedPanel, guard
 from ..plots import (
+    COLORS,
     add_band,
     add_hline,
     add_marker,
@@ -40,6 +41,7 @@ from ..plots import (
     add_vline,
     apply_theme,
     curve_pen,
+    install_hover_readout,
     make_plot,
 )
 
@@ -209,6 +211,9 @@ class TimeTab(QWidget, GuardedPanel):
 
         pi.plot(resp.t, resp.y.ravel(), pen=curve_pen(0, width=2.2),
                 name=f"{inp}→{out}")
+        hover = install_hover_readout(pi)
+        hover.model.add_curve(resp.t, resp.y.ravel(), quantity="time",
+                              colour=COLORS[0])
 
         if rtype == "step" and y_inf is not None and np.isfinite(y_inf):
             # Draw steady-state line
@@ -225,6 +230,10 @@ class TimeTab(QWidget, GuardedPanel):
                 add_text_annotation(pi, m.tp, m.y_max,
                                     f"  tp={m.tp:.3g}s\n  Mp={m.Mp_pct:.1f}%",
                                     color="#F45B69")
+                hover.model.add_mark(
+                    m.tp, m.y_max,
+                    f"peak {m.y_max:.4g} at t = {m.tp:.3g} s "
+                    f"({m.Mp_pct:.1f}% overshoot)", colour="#F45B69")
             if self._band_2.isChecked() and not np.isnan(m.ts_2pct):
                 add_vline(pi, m.ts_2pct, color="#44CC44",
                           label=f"ts2%={m.ts_2pct:.3g}s")
@@ -258,10 +267,13 @@ class TimeTab(QWidget, GuardedPanel):
                                  response_type=rtype, amplitude=amp)
 
         pi.addLegend(offset=(-10, 10))
+        hover = install_hover_readout(pi)
         for i, resp in enumerate(result.responses):
             t = resp.t
             y = resp.y.ravel()
             pi.plot(t, y, pen=curve_pen(i, width=2.0), name=resp.label)
+            hover.model.add_curve(t, y, quantity="time", name=resp.label,
+                                  colour=COLORS[i % len(COLORS)])
 
     def _draw_metrics(self, m) -> None:
         rows = [(k, v) for k, v in m.as_dict().items()]

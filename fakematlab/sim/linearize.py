@@ -32,7 +32,7 @@ import control as ctl
 import numpy as np
 
 from .compile import CompiledModel, compile_model
-from .model import PortRef, SimModel
+from .model import ModelError, PortRef, SimModel
 from .solver import _Evaluator
 
 
@@ -197,6 +197,107 @@ def linearize(model: SimModel | CompiledModel,
                        operating_point=operating_point,
                        input_port=str(in_ref), output_port=str(out_ref),
                        state_names=names, notes=notes)
+
+
+#: Blocks whose small-signal gain depends on where they are operating. A model
+#: containing one still linearises — about its initial state — but the answer
+#: describes that one point, which the caller should say out loud.
+NONLINEAR_TYPES = frozenset({
+    "Saturation", "DeadZone", "Relay", "RateLimiter", "Quantizer", "Switch",
+    "CoulombFriction", "Lookup1D", "Backlash", "Product", "Abs", "Sign",
+    "MathFunction", "Trig", "MinMax",
+})
+
+
+@dataclass
+class LoopPlant:
+    """What a controller block sees when the loop is cut at its output."""
+    tf: ctl.TransferFunction
+    input_port: str          # the port the PID's output used to drive
+    output_port: str         # the signal the PID reads
+    notes: list[str] = field(default_factory=list)
+
+
+def plant_seen_by(model: SimModel, block_id: str) -> LoopPlant:
+    """
+    The plant ``G`` a controller block is closing a loop around.
+
+    The loop is opened *at the controller*: the block is swapped for a constant
+    zero (so nothing it computes can leak back), a perturbation goes in where
+    its output used to arrive, and the signal it reads is measured. That is
+    the transfer ``u → e`` of the rest of the loop.
+
+    **Sign.** The controller's input is ``e = r − G·H·u`` for the course's
+    negative-feedback loop, so the linearised ``u → e`` is ``−G·H``. The tuner
+    (:mod:`fakematlab.core.pidtune`) wants ``G·H`` with the minus sign supplied
+    by the loop, so the result is negated. Reading the sign off the model rather
+    than assuming it means a Sum with unusual signs, or an inverting plant,
+    still yields the plant the tuner's ``1 + C·G`` formula is talking about.
+
+    Replacing the block, rather than linearising with it in place, matters
+    twice over: an algebraic loop through the controller's own feedthrough
+    would refuse to compile, and its two states would ride along as
+    uncontrollable modes that ``ss2tf`` turns into near-cancelling pole/zero
+    pairs.
+    """
+    try:
+        block = model.block(block_id)
+    except ModelError as exc:
+        raise LinearizationError(str(exc)) from exc
+    if not block.inputs or not block.outputs:
+        raise LinearizationError(f"{block_id} has no input and output to cut at")
+
+    feeds = model.connection_into(PortRef(block_id, block.inputs[0]))
+    if feeds is None:
+        raise LinearizationError(
+            f"{block_id}'s input is not connected, so there is no loop to tune")
+    drives = [w for w in model.connections_from(
+        PortRef(block_id, block.outputs[0]))
+        if model.block(w.dst.block).category != "Sinks"]
+    if not drives:
+        raise LinearizationError(
+            f"{block_id}'s output does not drive anything, so there is no "
+            f"plant to tune against")
+    if len(drives) > 1:
+        raise LinearizationError(
+            f"{block_id} drives {len(drives)} blocks "
+            f"({', '.join(str(w.dst) for w in drives)}); put a Sum or Gain "
+            f"after it so there is a single place to cut the loop")
+    drive = drives[0]
+
+    opened = model.copy()
+    place = opened.placement(block_id)
+    opened.remove(block_id)
+    opened.add("Constant", block_id, x=place.x, y=place.y, value=0.0)
+    opened.connect(f"{block_id}.out", str(drive.dst))
+
+    lin = linearize(opened, str(drive.dst), str(feeds.src))
+    tf = -lin.transfer_function()
+
+    num = np.atleast_1d(np.squeeze(np.asarray(tf.num[0][0], dtype=float)))
+    den = np.atleast_1d(np.squeeze(np.asarray(tf.den[0][0], dtype=float)))
+    # Central differences leave ~1e-10 dust on coefficients that are exactly
+    # zero; left in, it becomes a spurious pole or zero a decade from anywhere.
+    for coeffs in (num, den):
+        coeffs[np.abs(coeffs) < 1e-8 * max(float(np.max(np.abs(coeffs))), 1.0)] = 0.0
+    num = np.trim_zeros(num, "f")
+    den = np.trim_zeros(den, "f")
+    if not len(num):
+        raise LinearizationError(
+            f"nothing {block_id} drives comes back to its input, so the loop "
+            f"is not closed (or the path is blocked at this operating point)")
+    if not len(den):
+        raise LinearizationError("the linearised plant is degenerate")
+
+    notes = list(lin.notes)
+    odd = sorted({b.type_name for b in opened if b.type_name in NONLINEAR_TYPES})
+    if odd:
+        notes.append(
+            f"the loop contains nonlinear blocks ({', '.join(odd)}); the plant "
+            f"is linearised about the model's initial state, so the gains are "
+            f"only as good as that operating point")
+    return LoopPlant(tf=ctl.tf(num, den), input_port=str(drive.dst),
+                     output_port=str(feeds.src), notes=notes)
 
 
 def _sweep_with_override(ev, compiled, t, x, xd, override):

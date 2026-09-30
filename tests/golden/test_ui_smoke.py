@@ -1,7 +1,7 @@
 """
 Headless UI smoke test.
 
-Drives every tab, sub-tab and selector, then asserts that **no error banner
+Drives every pane kind, sub-tab and selector, then asserts that **no error banner
 appeared anywhere**. Because :func:`fakematlab.ui.guard.guard` now routes every
 failure to a banner instead of a bare ``except: pass``, this single assertion
 catches the whole class of bugs that used to present as a silently blank tab.
@@ -58,12 +58,33 @@ def clean_state(request, app):
         return
     win = request.getfixturevalue("window")
     win._load_preset_G(second_order(K=1.0, zeta=0.5, wn=2.0))
-    win._time_tab._sweep_check.setChecked(False)
-    win._time_tab._sweep_vals.setText("0.5, 1, 2, 5")
+    time = _pane(win, "time")
+    time._sweep_check.setChecked(False)
+    time._sweep_vals.setText("0.5, 1, 2, 5")
     for banner in _banners(win):
         banner.clear()
     _settle(app)
     yield
+
+
+#: Pane kinds that host a whole workflow widget, in the order the old tab bar
+#: listed them.
+HOSTED = ("system", "time", "frequency", "stability", "performance",
+          "design", "modern")
+
+
+def _pane(window, key: str):
+    """
+    The widget a pane hosts for ``key``, showing it in the first pane.
+
+    The analysis area used to have a Tabs view holding one long-lived
+    instance of each workflow; now they live inside panes, so a test reaches
+    one by pointing a pane at it. Asking for the kind the pane already shows
+    returns the same instance, so state set by a test survives a second call.
+    """
+    pane = window._grid.panes[0]
+    pane.set_kind(key)
+    return pane.content
 
 
 def _settle(app, rounds: int = 30) -> None:
@@ -85,16 +106,15 @@ def _assert_no_errors(widget, context: str) -> None:
 
 # ──────────────────────────────────────────────────────────────
 
-def test_every_tab_renders_without_error(app, window):
-    for i in range(window._tabs.count()):
-        window._tabs.setCurrentIndex(i)
+def test_every_hosted_pane_renders_without_error(app, window):
+    for key in HOSTED:
+        _pane(window, key)
         _settle(app)
-        _assert_no_errors(window, f"tab {window._tabs.tabText(i)!r}")
+        _assert_no_errors(window, f"pane {key!r}")
 
 
 def test_every_frequency_subtab_and_signal(app, window):
-    window._tabs.setCurrentIndex(2)
-    freq = window._freq_tab
+    freq = _pane(window, "frequency")
     for sub in range(freq._sub_tabs.count()):
         freq._sub_tabs.setCurrentIndex(sub)
         for sig in range(freq._sig_combo.count()):
@@ -107,8 +127,7 @@ def test_every_frequency_subtab_and_signal(app, window):
 
 
 def test_every_system_tab_selection(app, window):
-    window._tabs.setCurrentIndex(0)
-    combo = window._sys_tab._sig_combo
+    combo = _pane(window, "system")._sig_combo
     for i in range(combo.count()):
         combo.setCurrentIndex(i)
         _settle(app)
@@ -116,8 +135,7 @@ def test_every_system_tab_selection(app, window):
 
 
 def test_every_time_tab_signal_pair(app, window):
-    window._tabs.setCurrentIndex(1)
-    tab = window._time_tab
+    tab = _pane(window, "time")
     for r in range(tab._resp_combo.count()):
         tab._resp_combo.setCurrentIndex(r)
         for i in range(tab._in_combo.count()):
@@ -129,8 +147,7 @@ def test_every_time_tab_signal_pair(app, window):
 
 
 def test_time_tab_parameter_sweep(app, window):
-    window._tabs.setCurrentIndex(1)
-    tab = window._time_tab
+    tab = _pane(window, "time")
     tab._sweep_check.setChecked(True)
     for p in range(tab._sweep_param.count()):
         tab._sweep_param.setCurrentIndex(p)
@@ -143,8 +160,7 @@ def test_time_tab_parameter_sweep(app, window):
 
 def test_bad_sweep_input_reports_instead_of_blanking(app, window):
     """A typo must produce a visible message, not a silently empty plot."""
-    window._tabs.setCurrentIndex(1)
-    tab = window._time_tab
+    tab = _pane(window, "time")
     tab._sweep_check.setChecked(True)
     tab._sweep_vals.setText("one, two, three")
     tab.refresh()
@@ -163,8 +179,7 @@ def test_bad_sweep_input_reports_instead_of_blanking(app, window):
 
 
 def test_every_design_controller_type(app, window):
-    window._tabs.setCurrentIndex(5)
-    tab = window._des_tab
+    tab = _pane(window, "design")
     for i in range(tab._type_combo.count()):
         tab._type_combo.setCurrentIndex(i)
         _settle(app)
@@ -172,8 +187,7 @@ def test_every_design_controller_type(app, window):
 
 
 def test_every_stability_subtab(app, window):
-    window._tabs.setCurrentIndex(3)
-    tab = window._stab_tab
+    tab = _pane(window, "stability")
     for sub in range(tab._sub.count()):
         tab._sub.setCurrentIndex(sub)
         _settle(app)
@@ -181,7 +195,7 @@ def test_every_stability_subtab(app, window):
 
 
 def test_all_presets_render(app, window):
-    """Every preset in the menu, across every tab."""
+    """Every preset in the menu, across every hosted pane kind."""
     presets = [
         window._preset_first_order, window._preset_so_under,
         window._preset_so_over, window._preset_double_int,
@@ -189,11 +203,20 @@ def test_all_presets_render(app, window):
     ]
     for preset in presets:
         preset()
-        for i in range(window._tabs.count()):
-            window._tabs.setCurrentIndex(i)
+        for key in HOSTED:
+            _pane(window, key)
             _settle(app, 15)
+            if preset == window._preset_nmp and key == "time":
+                # G = (1-s)/(1+s) has direct feedthrough, so the unity-
+                # feedback r->y loop is (1-s)/2: genuinely non-proper, and
+                # the Time pane reports that in its banner rather than
+                # plotting it. The shared Tabs instance used to sit on some
+                # other signal pair here by accident, which hid it.
+                shown = [b for b in _banners(window) if b.has_error]
+                assert all("non-proper" in b.message for b in shown)
+                continue
             _assert_no_errors(
-                window, f"preset {preset.__name__} on tab {i}")
+                window, f"preset {preset.__name__} on pane {key}")
 
 
 # ──────────────────────────────────────────────────────────────
@@ -219,8 +242,7 @@ def test_bode_curve_spans_the_full_frequency_range(app, window):
     sample below 1 rad/s into NaN, so pyqtgraph dropped them and the curve
     started a third of the way across the axis.
     """
-    window._tabs.setCurrentIndex(2)
-    freq = window._freq_tab
+    freq = _pane(window, "frequency")
     freq._sub_tabs.setCurrentIndex(0)
     freq._sig_combo.setCurrentIndex(0)
     _settle(app)
@@ -238,8 +260,7 @@ def test_bode_curve_spans_the_full_frequency_range(app, window):
 
 
 def test_step_response_curve_has_data(app, window):
-    window._tabs.setCurrentIndex(1)
-    tab = window._time_tab
+    tab = _pane(window, "time")
     tab._resp_combo.setCurrentIndex(0)
     tab._in_combo.setCurrentIndex(0)
     tab._out_combo.setCurrentIndex(0)
@@ -255,8 +276,7 @@ def test_step_response_curve_has_data(app, window):
 
 def test_metrics_table_shows_every_metric(app, window):
     """All ten metrics must be present — v1 sized the table to show two."""
-    window._tabs.setCurrentIndex(1)
-    tab = window._time_tab
+    tab = _pane(window, "time")
     tab._resp_combo.setCurrentIndex(0)
     tab.refresh()
     _settle(app)

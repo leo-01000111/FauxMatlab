@@ -12,6 +12,7 @@ drift apart.
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass, field
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QFont, QPainter, QPainterPath, QPen, QPolygonF
@@ -43,6 +44,100 @@ def error_colour():  return _clr("#C0392B", "#FF6B6B")
 
 def snap(value: float, grid: float = GRID) -> float:
     return round(value / grid) * grid
+
+
+# ──────────────────────────────────────────────────────────────
+#  Alignment snapping
+# ──────────────────────────────────────────────────────────────
+
+#: How close (scene px) a dragged block's line must come to another block's
+#: before it jumps onto it. Small enough not to fight a deliberate placement,
+#: large enough to catch a hand that is "about level".
+ALIGN_THRESHOLD = 8.0
+
+
+@dataclass
+class Guide:
+    """One dashed alignment line: ``"h"`` at y = ``coord``, or ``"v"`` at x."""
+    orientation: str
+    coord: float
+    lo: float                # extent along the line, so it can be drawn short
+    hi: float
+
+
+@dataclass
+class SnapResult:
+    x: float
+    y: float
+    aligned_x: bool = False
+    aligned_y: bool = False
+    guides: list[Guide] = field(default_factory=list)
+
+
+def align_snap(x: float, y: float, half_w: float, half_h: float,
+               others: list[tuple[float, float, float, float]],
+               threshold: float = ALIGN_THRESHOLD) -> SnapResult:
+    """
+    Pull a block's position onto the lines of the blocks around it.
+
+    ``(x, y)`` is the dragged block's centre and ``others`` holds
+    ``(cx, cy, half_w, half_h)`` for every block that stays put. The centre
+    line is the one that matters — a single-port block's ports sit on it, so
+    matching centres is what makes a wire come out straight — but top and
+    bottom edges (and left and right) are offered too, for blocks of different
+    heights whose *edges* are what the eye lines up.
+
+    Each axis is decided independently and takes the nearest line within
+    ``threshold``; on a tie the centre wins, because it is listed first.
+    Returns the snapped position plus a :class:`Guide` for every line the block
+    now lies on, so the canvas can show *why* it jumped.
+    """
+    def best(pos: float, half: float, axis: int):
+        """``(correction, which line)`` for the nearest match, or ``None``."""
+        chosen = None
+        for other in others:
+            centre, other_half = other[axis], other[2 + axis]
+            for kind, (mine, theirs) in enumerate(
+                    ((0.0, 0.0), (-half, -other_half), (half, other_half))):
+                delta = (centre + theirs) - (pos + mine)
+                if abs(delta) <= threshold and (
+                        chosen is None or abs(delta) < abs(chosen[0]) - 1e-9):
+                    chosen = (delta, kind)
+        return chosen
+
+    hit_x = best(x, half_w, 0)
+    hit_y = best(y, half_h, 1)
+    nx = x + (hit_x[0] if hit_x else 0.0)
+    ny = y + (hit_y[0] if hit_y else 0.0)
+
+    guides: dict[tuple[str, float], Guide] = {}
+
+    def add(orientation: str, coord: float, lo: float, hi: float) -> None:
+        key = (orientation, round(coord, 3))
+        if key in guides:
+            guides[key].lo = min(guides[key].lo, lo)
+            guides[key].hi = max(guides[key].hi, hi)
+        else:
+            guides[key] = Guide(orientation, coord, lo, hi)
+
+    # Only the *kind* of line that snapped is drawn (centre, or top/bottom):
+    # two blocks of equal height also share their edges, and three dashed
+    # lines where one explains the jump is clutter.
+    for cx, cy, ohw, ohh in others:
+        if hit_y:
+            mine, theirs = ((0.0, 0.0), (-half_h, -ohh),
+                            (half_h, ohh))[hit_y[1]]
+            if abs((ny + mine) - (cy + theirs)) < 0.5:
+                add("h", cy + theirs,
+                    min(nx - half_w, cx - ohw), max(nx + half_w, cx + ohw))
+        if hit_x:
+            mine, theirs = ((0.0, 0.0), (-half_w, -ohw),
+                            (half_w, ohw))[hit_x[1]]
+            if abs((nx + mine) - (cx + theirs)) < 0.5:
+                add("v", cx + theirs,
+                    min(ny - half_h, cy - ohh), max(ny + half_h, cy + ohh))
+    return SnapResult(nx, ny, hit_x is not None, hit_y is not None,
+                      list(guides.values()))
 
 
 # ──────────────────────────────────────────────────────────────
@@ -127,6 +222,9 @@ class BlockItem(QGraphicsObject):
 
     moved = Signal(str, float, float)      # block_id, x, y
     double_clicked = Signal(str)
+    #: The alignment guides to show while this block is dragged; an empty list
+    #: when the drag ends or nothing is aligned.
+    guides_changed = Signal(list)
 
     def __init__(self, block, x: float, y: float) -> None:
         super().__init__()
@@ -140,6 +238,11 @@ class BlockItem(QGraphicsObject):
         self.setAcceptHoverEvents(True)
         self.setZValue(1)
         self._press_pos = QPointF(x, y)
+        #: True between press and release, so programmatic ``setPos`` calls
+        #: (rebuilds, undo) are never "helpfully" snapped.
+        self._dragging = False
+        self._snap_on = True
+        self._aligned = (False, False)
 
         self.ports: dict[tuple[str, bool], PortItem] = {}
         self._build_ports()
@@ -229,11 +332,28 @@ class BlockItem(QGraphicsObject):
 
     def mousePressEvent(self, event) -> None:
         self._press_pos = self.pos()
+        self._dragging = True
+        self._snap_on = not (event.modifiers() & Qt.AltModifier)
+        self._aligned = (False, False)
         super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:
+        # Alt is read from the event so that holding it *mid-drag* lets go of
+        # the alignment, and releasing it snaps back on.
+        self._snap_on = not (event.modifiers() & Qt.AltModifier)
+        super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event) -> None:
         super().mouseReleaseEvent(event)
-        new = QPointF(snap(self.pos().x()), snap(self.pos().y()))
+        self._dragging = False
+        self.guides_changed.emit([])
+        # Alignment takes precedence over the grid: snapping an aligned axis
+        # to the grid afterwards would throw away exactly the coordinate the
+        # guide promised. Only the axes that did not align fall back to it.
+        ax, ay = self._aligned
+        self._aligned = (False, False)
+        new = QPointF(self.pos().x() if ax else snap(self.pos().x()),
+                      self.pos().y() if ay else snap(self.pos().y()))
         self.setPos(new)
         if (abs(new.x() - self._press_pos.x()) > 0.01 or
                 abs(new.y() - self._press_pos.y()) > 0.01):
@@ -243,7 +363,28 @@ class BlockItem(QGraphicsObject):
         self.double_clicked.emit(self.block_id)
         event.accept()
 
+    def _aligned_position(self, wanted: QPointF) -> QPointF:
+        """Snap the drag's next position onto other blocks' lines."""
+        if not self._snap_on:
+            self._aligned = (False, False)
+            self.guides_changed.emit([])
+            return wanted
+        others = [(o.pos().x(), o.pos().y(), BLOCK_W / 2, o.height() / 2)
+                  for o in self.scene().items()
+                  # Selected blocks travel with this one, so they are not
+                  # landmarks: aligning to something that is moving is noise.
+                  if isinstance(o, BlockItem) and o is not self
+                  and not o.isSelected()]
+        result = align_snap(wanted.x(), wanted.y(), BLOCK_W / 2,
+                            self.height() / 2, others)
+        self._aligned = (result.aligned_x, result.aligned_y)
+        self.guides_changed.emit(result.guides)
+        return QPointF(result.x, result.y)
+
     def itemChange(self, change, value):
+        if (change == QGraphicsItem.ItemPositionChange and self._dragging
+                and self.scene() is not None):
+            return self._aligned_position(value)
         if change == QGraphicsItem.ItemPositionHasChanged and self.scene():
             for item in self.scene().items():
                 if isinstance(item, WireItem) and item.touches(self.block_id):

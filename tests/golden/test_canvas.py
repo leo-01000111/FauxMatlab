@@ -303,9 +303,10 @@ def test_scope_shows_the_channels_a_run_logged(app):
     scope.show_result(result)
 
     assert set(scope._checks) == set(result.signals)
-    # A Scope block is wired, so its channels are the ones shown by default.
+    # The reference and the plant output are what a loop is judged on, so they
+    # are the default even though the Scope block itself is wired to G and K2.
     shown = {n for n, c in scope._checks.items() if c.isChecked()}
-    assert shown == {"G.out", "K2.out"}
+    assert shown == {"r.out", "G.out"}
     scope.deleteLater()
 
 

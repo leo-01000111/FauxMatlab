@@ -124,11 +124,16 @@ def test_lesson_lookup_names_the_alternatives():
 
 
 def test_every_lesson_targets_a_real_tab():
+    """A lesson's tab is a pane kind now, or the Simulink workspace."""
     from fakematlab.ui.mainwindow import MainWindow
+    from fakematlab.ui.panes import PANE_KINDS
 
+    keys = {k.key for k in PANE_KINDS}
     for item in all_lessons():
-        assert item.tab in MainWindow._TAB_BY_NAME, \
-            f"{item.key} opens {item.tab!r}, which is not a tab"
+        if item.tab == "Simulink":
+            continue
+        assert MainWindow._PANE_BY_LESSON_TAB.get(item.tab) in keys, \
+            f"{item.key} opens {item.tab!r}, which is not a pane kind"
 
 
 def test_the_chapters_are_covered_in_order():

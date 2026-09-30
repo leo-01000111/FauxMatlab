@@ -139,14 +139,30 @@ class ScopeWidget(QWidget):
         self._readout.setText("")
 
 
+#: The course's own names for the reference and the plant output. A loop drawn
+#: the way the lectures draw it has a source ``r`` and a plant ``G``, and the
+#: first thing anyone wants to see is how well ``G`` follows ``r``.
+REFERENCE_SIGNAL = "r.out"
+PLANT_SIGNAL = "G.out"
+
+
 def _default_channels(result, names: list[str]) -> list[str]:
     """
     What to show when a run finishes.
 
-    Signals feeding a Scope block if there are any — that is what a Scope is
-    for. Otherwise the first few signals, so a model without a Scope still
-    shows something rather than an empty plot.
+    The reference and the plant output (``r.out`` and ``G.out``) when the model
+    has them: tracking is what a control loop is judged on, and the Scope
+    block's own wiring often carries the controller effort instead, which
+    dwarfs the response it is meant to explain. If only one of the two exists
+    it is still shown alone.
+
+    Otherwise, signals feeding a Scope block if there are any — that is what a
+    Scope is for — and failing that the first few signals, so a model without
+    a Scope still shows something rather than an empty plot.
     """
+    tracking = [n for n in (REFERENCE_SIGNAL, PLANT_SIGNAL) if n in names]
+    if tracking:
+        return tracking
     wired = [s for sources in result.scopes.values() for s in sources]
     if wired:
         return [n for n in names if n in set(wired)]

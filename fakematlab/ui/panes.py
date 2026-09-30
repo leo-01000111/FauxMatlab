@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QScrollArea,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
@@ -76,8 +77,10 @@ class PaneKind:
 
 
 #: Everything a pane can show. The plot kinds are the viewer's response
-#: types; the rest are the existing tabs, which are whole workflows rather
-#: than one curve.
+#: types; the rest host a whole workflow widget built by the window's tab
+#: factory (System, Time, Frequency, ...) rather than one curve. To add a
+#: kind, append a PaneKind here and, for a hosted widget, teach the factory
+#: its ``tab`` name; nothing else in this module enumerates the kinds.
 PANE_KINDS: tuple[PaneKind, ...] = (
     PaneKind("step", "Step response", ResponseKind.STEP),
     PaneKind("impulse", "Impulse response", ResponseKind.IMPULSE),
@@ -91,7 +94,14 @@ PANE_KINDS: tuple[PaneKind, ...] = (
     PaneKind("rlocus", "Root locus", ResponseKind.RLOCUS,
              default_source=Source.OPEN_LOOP),
     PaneKind("metrics", "Step metrics"),
+    # G = G_allpass · G_mp (ch.4, 44/46). It takes a source like a plot does,
+    # and arrives on the plant, because "is the plant minimum phase?" is the
+    # question the slide asks.
+    PaneKind("minphase", "Minimum-phase split", default_source=Source.PLANT),
     PaneKind("system", "System overview", tab="system"),
+    PaneKind("time", "Time analysis (signals, sweep)", tab="time"),
+    PaneKind("frequency", "Frequency analysis (templates, overlays)",
+             tab="frequency"),
     PaneKind("stability", "Stability & Routh", tab="stability"),
     PaneKind("performance", "Performance", tab="performance"),
     PaneKind("design", "Design", tab="design"),
@@ -153,7 +163,8 @@ class AnalysisPane(QFrame):
     changed = Signal()
 
     def __init__(self, arch: CourseArchitecture, key: str = "step",
-                 tab_factory=None, parent=None) -> None:
+                 tab_factory=None, parent=None,
+                 source: Source | None = None) -> None:
         super().__init__(parent)
         self.setFrameShape(QFrame.StyledPanel)
         self._arch = arch
@@ -179,6 +190,12 @@ class AnalysisPane(QFrame):
         self._source = QComboBox()
         for entry in Source:
             self._source.addItem(entry.value)
+        # An explicit source wins; otherwise the kind's own default. That is
+        # the *only* time the default applies: after this the user owns the
+        # choice, and changing the kind does not touch it.
+        self._source.setCurrentIndex(list(Source).index(
+            source if source is not None else self._kind.default_source))
+        self._source.setEnabled(self._uses_source)
         self._source.setAccessibleName("signal shown")
         self._source.currentIndexChanged.connect(lambda _i: self.refresh())
         header.addWidget(self._source)
@@ -192,11 +209,29 @@ class AnalysisPane(QFrame):
 
         self._rebuild()
 
+    def sizeHint(self):
+        """
+        The same for every pane, whatever it hosts.
+
+        A grid short of room shares it out between each row's minimum and
+        its *hint* before stretch gets a say, so one pane with a tall hint
+        (the minimum-phase view wants 1124 px) takes its row's height from
+        the other row. Equal hints leave the equal stretch factors in charge.
+        """
+        from PySide6.QtCore import QSize
+
+        return QSize(480, 320)
+
     # ── state ───────────────────────────────────────────────────
 
     @property
     def key(self) -> str:
         return self._kind.key
+
+    @property
+    def content(self) -> QWidget | None:
+        """The widget the pane currently hosts."""
+        return self._content
 
     @property
     def source(self) -> Source:
@@ -216,23 +251,26 @@ class AnalysisPane(QFrame):
         self._picker.setCurrentIndex(index)
 
     def _on_kind_picked(self, index: int) -> None:
+        """
+        Change what is shown, but not which system it is shown *of*.
+
+        Looking at the plant's Bode plot and then flipping to its step
+        response means "the same plant, another view"; resetting the source
+        to the kind's default threw that away. A kind that ignores the source
+        only disables the combo, so the remembered choice is still there when
+        you come back to one that uses it.
+        """
         self._kind = kind(self._picker.itemData(index))
-        self._sync_source_for_kind()
+        self._source.setEnabled(self._uses_source)
         self._rebuild()
         self.changed.emit()
 
-    def _sync_source_for_kind(self) -> None:
-        """
-        A Bode plot of the closed loop is a legitimate thing to want, but it
-        is not what anyone means by "the Bode plot" — so each kind arrives
-        pointing at the signal it is normally read on.
-        """
-        self._source.blockSignals(True)
-        self._source.setCurrentIndex(
-            list(Source).index(self._kind.default_source))
-        self._source.setEnabled(self._kind.is_plot or
-                                self._kind.key == "metrics")
-        self._source.blockSignals(False)
+    @property
+    def _uses_source(self) -> bool:
+        return self._kind.is_plot or self._kind.key in ("metrics", "minphase")
+
+    def set_source(self, source: Source) -> None:
+        self._source.setCurrentIndex(list(Source).index(source))
 
     # ── content ─────────────────────────────────────────────────
 
@@ -245,12 +283,28 @@ class AnalysisPane(QFrame):
                 widget.deleteLater()
         self._content = self._make_content()
         if self._content is not None:
-            self._host.addWidget(self._content)
+            # Scrolled, and not only for small panes. A word-wrapped label
+            # anywhere inside makes the content height-for-width, and a grid
+            # honours that above stretch *and* size hints: the minimum-phase
+            # view's status line asked for 1158 px at 760 wide, its row took
+            # 653 of 844, and the Bode pane above was left with zero-height
+            # plots. A scroll area does not pass height-for-width up, so the
+            # grid's equal stretch decides; the classic Tabs view was scrolled
+            # for the same reason.
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QFrame.NoFrame)
+            scroll.setWidget(self._content)
+            self._host.addWidget(scroll)
         self.refresh()
 
     def _make_content(self) -> QWidget | None:
         if self._kind.key == "metrics":
             return MetricsPane()
+        if self._kind.key == "minphase":
+            from .minphase_view import MinPhaseView
+
+            return MinPhaseView()
         if self._kind.is_plot:
             from .apps.lti_viewer import LTIViewer
 
@@ -269,6 +323,12 @@ class AnalysisPane(QFrame):
 
         if self._kind.key == "metrics":
             self._content.refresh(self._arch, self.source)
+            return
+
+        if self._kind.key == "minphase":
+            source = self.source
+            self._content.show_system(source.system(self._arch),
+                                      source.value.split(" ")[0])
             return
 
         if self._kind.is_plot:
@@ -310,15 +370,24 @@ class PaneGrid(QWidget):
     # ── layout ──────────────────────────────────────────────────
 
     def set_layout_size(self, count: int,
-                        keys: tuple[str, ...] | None = None) -> None:
+                        keys: tuple[str, ...] | None = None,
+                        sources: tuple[Source | None, ...] | None = None
+                        ) -> None:
         """Re-lay the grid to ``count`` panes, keeping what was chosen."""
         if count not in LAYOUTS:
             raise ValueError(f"layout must be one of {sorted(LAYOUTS)}, "
                              f"got {count}")
         existing = keys or tuple(p.key for p in self.panes)
         wanted = list(existing[:count])
+        # Sources ride along with the panes that survive a re-layout; an
+        # explicit ``sources`` (restoring a saved layout) overrides them, and
+        # new panes get None, i.e. their kind's default.
+        carried = sources if sources is not None else (
+            tuple(p.source for p in self.panes) if keys is None else ())
+        chosen: list[Source | None] = list(carried[:count])
         while len(wanted) < count:
             wanted.append(DEFAULT_LAYOUT[len(wanted) % len(DEFAULT_LAYOUT)])
+        chosen += [None] * (count - len(chosen))
 
         for pane in self.panes:
             self._grid.removeWidget(pane)
@@ -327,8 +396,16 @@ class PaneGrid(QWidget):
         self.panes = []
 
         rows, columns = LAYOUTS[count]
+        # Equal shares, whatever the panes hold. Left to size hints, a pane
+        # with a tall hint (a Nichols chart, the minimum-phase view) took
+        # most of the height and crushed its neighbour's Bode plot to a
+        # strip; and a 4 → 2 relayout would keep the old rows' stretch.
+        for index in range(max(LAYOUTS[4])):
+            self._grid.setRowStretch(index, 1 if index < rows else 0)
+            self._grid.setColumnStretch(index, 1 if index < columns else 0)
         for index, key in enumerate(wanted):
-            pane = AnalysisPane(self._arch, key, self._tab_factory)
+            pane = AnalysisPane(self._arch, key, self._tab_factory,
+                                source=chosen[index])
             self.panes.append(pane)
             self._grid.addWidget(pane, index // columns, index % columns)
         self.refresh()
@@ -340,6 +417,17 @@ class PaneGrid(QWidget):
     @property
     def keys(self) -> tuple[str, ...]:
         return tuple(pane.key for pane in self.panes)
+
+    @property
+    def sources(self) -> tuple[Source, ...]:
+        return tuple(pane.source for pane in self.panes)
+
+    def set_active_signal(self, signal_id: str) -> None:
+        """A diagram signal was clicked: tell every pane that can use it."""
+        for pane in self.panes:
+            setter = getattr(pane.content, "set_active_signal", None)
+            if callable(setter):
+                setter(signal_id)
 
     # ── refresh ─────────────────────────────────────────────────
 

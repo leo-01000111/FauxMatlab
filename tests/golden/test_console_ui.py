@@ -17,6 +17,7 @@ from fakematlab.core.architecture import CourseArchitecture
 from fakematlab.core.tf_utils import second_order
 from fakematlab.ui.guard import ErrorBanner
 from fakematlab.ui.mainwindow import MainWindow
+from fakematlab.ui.workspace import Workspace
 
 
 @pytest.fixture(scope="module")
@@ -123,7 +124,7 @@ def test_double_clicking_a_system_loads_it_as_the_plant(app, win):
 
     assert np.allclose(np.atleast_1d(ctl.poles(win._arch.block_tf("G"))),
                        [-7.0])
-    assert win._tabs.currentWidget() is win._sys_tab
+    assert win._stack.current is Workspace.ANALYSE
 
 
 def test_push_to_console_shares_the_loop(app, win):

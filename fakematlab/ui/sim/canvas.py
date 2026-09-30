@@ -13,12 +13,13 @@ from __future__ import annotations
 
 import json
 
-from PySide6.QtCore import QPointF, QRectF, Qt, Signal
+from PySide6.QtCore import QLineF, QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QKeySequence, QPainter, QPainterPath, QPen, QUndoStack
 from PySide6.QtWidgets import QApplication, QGraphicsScene, QGraphicsView, QMenu
 
 from ...sim.block import block_types
 from ...sim.compile import CompileError, compile_model
+from ...sim.linearize import LinearizationError, plant_seen_by
 from ...sim.model import ModelError, PortRef, SimModel
 from . import commands as cmd
 from .items import GRID, BlockItem, PortItem, WireItem, sel_colour, snap, wire_colour
@@ -56,6 +57,8 @@ class SimCanvas(QGraphicsView):
         self._wires: list[WireItem] = []
         self._pending_port: PortItem | None = None
         self._rubber_wire = None
+        #: Dashed alignment lines shown while a block is being dragged.
+        self._guides: list = []
 
         self._scene.selectionChanged.connect(self._on_selection)
         self.rebuild()
@@ -85,12 +88,14 @@ class SimCanvas(QGraphicsView):
         self._wires.clear()
         self._pending_port = None
         self._rubber_wire = None
+        self._guides = []           # the scene just deleted them
 
         for block in self.model:
             place = self.model.placement(block.block_id)
             item = BlockItem(block, place.x, place.y)
             item.moved.connect(self._on_block_moved)
             item.double_clicked.connect(self._edit_params)
+            item.guides_changed.connect(self._show_guides)
             self._scene.addItem(item)
             self._blocks[block.block_id] = item
             if block.block_id in selected:
@@ -167,6 +172,29 @@ class SimCanvas(QGraphicsView):
 
     def _on_block_moved(self, block_id: str, x: float, y: float) -> None:
         self.undo_stack.push(cmd.MoveBlock(self, block_id, x, y))
+
+    def _show_guides(self, guides: list) -> None:
+        """
+        Draw the dashed lines that explain a snap, replacing the last set.
+
+        They live in the scene only while the drag lasts; the release clears
+        them. They are drawn each move rather than diffed, because there are
+        at most a handful and a stale guide is worse than a redundant redraw.
+        """
+        for line in self._guides:
+            self._scene.removeItem(line)
+        self._guides = []
+        pen = QPen(sel_colour(), 1.0, Qt.DashLine)
+        pen.setCosmetic(True)
+        for guide in guides:
+            lo, hi = guide.lo - 24.0, guide.hi + 24.0
+            geometry = (QLineF(lo, guide.coord, hi, guide.coord)
+                        if guide.orientation == "h"
+                        else QLineF(guide.coord, lo, guide.coord, hi))
+            line = self._scene.addLine(geometry, pen)
+            line.setZValue(6)
+            line.setAcceptedMouseButtons(Qt.NoButton)
+            self._guides.append(line)
 
     def delete_selection(self) -> None:
         blocks = [i.block_id for i in self._scene.selectedItems()
@@ -388,6 +416,49 @@ class SimCanvas(QGraphicsView):
         if dialog.exec() and dialog.changes:
             self.undo_stack.push(cmd.SetParams(self, block_id, dialog.changes))
 
+    # ── PID tuning ──────────────────────────────────────────────
+
+    def make_tune_dialog(self, block_id: str):
+        """
+        Build the tuning dialog for a PID block, plant and all.
+
+        The plant is not asked for: it is *read off the diagram* by opening the
+        loop at the controller and linearising the rest (see
+        :func:`~fakematlab.sim.linearize.plant_seen_by`). When that cannot be
+        done — no loop, several outputs, a subsystem view — the dialog is
+        still built, carrying the reason, so the user is told what to fix
+        instead of the button silently doing nothing.
+        """
+        from .tune_dialog import PIDTuneDialog
+
+        block = self.model.block(block_id)
+        plant, notes, error = None, [], ""
+        if self.inside_subsystem:
+            error = ("Tuning needs the whole loop, but this subsystem only "
+                     "shows part of it. Go up to the level where the PID and "
+                     "its plant are both visible.")
+        else:
+            try:
+                found = plant_seen_by(self.model, block_id)
+                plant, notes = found.tf, found.notes
+            except (LinearizationError, CompileError, ModelError,
+                    ValueError) as exc:
+                error = str(exc)
+        return PIDTuneDialog(block, plant, error, notes, self)
+
+    def tune_pid(self, block_id: str) -> bool:
+        """Open the tuner for a PID; write accepted gains through undo."""
+        if self.model.block(block_id).type_name != "PID":
+            return False
+        dialog = self.make_tune_dialog(block_id)
+        if dialog.exec() and dialog.changes:
+            self.undo_stack.push(cmd.SetParams(self, block_id, dialog.changes))
+            self.status.emit(f"Tuned {block_id}: "
+                             + ", ".join(f"{k} = {v:.5g}"
+                                         for k, v in dialog.changes.items()))
+            return True
+        return False
+
     # ── hierarchy ───────────────────────────────────────────────
 
     def descend(self, block_id: str) -> None:
@@ -488,6 +559,8 @@ class SimCanvas(QGraphicsView):
             else:
                 menu.addAction("Parameters…",
                                lambda: self._edit_params(item.block_id))
+            if item.block.type_name == "PID":
+                menu.addAction("Tune…", lambda: self.tune_pid(item.block_id))
             menu.addSeparator()
         if self.inside_subsystem:
             menu.addAction("↑ Up one level", self.ascend)

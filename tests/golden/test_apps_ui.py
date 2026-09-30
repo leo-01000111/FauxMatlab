@@ -393,7 +393,7 @@ def test_a_snapshot_taken_on_one_tab_restores_from_another(app, win):
     win._arch.set_block("K2", ctl.tf([2], [1]))
     bar.take("gain 2")
 
-    win._tabs.setCurrentWidget(win._freq_tab)
+    win._grid.panes[0].set_kind("frequency")
     win._arch.set_block("K2", ctl.tf([9], [1]))
     _settle(app, 3)
 
@@ -420,7 +420,7 @@ def test_compare_opens_the_viewer_with_every_design_plus_the_current_one(
 
 def test_restoring_refreshes_the_visible_tab(app, win):
     """A restore that leaves a tab showing the old design is worse than none."""
-    win._tabs.setCurrentWidget(win._sys_tab)
+    win._grid.panes[0].set_kind("system")
     win._arch.set_block("G", ctl.tf([1], [1, 1]))
     win._snapshot_bar.take("first order")
     win._arch.set_block("G", ctl.tf([1], [1, 5, 6]))

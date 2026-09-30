@@ -4,12 +4,10 @@ Fixed course architecture diagram view (ch.5, slide 16/24).
 Renders the 2-DOF block diagram with clickable blocks and signal labels.
 Layout (scene units, 1 unit ≈ 1 px at scale 1):
 
-      n(−)
-       |
  r → [K1] → ⊕e → [K2] → ⊕u → [G] → ⊕ → y
-              ↑(−)        ↑          ↑
-             [H] ←────────────────────┘
-              ↑di                    ↑do
+        ↑(−)        ↑di        ↑do    │
+       [H] ←──── ⊕m ←───────────────┘
+                  ↑ n
 
 All positions are hard-coded for a readable fixed layout.
 The diagram is read-only in the canvas; editing happens in BlockEditor.
@@ -51,7 +49,10 @@ X_H    = 0     # H centred under the main path
 # Disturbance Y offsets
 Y_DI = -90     # di enters from above SU
 Y_DO = -90     # do enters from above SY
-Y_N  = -60     # n enters from above SY output
+
+# Measurement noise n is added on the feedback path, right of the y branch
+X_SM = X_SY + 40   # summing junction M (+ n), directly under the y branch
+X_N  = X_SM + 70   # free end of the n stub, where its label sits
 
 
 class FixedDiagramView(BaseDiagramView):
@@ -141,6 +142,9 @@ class FixedDiagramView(BaseDiagramView):
                          signs={"left": "+", "top": "+di"})
         self._add_summer("sum_y", X_SY, Y_MAIN,
                          signs={"left": "+", "top": "+do"})
+        # measurement summer: y from above, n from the right
+        self._add_summer("sum_m", X_SM, Y_FEED,
+                         signs={"top": "+", "right": "+n"})
 
     def _draw_wires(self):
         # r → K1
@@ -158,12 +162,17 @@ class FixedDiagramView(BaseDiagramView):
         # sum_y → y
         self._wire([(X_SY + 18, Y_MAIN), (X_Y, Y_MAIN)])
 
-        # Feedback: y → H → sum_e
-        # y branches down at X_SY+18
-        branch_x = X_SY + 40
-        self._wire([(branch_x, Y_MAIN),
-                    (branch_x, Y_FEED),
-                    (X_H + 45, Y_FEED)])
+        # Feedback: y → sum_m → H → sum_e
+        # y branches straight down from the output line (which it meets
+        # perpendicularly, so no wire runs along another) into the top of
+        # the measurement summer, where n is added: H sees y + n.
+        branch_x = X_SM
+        self._wire([(branch_x, Y_MAIN), (branch_x, Y_FEED - 18)])
+        # n enters sum_m from the right, from a short stub whose free end
+        # carries the clickable "n" label (see _draw_signals).
+        self._wire([(X_N, Y_FEED), (branch_x + 18, Y_FEED)])
+        # sum_m → H (H sees the noisy measurement)
+        self._wire([(branch_x - 18, Y_FEED), (X_H + 45, Y_FEED)])
         # H → feedback to sum_e
         self._wire([(X_H - 45, Y_FEED),
                     (X_SE, Y_FEED),
@@ -173,9 +182,6 @@ class FixedDiagramView(BaseDiagramView):
         self._wire([(X_SU, Y_DI), (X_SU, Y_MAIN - 18)])
         # do from above sum_y
         self._wire([(X_SY, Y_DO), (X_SY, Y_MAIN - 18)])
-        # n from above, enters feedback before H
-        n_x = branch_x + 40
-        self._wire([(n_x, Y_N), (n_x, Y_FEED), (X_H + 45, Y_FEED)])
 
     def _draw_signals(self):
         # Reference
@@ -189,7 +195,7 @@ class FixedDiagramView(BaseDiagramView):
         # Disturbances
         self._add_signal("di", "di", X_SU - 10, Y_DI - 14)
         self._add_signal("do", "do", X_SY - 10, Y_DO - 14)
-        self._add_signal("n",  "n",  X_SY + 40, Y_N - 14)
+        self._add_signal("n",  "n",  X_N + 14, Y_FEED)
 
     # ── Slots ─────────────────────────────────────────────────
 

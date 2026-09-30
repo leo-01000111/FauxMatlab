@@ -8,7 +8,7 @@ crashed one — so the UI stays live, shows progress, and can be cancelled.
 
 from __future__ import annotations
 
-from PySide6.QtCore import QObject, QSize, Qt, QThread, Signal
+from PySide6.QtCore import QObject, QSettings, QSize, Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
@@ -32,7 +32,7 @@ from ..design import NORMAL, TIGHT
 from ..guard import GuardedPanel, guard
 from .canvas import SimCanvas
 from .inspector import BlockInspector
-from .palette import BlockPalette
+from .palette import STRIP_WIDTH, PaletteDock
 from .scope import ScopeWidget
 
 
@@ -83,6 +83,10 @@ class SimTab(QWidget, GuardedPanel):
     #: Emitted when the user linearises a model — the analysis tabs pick it up.
     linearised = Signal(object, str)       # TransferFunction, description
 
+    #: Where the palette's folded/unfolded state is remembered.
+    SETTINGS_ORG = "FauxMatlab"
+    SETTINGS_APP = "FauxMatlab"
+
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._thread: QThread | None = None
@@ -102,12 +106,14 @@ class SimTab(QWidget, GuardedPanel):
 
         splitter = QSplitter(Qt.Horizontal)
 
-        self._palette = BlockPalette()
-        # A *preferred* width, not a floor. A 180 px minimum here was one
-        # of the constraints that stopped the window being narrowed.
-        self._palette.setMinimumWidth(0)
-        self._palette.setMaximumWidth(280)
-        splitter.addWidget(self._palette)
+        # The dock owns the width rules (a preferred width, not a floor — a
+        # 180 px minimum here was one of the constraints that stopped the
+        # window being narrowed) and folds away to a strip on request.
+        self._palette_dock = PaletteDock()
+        self._palette = self._palette_dock.palette
+        self._splitter = splitter
+        self._palette_width = 200
+        splitter.addWidget(self._palette_dock)
 
         centre = QSplitter(Qt.Vertical)
         self._canvas = SimCanvas()
@@ -149,6 +155,11 @@ class SimTab(QWidget, GuardedPanel):
         self._canvas.path_changed.connect(self._on_path_changed)
         self._canvas.selection_changed.connect(self._on_block_selected)
         self._inspector.apply_requested.connect(self._apply_params)
+        self._inspector.tune_requested.connect(
+            lambda block_id: self._canvas.tune_pid(block_id))
+        self._palette_dock.toggled.connect(self._on_palette_toggled)
+        self._restoring_palette = False
+        self._restore_palette_state()
 
     def _build_toolbar(self) -> QWidget:
         """
@@ -172,6 +183,19 @@ class SimTab(QWidget, GuardedPanel):
         bar.setIconSize(QSize(16, 16))
         bar.setToolButtonStyle(Qt.ToolButtonTextOnly)
         bar.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+
+        # ── the block palette ──
+        # First, and checkable, so the state it shows is the state of the
+        # palette: unchecked means folded away, and one click brings it back.
+        self._palette_action = bar.addAction("Blocks")
+        self._palette_action.setCheckable(True)
+        self._palette_action.setChecked(True)
+        self._palette_action.setShortcut("Ctrl+B")
+        self._palette_action.setToolTip(
+            "Show or hide the block palette (Ctrl+B)")
+        self._palette_action.triggered.connect(
+            lambda checked: self.set_palette_visible(checked))
+        bar.addSeparator()
 
         # ── run ──
         self._run_btn = QPushButton("▶ Run")
@@ -284,6 +308,52 @@ class SimTab(QWidget, GuardedPanel):
         row.addWidget(self._progress)
         self._toolbar = bar
         return wrapper
+
+    # ── the palette ─────────────────────────────────────────────
+
+    @property
+    def palette_visible(self) -> bool:
+        return not self._palette_dock.collapsed
+
+    def set_palette_visible(self, visible: bool) -> None:
+        self._palette_dock.set_collapsed(not visible)
+
+    def _on_palette_toggled(self, collapsed: bool) -> None:
+        """
+        Hand the freed width to the canvas, and take it back on unfold.
+
+        Capping the dock's maximum width is enough to *allow* the canvas to
+        grow, but a splitter only reflows on the next resize; setting the sizes
+        explicitly makes the change immediate. The width the palette had is
+        remembered so unfolding restores it rather than guessing.
+        """
+        sizes = self._splitter.sizes()
+        if len(sizes) == 3 and sum(sizes) > 0:
+            if collapsed:
+                if sizes[0] > STRIP_WIDTH:
+                    self._palette_width = sizes[0]
+                give = sizes[0] - STRIP_WIDTH
+                self._splitter.setSizes(
+                    [STRIP_WIDTH, sizes[1] + give, sizes[2]])
+            else:
+                take = max(self._palette_width - sizes[0], 0)
+                self._splitter.setSizes(
+                    [sizes[0] + take, max(sizes[1] - take, 0), sizes[2]])
+        self._palette_action.blockSignals(True)
+        self._palette_action.setChecked(not collapsed)
+        self._palette_action.blockSignals(False)
+        if not self._restoring_palette:
+            QSettings(self.SETTINGS_ORG, self.SETTINGS_APP).setValue(
+                "sim/palette_collapsed", collapsed)
+
+    def _restore_palette_state(self) -> None:
+        stored = QSettings(self.SETTINGS_ORG, self.SETTINGS_APP).value(
+            "sim/palette_collapsed", False, type=bool)
+        self._restoring_palette = True
+        try:
+            self._palette_dock.set_collapsed(bool(stored))
+        finally:
+            self._restoring_palette = False
 
     # ── inspector ───────────────────────────────────────────────
 
