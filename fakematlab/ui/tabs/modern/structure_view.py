@@ -7,7 +7,6 @@ from __future__ import annotations
 import control as ctl
 import numpy as np
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
@@ -28,6 +27,7 @@ from ....core.structural import (
     kalman_decomposition,
     reduction_error_bound,
 )
+from ... import theme
 from ...guard import GuardedPanel, guard
 from ...plots import apply_theme, curve_pen, make_freq_plot, make_plot, plot_freq
 from .widgets import fill_table, make_table
@@ -59,7 +59,7 @@ class StructureView(QWidget, GuardedPanel):
         verdict_lay = QVBoxLayout(verdict)
         self._verdict = QLabel("")
         self._verdict.setWordWrap(True)
-        self._verdict.setFont(QFont("Consolas", 9))
+        self._verdict.setFont(theme.data_font(9))
         self._verdict.setTextInteractionFlags(Qt.TextSelectableByMouse)
         verdict_lay.addWidget(self._verdict)
         left_lay.addWidget(verdict)
@@ -67,7 +67,7 @@ class StructureView(QWidget, GuardedPanel):
         kalman = QGroupBox("Kalman decomposition")
         kalman_lay = QVBoxLayout(kalman)
         self._kalman = QLabel("")
-        self._kalman.setFont(QFont("Consolas", 9))
+        self._kalman.setFont(theme.data_font(9))
         self._kalman.setWordWrap(True)
         kalman_lay.addWidget(self._kalman)
         left_lay.addWidget(kalman)

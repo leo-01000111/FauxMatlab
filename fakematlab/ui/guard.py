@@ -43,12 +43,9 @@ class ErrorBanner(QFrame):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setFrameShape(QFrame.StyledPanel)
-        self.setStyleSheet(
-            "QFrame { background: #4A1420; border: 1px solid #C0392B;"
-            " border-radius: 4px; }"
-            "QLabel { color: #FFD9D9; }"
-            "QPushButton { color: #FFD9D9; border: none; font-weight: bold; }"
-        )
+        # A stop sign, not a toast: surface ground, a hold-red frame with a
+        # heavy left edge. The look is in the application stylesheet.
+        self.setProperty("hp", "banner")
         lay = QHBoxLayout(self)
         lay.setContentsMargins(8, 4, 4, 4)
 

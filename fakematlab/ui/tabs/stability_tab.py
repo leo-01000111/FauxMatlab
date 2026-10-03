@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 from ...core.architecture import CourseArchitecture
 from ...core.stability import root_locus, routh_from_closed_loop
 from ...core.tf_utils import analyse
+from .. import theme
 from ..guard import GuardedPanel, guard
 from ..plots import (
     COLORS,
@@ -36,6 +37,7 @@ from ..plots import (
     curve_pen,
     draw_pz_map,
     make_plot,
+    role_colour,
 )
 
 
@@ -84,6 +86,7 @@ class StabilityTab(QWidget, GuardedPanel):
         ctrl_lay.addWidget(self._refresh_btn)
 
         self._status_label = QLabel("")
+        self._status_label.setFont(theme.data_font(9))
         self._status_label.setWordWrap(True)
         ctrl_lay.addWidget(self._status_label)
         ctrl_lay.addStretch()
@@ -97,6 +100,7 @@ class StabilityTab(QWidget, GuardedPanel):
         routh_w = QWidget()
         routh_l = QVBoxLayout(routh_w)
         self._routh_info  = QLabel("")
+        self._routh_info.setFont(theme.data_font(9))
         self._routh_info.setWordWrap(True)
         routh_l.addWidget(self._routh_info)
         self._routh_table = QTableWidget(0, 0)
@@ -178,7 +182,7 @@ class StabilityTab(QWidget, GuardedPanel):
                 if c == 0 and not result.is_symbolic:
                     fv = _as_float(val)
                     if fv is not None and fv < 0:
-                        item.setForeground(pg.mkBrush("#FF5555"))
+                        item.setForeground(pg.mkBrush(role_colour("danger")))
                 self._routh_table.setItem(r, c, item)
 
         self._routh_table.resizeColumnsToContents()
@@ -212,7 +216,7 @@ class StabilityTab(QWidget, GuardedPanel):
 
         # Mark marginal gain crossing
         if not np.isnan(rl.K_marginal):
-            add_vline(pi, 0.0, "#FFAA00", width=1.5)
+            add_vline(pi, 0.0, role_colour("highlight"), width=1.5)
             self._status_label.setText(
                 f"Marginal gain Ku ≈ {rl.K_marginal:.4g}\n"
                 f"Marginal frequency ≈ {rl.omega_marginal:.4g} rad/s"
@@ -229,10 +233,10 @@ class StabilityTab(QWidget, GuardedPanel):
                 dx = np.cos(np.radians(angle)) * K_max
                 dy = np.sin(np.radians(angle)) * K_max
                 pi.plot([c, c + dx], [0, dy],
-                        pen=pg.mkPen("#555555", width=0.8, style=Qt.DashLine))
+                        pen=pg.mkPen(role_colour("muted"), width=0.8, style=Qt.DashLine))
 
-        add_vline(pi, 0.0, "#888888", width=0.6)
-        add_hline(pi, 0.0, "#888888", width=0.6)
+        add_vline(pi, 0.0, role_colour("muted"), width=0.6)
+        add_hline(pi, 0.0, role_colour("muted"), width=0.6)
         pi.addLegend()
 
     # ── CL pole map ────────────────────────────────────────────
@@ -268,8 +272,8 @@ class StabilityTab(QWidget, GuardedPanel):
                     )
                     pi.addItem(scatter_z)
 
-        add_vline(pi, 0.0, "#888888", width=0.6)
-        add_hline(pi, 0.0, "#888888", width=0.6)
+        add_vline(pi, 0.0, role_colour("muted"), width=0.6)
+        add_hline(pi, 0.0, role_colour("muted"), width=0.6)
         pi.addLegend()
 
 

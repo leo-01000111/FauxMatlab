@@ -17,7 +17,6 @@ from __future__ import annotations
 import control as ctl
 import numpy as np
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
@@ -42,6 +41,7 @@ from ..core.tf_utils import (
     second_order,
     unity,
 )
+from . import theme
 
 # ──────────────────────────────────────────────────────────────
 
@@ -123,8 +123,7 @@ class BlockEditor(QWidget):
         self._info_label = QLabel("")
         self._info_label.setWordWrap(True)
         self._info_label.setTextFormat(Qt.PlainText)
-        font = QFont("Courier New", 9)
-        self._info_label.setFont(font)
+        self._info_label.setFont(theme.data_font(9))
         grp_lay.addWidget(self._info_label)
 
         root.addWidget(self._group)

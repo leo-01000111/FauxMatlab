@@ -15,7 +15,10 @@ from __future__ import annotations
 from abc import abstractmethod
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import QGraphicsScene, QGraphicsView
+
+from .. import theme
 
 
 class BaseDiagramView(QGraphicsView):
@@ -44,6 +47,15 @@ class BaseDiagramView(QGraphicsView):
         self.setDragMode(QGraphicsView.ScrollHandDrag)
         self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
         self.setResizeAnchor(QGraphicsView.AnchorUnderMouse)
+        # Canvas = ground. Items read the tokens at paint time; only this
+        # brush is baked in, so restyle it when the theme changes.
+        self._restyle()
+        theme.notifier().changed.connect(self._restyle)
+
+    def _restyle(self, *_args) -> None:
+        self._scene.setBackgroundBrush(QBrush(QColor(theme.tokens().ground)))
+        self._scene.update()
+        self.viewport().update()
 
     # ── interface every subclass must implement ─────────────────
 

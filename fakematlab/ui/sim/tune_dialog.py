@@ -39,6 +39,7 @@ from ...core.pidtune import (
 )
 from ...core.timeresp import step_response
 from ...core.tuning import PIDParams, pid_tf
+from .. import theme
 from ..apps.pid_tuner import SPEED_TICKS, TRANSIENT_TICKS, _ends, _settles
 from ..plots import add_hline, curve_pen, make_plot
 
@@ -122,9 +123,11 @@ class PIDTuneDialog(QDialog):
 
         self._error = QLabel(error)
         self._error.setWordWrap(True)
-        self._error.setStyleSheet("color: #C0392B;")
         self._error.setVisible(bool(error))
         root.addWidget(self._error)
+        self._readout.setFont(theme.data_font(9))
+        self._restyle()
+        theme.notifier().changed.connect(self._restyle)
 
         self._buttons = QDialogButtonBox(
             QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -227,9 +230,12 @@ class PIDTuneDialog(QDialog):
                 continue
             plot.plot(resp.t, np.atleast_2d(resp.y)[0],
                       pen=curve_pen(colour, 2.0), name=label)
-        add_hline(plot, 1.0, "#888888", width=0.8)
+        add_hline(plot, 1.0, theme.plot_colour("reference"), width=0.8)
         plot.setTitle("Closed-loop step response" if curves
                       else "Nothing stable to show at this target")
+
+    def _restyle(self, *_args) -> None:
+        self._error.setStyleSheet(f"color: {theme.tokens().hold_ink};")
 
     # ── accepting ───────────────────────────────────────────────
 

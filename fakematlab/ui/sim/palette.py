@@ -5,7 +5,7 @@ Block palette: the library, grouped, searchable and draggable onto the canvas.
 from __future__ import annotations
 
 from PySide6.QtCore import QMimeData, Qt, Signal
-from PySide6.QtGui import QDrag
+from PySide6.QtGui import QBrush, QColor, QDrag
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLineEdit,
@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from ...sim.block import by_category
+from .. import theme
 from .canvas import MIME_TYPE
 
 _ROLE = Qt.UserRole + 1
@@ -53,20 +54,29 @@ class BlockPalette(QWidget):
         layout.addWidget(self._tree, stretch=1)
 
         self._populate()
+        theme.notifier().changed.connect(self._restyle)
+
+    def _restyle(self, *_args) -> None:
+        """Category headers carry a baked foreground; re-read it per theme."""
+        muted = QBrush(QColor(theme.tokens().ink_muted))
+        for i in range(self._tree.topLevelItemCount()):
+            self._tree.topLevelItem(i).setForeground(0, muted)
 
     def _populate(self) -> None:
         self._tree.clear()
         for category, blocks in by_category().items():
             parent = QTreeWidgetItem(self._tree, [category])
             parent.setFlags(Qt.ItemIsEnabled)
-            font = parent.font(0)
-            font.setBold(True)
-            parent.setFont(0, font)
+            # Reads like a sign list: mono uppercase category headers,
+            # plain UI-font entries beneath.
+            parent.setFont(0, theme.label_font(8))
             for cls in blocks:
                 child = QTreeWidgetItem(parent, [cls.type_name])
                 child.setData(0, _ROLE, cls.type_name)
                 child.setToolTip(0, cls.description)
+                child.setFont(0, theme.ui_font(10))
             parent.setExpanded(True)
+        self._restyle()
 
     def _apply_filter(self, text: str) -> None:
         needle = text.strip().lower()

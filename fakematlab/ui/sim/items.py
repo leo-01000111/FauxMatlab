@@ -15,8 +15,18 @@ import math
 from dataclasses import dataclass, field
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import QBrush, QColor, QFont, QPainter, QPainterPath, QPen, QPolygonF
-from PySide6.QtWidgets import QApplication, QGraphicsItem, QGraphicsObject, QStyle
+from PySide6.QtGui import (
+    QBrush,
+    QColor,
+    QFontMetricsF,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QPolygonF,
+)
+from PySide6.QtWidgets import QGraphicsItem, QGraphicsObject, QStyle
+
+from .. import theme
 
 BLOCK_W, BLOCK_H = 110.0, 60.0
 PORT_R = 5.0
@@ -27,19 +37,18 @@ PORT_HIT_MARGIN = 7.0
 GRID = 10.0
 
 
-def _clr(light: str, dark: str) -> QColor:
-    palette = QApplication.palette()
-    return QColor(dark if palette.window().color().lightness() < 128 else light)
+def _c(name: str) -> QColor:
+    return QColor(getattr(theme.tokens(), name))
 
 
-def block_bg():      return _clr("#E8F0FE", "#1E3A5F")
-def block_border():  return _clr("#2255AA", "#5599FF")
-def block_text():    return _clr("#101820", "#E8F0FF")
-def wire_colour():   return _clr("#33404D", "#B8C4D0")
-def port_in():       return _clr("#2E7D32", "#66BB6A")
-def port_out():      return _clr("#C62828", "#EF5350")
-def sel_colour():    return _clr("#FF6F00", "#FFB300")
-def error_colour():  return _clr("#C0392B", "#FF6B6B")
+# Read at paint time, so a theme switch only needs the scene to repaint.
+def block_bg():      return _c("surface")
+def block_border():  return _c("ink")
+def block_text():    return _c("ink")
+def wire_colour():   return _c("ink")
+def sel_colour():    return _c("signal")      # selection: the sign-yellow ring
+def hover_colour():  return _c("edge")       # hovered wire / port
+def error_colour():  return _c("hold_ink")
 
 
 def snap(value: float, grid: float = GRID) -> float:
@@ -149,8 +158,8 @@ class PortItem(QGraphicsObject):
     A connection point on a block.
 
     Clicking one starts a wire; releasing on another finishes it. Inputs are
-    drawn green on the left, outputs red on the right, so the direction of a
-    half-drawn wire is never ambiguous.
+    hollow squares on the left, outputs solid ones on the right, so the
+    direction of a half-drawn wire is never ambiguous.
     """
 
     def __init__(self, block_id: str, port: str, is_input: bool,
@@ -193,16 +202,13 @@ class PortItem(QGraphicsObject):
             self.update()
 
     def paint(self, painter: QPainter, option, widget=None) -> None:
-        painter.setRenderHint(QPainter.Antialiasing)
-        colour = port_in() if self.is_input else port_out()
-        if self._hover or self._highlight:
-            colour = sel_colour()
-            painter.setPen(QPen(colour, 2.0))
-        else:
-            painter.setPen(QPen(colour.darker(130), 1.2))
-        painter.setBrush(QBrush(colour))
-        r = PORT_R + (2 if (self._hover or self._highlight) else 0)
-        painter.drawEllipse(QPointF(0, 0), r, r)
+        painter.setRenderHint(QPainter.Antialiasing, False)
+        active = self._hover or self._highlight
+        ink = hover_colour() if active else block_border()
+        painter.setPen(QPen(ink, 2.0, Qt.SolidLine, Qt.SquareCap, Qt.MiterJoin))
+        painter.setBrush(QBrush(block_bg() if self.is_input else ink))
+        r = PORT_R - 0.5 + (1.5 if active else 0)
+        painter.drawRect(QRectF(-r, -r, 2 * r, 2 * r))
 
     def hoverEnterEvent(self, event) -> None:
         self._hover = True
@@ -298,35 +304,66 @@ class BlockItem(QGraphicsObject):
     # ── painting ────────────────────────────────────────────────
 
     def paint(self, painter: QPainter, option, widget=None) -> None:
-        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.Antialiasing, False)
         rect = self.body_rect()
         selected = bool(option.state & QStyle.State_Selected)
 
-        if self._error:
-            pen = QPen(error_colour(), 2.5)
-        elif selected:
-            pen = QPen(sel_colour(), 2.5)
-        else:
-            pen = QPen(block_border(), 1.6)
-        painter.setPen(pen)
+        if selected and not self._error:
+            # Lifted: the brand's hard offset slab, never a blur.
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor(theme.tokens().shadow))
+            painter.drawRect(rect.translated(4, 4))
+
+        border = error_colour() if self._error else block_border()
+        painter.setPen(QPen(border, 2.0, Qt.SolidLine, Qt.SquareCap, Qt.MiterJoin))
         painter.setBrush(QBrush(block_bg()))
-        painter.drawRoundedRect(rect, 7, 7)
+        painter.drawRect(rect)
+        if selected:
+            painter.setPen(QPen(sel_colour(), 3.0, Qt.SolidLine,
+                                Qt.SquareCap, Qt.MiterJoin))
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRect(rect.adjusted(4, 4, -4, -4))
 
         painter.setPen(QPen(block_text()))
-        painter.setFont(QFont("Segoe UI", 9, QFont.Bold))
-        painter.drawText(rect.adjusted(6, 4, -6, -16),
-                         Qt.AlignCenter | Qt.TextWordWrap, self.block.label())
+        self._draw_label(painter, rect.adjusted(8, 4, -8, -16))
 
-        painter.setFont(QFont("Segoe UI", 7))
-        painter.setPen(QPen(block_text().darker(140)))
+        painter.setFont(theme.label_font(6.5))
+        painter.setPen(QPen(theme.tokens().ink_muted))
         painter.drawText(rect.adjusted(4, rect.height() - 16, -4, -2),
                          Qt.AlignCenter, self.block_id)
 
         if self._error:
             painter.setPen(QPen(error_colour(), 2.0))
-            painter.setFont(QFont("Segoe UI", 12, QFont.Bold))
+            painter.setFont(theme.data_font(11, 700))
             painter.drawText(QRectF(rect.right() - 16, rect.top() - 2, 20, 18),
                              Qt.AlignCenter, "!")
+
+    def _draw_label(self, painter: QPainter, area: QRectF) -> None:
+        """
+        The block's title in the sign font, its parameters in the data font.
+
+        A label that is just the type name is a title; anything else
+        (``Kp=2 Ki=1``, a transfer function) is data and must keep its case,
+        so only the first line of a multi-line label is set as a sign.
+        """
+        label = self.block.label()
+        head, _, rest = label.partition(chr(10))
+        if not rest and label != self.block.type_name:
+            head, rest = "", label
+        flags = Qt.AlignHCenter | Qt.TextWordWrap
+        sign, data = theme.sign_font(9), theme.data_font(7)
+        h_head = QFontMetricsF(sign).height() if head else 0.0
+        h_rest = QFontMetricsF(data).boundingRect(
+            QRectF(0, 0, area.width(), 1000), flags, rest).height() if rest else 0.0
+        top = area.top() + max(0.0, (area.height() - h_head - h_rest) / 2)
+        if head:
+            painter.setFont(sign)
+            painter.drawText(QRectF(area.left(), top, area.width(), h_head),
+                             flags, head)
+        if rest:
+            painter.setFont(data)
+            painter.drawText(QRectF(area.left(), top + h_head, area.width(),
+                                    h_rest), flags, rest)
 
     # ── interaction ─────────────────────────────────────────────
 
@@ -446,9 +483,16 @@ class WireItem(QGraphicsObject):
     def paint(self, painter: QPainter, option, widget=None) -> None:
         painter.setRenderHint(QPainter.Antialiasing)
         selected = bool(option.state & QStyle.State_Selected)
-        colour = sel_colour() if (selected or self._hover) else wire_colour()
-        painter.setPen(QPen(colour, 2.4 if selected else 1.7,
-                            Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        # Hovered wire = edge blue; selected = 3px signal; otherwise 2px ink.
+        colour = (hover_colour() if self._hover
+                  else wire_colour())
+        if selected:
+            painter.setPen(QPen(sel_colour(), 6.0, Qt.SolidLine,
+                                Qt.FlatCap, Qt.MiterJoin))
+            painter.setBrush(Qt.NoBrush)
+            painter.drawPath(self._path)
+        painter.setPen(QPen(colour, 2.0, Qt.SolidLine,
+                            Qt.FlatCap, Qt.MiterJoin))
         painter.setBrush(Qt.NoBrush)
         painter.drawPath(self._path)
         _arrow(painter, self._path, colour)

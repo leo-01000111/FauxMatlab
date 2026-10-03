@@ -76,6 +76,7 @@ class NavigationRail(QFrame):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.setFrameShape(QFrame.StyledPanel)
+        self.setProperty("hp", "plain")
         self.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Expanding)
 
         column = QVBoxLayout(self)

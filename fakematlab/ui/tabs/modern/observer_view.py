@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import numpy as np
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
@@ -28,6 +27,7 @@ from ....core.observers import (
     reduced_observer,
 )
 from ....core.statefbk import DesignError
+from ... import theme
 from ...guard import GuardedPanel, guard
 from ...plots import add_hline, apply_theme, curve_pen, make_plot
 from .widgets import fill_table, frame_poles, make_table
@@ -97,7 +97,7 @@ class ObserverView(QWidget, GuardedPanel):
 
         self._result = QLabel("")
         self._result.setWordWrap(True)
-        self._result.setFont(QFont("Consolas", 9))
+        self._result.setFont(theme.data_font(9))
         self._result.setTextInteractionFlags(Qt.TextSelectableByMouse)
         left_lay.addWidget(self._result)
         left_lay.addStretch()
@@ -116,7 +116,7 @@ class ObserverView(QWidget, GuardedPanel):
             "Design a state feedback on the Feedback tab as well, and the "
             "combined closed-loop poles appear here.")
         self._separation.setWordWrap(True)
-        self._separation.setFont(QFont("Consolas", 9))
+        self._separation.setFont(theme.data_font(9))
         sep_lay.addWidget(self._separation)
         self._poles_table = make_table(["source", "pole"], max_height=150)
         sep_lay.addWidget(self._poles_table)
@@ -206,7 +206,7 @@ class ObserverView(QWidget, GuardedPanel):
                 [v.imag for v in design.eigenvalues],
                 pen=None, symbol="o", symbolSize=11,
                 symbolPen=curve_pen(2, 2.0), name="A − LC")
-        add_hline(pz, 0.0, "#888888", width=0.6)
+        add_hline(pz, 0.0, theme.plot_colour("muted"), width=0.6)
         frame_poles(pz, list(design.eigenvalues) + list(
             np.linalg.eigvals(np.asarray(self.ctx.sys.A))))
 
@@ -216,7 +216,7 @@ class ObserverView(QWidget, GuardedPanel):
         if not full_order:
             error.setTitle(
                 "Reduced observer: the measured states have no error to show",
-                color="#F4A261")
+                color=theme.plot_line_highlight())
             return
 
         error.addLegend(offset=(-10, 10))
@@ -226,7 +226,7 @@ class ObserverView(QWidget, GuardedPanel):
         curves = estimation_error_response(self.ctx.sys, design.L, t)
         for i, curve in enumerate(curves):
             error.plot(t, curve, pen=curve_pen(i, 1.8), name=f"e{i}")
-        add_hline(error, 0.0, "#888888", width=0.6)
+        add_hline(error, 0.0, theme.plot_colour("muted"), width=0.6)
 
     def _refresh_separation(self) -> None:
         K, L = self.ctx.K, self.ctx.L

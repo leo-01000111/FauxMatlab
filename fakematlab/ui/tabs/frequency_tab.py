@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 from ...core.architecture import CourseArchitecture
 from ...core.asymptotes import bode_asymptotes
 from ...core.freqresp import bode, nichols, nyquist
+from .. import theme
 from ..guard import GuardedPanel, guard
 from ..plots import (
     COLORS,
@@ -45,6 +46,7 @@ from ..plots import (
     make_freq_plot,
     make_plot,
     plot_freq,
+    role_colour,
 )
 
 
@@ -139,6 +141,7 @@ class FrequencyTab(QWidget, GuardedPanel):
         ctrl_lay.addWidget(self._refresh_btn)
 
         self._margins_label = QLabel("")
+        self._margins_label.setFont(theme.data_font(9))
         self._margins_label.setWordWrap(True)
         self._margins_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         ctrl_lay.addWidget(self._margins_label)
@@ -250,32 +253,32 @@ class FrequencyTab(QWidget, GuardedPanel):
             draw_asymptotes(pi_mag, asym.magnitude, COLORS[0],
                             hover=hov_mag, corners=asym.breaks)
 
-        add_hline(pi_mag, 0.0, color="#888888", width=0.8)
+        add_hline(pi_mag, 0.0, color=role_colour("muted"), width=0.8)
         if self._tpl_show.isChecked():
             self._draw_templates(pi_mag, bd)
 
         if np.isfinite(bd.wc):
-            freq_vline(pi_mag, bd.wc, color="#F4A261", label=f"ωc={bd.wc:.3g}")
+            freq_vline(pi_mag, bd.wc, color=role_colour("reference"), label=f"ωc={bd.wc:.3g}")
             hov_mag.model.add_mark(bd.wc, 0.0,
                                    f"ωc = {bd.wc:.4g} rad/s (0 dB crossover)",
-                                   colour="#F4A261")
+                                   colour=role_colour("reference"))
         if np.isfinite(bd.w180) and np.isfinite(bd.gm_dB):
-            freq_vline(pi_mag, bd.w180, color="#F45B69",
+            freq_vline(pi_mag, bd.w180, color=role_colour("danger"),
                        label=f"ω₁₈₀={bd.w180:.3g}")
             freq_text(pi_mag, bd.w180, float(np.min(bd.mag_dB)) + 5,
-                      f"GM={bd.gm_dB:.2f} dB", "#F45B69")
+                      f"GM={bd.gm_dB:.2f} dB", role_colour("danger"))
             hov_mag.model.add_mark(
                 bd.w180, -bd.gm_dB,
                 f"GM = {bd.gm_dB:.2f} dB at ω180 = {bd.w180:.4g} rad/s",
-                colour="#F45B69")
+                colour=role_colour("danger"))
         if np.isfinite(bd.wr) and np.isfinite(bd.Mr):
             mr_dB = 20 * np.log10(max(bd.Mr, 1e-10))
-            freq_marker(pi_mag, bd.wr, mr_dB, symbol="star", color="#9B72CF")
-            freq_text(pi_mag, bd.wr, mr_dB + 2, f"Mr={bd.Mr:.3g}", "#9B72CF")
+            freq_marker(pi_mag, bd.wr, mr_dB, symbol="star", color=role_colour("highlight"))
+            freq_text(pi_mag, bd.wr, mr_dB + 2, f"Mr={bd.Mr:.3g}", role_colour("highlight"))
             hov_mag.model.add_mark(
                 bd.wr, mr_dB,
                 f"Mr = {bd.Mr:.3g} ({mr_dB:.2f} dB) at ωr = {bd.wr:.4g} rad/s",
-                colour="#9B72CF")
+                colour=role_colour("highlight"))
 
         # ── Phase ──
         pi_ph = self._bode_phase.getPlotItem()
@@ -294,16 +297,16 @@ class FrequencyTab(QWidget, GuardedPanel):
         if asym is not None:
             draw_asymptotes(pi_ph, asym.phase, COLORS[0], hover=hov_ph)
 
-        add_hline(pi_ph, -180.0, color="#888888", width=0.8)
+        add_hline(pi_ph, -180.0, color=role_colour("muted"), width=0.8)
         if np.isfinite(bd.wc):
-            freq_vline(pi_ph, bd.wc, color="#F4A261",
+            freq_vline(pi_ph, bd.wc, color=role_colour("reference"),
                        label=f"PM={bd.pm_deg:.1f}°")
             phase_c = float(np.interp(bd.wc, bd.omega, bd.phase_deg))
-            freq_marker(pi_ph, bd.wc, phase_c, symbol="d", color="#F4A261")
+            freq_marker(pi_ph, bd.wc, phase_c, symbol="d", color=role_colour("reference"))
             hov_ph.model.add_mark(
                 bd.wc, phase_c,
                 f"PM = {bd.pm_deg:.1f}° at ωc = {bd.wc:.4g} rad/s",
-                colour="#F4A261")
+                colour=role_colour("reference"))
 
         self._margins_label.setText(self._margin_text(bd))
 
@@ -341,23 +344,23 @@ class FrequencyTab(QWidget, GuardedPanel):
 
         # Low-frequency block: |L| must stay above lo_dB up to w_d.
         self._forbidden_box(pi, x_lo, float(to_freq_coord(w_d)),
-                            y_lo, lo_dB, "#F45B69")
+                            y_lo, lo_dB, role_colour("danger"))
         freq_text(pi, bd.omega.min() * 1.2, lo_dB,
                   f"  |S| ≤ {s_d:g} below ω={w_d:g}\n  → |L| ≥ {lo_dB:.1f} dB",
-                  "#F45B69")
+                  role_colour("danger"))
 
         # High-frequency block: |L| must stay below hi_dB from w_n up.
         self._forbidden_box(pi, float(to_freq_coord(w_n)), x_hi,
-                            hi_dB, y_hi, "#9B72CF")
+                            hi_dB, y_hi, role_colour("highlight"))
         freq_text(pi, w_n * 1.05, hi_dB,
                   f"  |T| ≤ {t_n:g} above ω={w_n:g}\n  → |L| ≤ {hi_dB:.1f} dB",
-                  "#9B72CF")
+                  role_colour("highlight"))
 
         # Feasibility: the two constraints must leave a corridor.
         if w_n <= w_d or hi_dB >= lo_dB:
             freq_text(pi, np.sqrt(max(w_d * w_n, 1e-12)), (lo_dB + hi_dB) / 2,
                       "  ⚠ templates overlap — specification infeasible",
-                      "#F4A261")
+                      role_colour("reference"))
 
     @staticmethod
     def _forbidden_box(pi, x0: float, x1: float, y0: float, y1: float,
@@ -410,11 +413,13 @@ class FrequencyTab(QWidget, GuardedPanel):
         apply_theme(pi, "Nyquist Diagram", "Re L(jω)", "Im L(jω)")
         pi.addLegend(offset=(-10, 10))
 
-        # M-circles go down first so the locus draws on top of them.
+        # M-circles go down first so the locus draws on top of them. They are
+        # a grid of references, not series: one muted ink, told apart by the
+        # legend and the label rather than by a rainbow.
         if self._nyq_mcircles.isChecked():
-            for i, (M, path) in enumerate(nd.m_circles):
+            for M, path in nd.m_circles:
                 pi.plot(path.real, path.imag,
-                        pen=pg.mkPen(COLORS[(i + 2) % len(COLORS)],
+                        pen=pg.mkPen(role_colour("muted"),
                                      width=0.8, style=Qt.DotLine),
                         name=f"|T|={M:g}")
 
@@ -431,28 +436,28 @@ class FrequencyTab(QWidget, GuardedPanel):
                               quantity="nyquist", param=-nd.omega,
                               colour=COLORS[0])
 
-        add_marker(pi, -1.0, 0.0, symbol="x", color="#FF4444", size=14)
-        add_text_annotation(pi, -1.0, 0.05, "−1", "#FF4444")
+        add_marker(pi, -1.0, 0.0, symbol="x", color=role_colour("danger"), size=14)
+        add_text_annotation(pi, -1.0, 0.05, "−1", role_colour("danger"))
         hover.model.add_mark(-1.0, 0.0, "critical point −1 + j0",
-                             colour="#FF4444")
+                             colour=role_colour("danger"))
 
         theta = np.linspace(0, 2 * np.pi, 200)
         pi.plot(np.cos(theta), np.sin(theta),
-                pen=pg.mkPen("#666666", width=0.8, style=Qt.DotLine))
+                pen=pg.mkPen(role_colour("muted"), width=0.8, style=Qt.DotLine))
 
         # The modulus margin, drawn as the shortest chord to −1 (ch.6, 23/26).
         if np.isfinite(nd.w_modulus):
             i = int(np.argmin(np.abs(nd.omega - nd.w_modulus)))
             pi.plot([-1.0, nd.H_pos[i].real], [0.0, nd.H_pos[i].imag],
-                    pen=pg.mkPen("#26BFBF", width=1.6, style=Qt.DashLine),
+                    pen=pg.mkPen(role_colour("reference"), width=1.6, style=Qt.DashLine),
                     name=f"modulus margin = {nd.modulus_margin:.3g}")
             hover.model.add_mark(
                 float(nd.H_pos[i].real), float(nd.H_pos[i].imag),
                 f"modulus margin = {nd.modulus_margin:.3g} "
-                f"at ω = {nd.w_modulus:.4g} rad/s", colour="#26BFBF")
+                f"at ω = {nd.w_modulus:.4g} rad/s", colour=role_colour("reference"))
 
-        add_vline(pi, 0.0, "#555555", width=0.6)
-        add_hline(pi, 0.0, "#555555", width=0.6)
+        add_vline(pi, 0.0, role_colour("muted"), width=0.6)
+        add_hline(pi, 0.0, role_colour("muted"), width=0.6)
 
         verdict = ("closed loop STABLE" if nd.Z == 0
                    else f"closed loop UNSTABLE — {nd.Z} RHP pole(s)")
@@ -479,13 +484,13 @@ class FrequencyTab(QWidget, GuardedPanel):
         pi.addLegend(offset=(-10, 10))
 
         if self._nyq_mcircles.isChecked():
-            for i, (M, pts) in enumerate(nc.m_circles):
+            for M, pts in nc.m_circles:
                 if len(pts) == 0:
                     continue
                 # connect='finite' respects the NaN rows that separate the
                 # disjoint branches of an M-contour.
                 pi.plot(pts[:, 0], pts[:, 1], connect="finite",
-                        pen=pg.mkPen(COLORS[(i + 2) % len(COLORS)],
+                        pen=pg.mkPen(role_colour("muted"),
                                      width=0.8, style=Qt.DotLine),
                         name=f"|T|={M:g}")
 
@@ -495,11 +500,11 @@ class FrequencyTab(QWidget, GuardedPanel):
         hover.model.add_curve(nc.phase_deg, nc.mag_dB, quantity="nichols",
                               param=nc.omega, colour=COLORS[0])
 
-        add_vline(pi, -180.0, "#FF4444", width=0.8)
-        add_hline(pi, 0.0,    "#888888", width=0.8)
-        add_marker(pi, -180.0, 0.0, symbol="x", color="#FF4444", size=12)
+        add_vline(pi, -180.0, role_colour("danger"), width=0.8)
+        add_hline(pi, 0.0,    role_colour("muted"), width=0.8)
+        add_marker(pi, -180.0, 0.0, symbol="x", color=role_colour("danger"), size=12)
         hover.model.add_mark(-180.0, 0.0, "critical point (−180°, 0 dB)",
-                             colour="#FF4444")
+                             colour=role_colour("danger"))
 
     # ── Helpers ───────────────────────────────────────────────
 

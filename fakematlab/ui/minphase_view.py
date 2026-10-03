@@ -27,10 +27,11 @@ from PySide6.QtWidgets import QLabel, QScrollArea, QVBoxLayout, QWidget
 from ..core import freqresp as _freq
 from ..core import tf_utils as _tfu
 from ..core.minphase import MinPhaseSplit, minimum_phase_split
+from . import theme
 from .guard import GuardedPanel, guard
 from .plots import curve_pen, make_freq_plot, plot_freq
 
-_G_PEN, _MP_PEN, _AP_PEN = 0, 2, 3      # indices into plots.COLORS
+_G_PEN, _MP_PEN, _AP_PEN = 0, 1, 4      # ink (the system), highlight, muted
 
 
 class MinPhaseView(QWidget, GuardedPanel):
@@ -57,6 +58,7 @@ class MinPhaseView(QWidget, GuardedPanel):
         lay.addWidget(self._status)
 
         self._text = QLabel("")
+        self._text.setFont(theme.data_font(9))
         self._text.setTextFormat(Qt.RichText)
         self._text.setWordWrap(True)
         self._text.setTextInteractionFlags(Qt.TextSelectableByMouse)

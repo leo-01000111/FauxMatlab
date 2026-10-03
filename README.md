@@ -101,6 +101,10 @@ restores it from anywhere, and Compare throws every stored design into the LTI V
 once. Window geometry, workspace, dock layout and pane arrangement are remembered between
 runs; View ▸ Reset layout puts them back.
 
+It wears the same design system as [leongorecki.eu](https://leongorecki.eu): Archivo and
+Martian Mono, concrete and asphalt grounds, sign-yellow highlights. View ▸ Theme picks Day,
+Night or follows the system.
+
 It fits a **1280 × 720** screen, and is tested at 1366 × 768 and 1920 × 1080 too.
 
 ---
@@ -153,7 +157,7 @@ rather than merely inaccurate.
 pytest
 ```
 
-804 tests, plus `ruff check .`. They are mostly *golden* tests: analytic values computed by
+817 tests, plus `ruff check .`. They are mostly *golden* tests: analytic values computed by
 hand or by an independent route, not snapshots of whatever the code printed first. The
 numeric signal solver and the symbolic one check each other; `python-control` acts as a
 third opinion.

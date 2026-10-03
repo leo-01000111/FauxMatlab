@@ -7,7 +7,6 @@ from __future__ import annotations
 import control as ctl
 import numpy as np
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QComboBox,
     QGroupBox,
@@ -23,6 +22,7 @@ from PySide6.QtWidgets import (
 
 from ...core.architecture import CourseArchitecture
 from ...core.tf_utils import analyse, factored_str
+from .. import theme
 from ..guard import GuardedPanel, guard
 from ..plots import apply_theme, draw_pz_map, make_plot
 
@@ -71,7 +71,7 @@ class SystemTab(QWidget, GuardedPanel):
 
         self._tf_label = QLabel("")
         self._tf_label.setWordWrap(True)
-        self._tf_label.setFont(QFont("Courier New", 10))
+        self._tf_label.setFont(theme.data_font(10))
         left_lay.addWidget(self._tf_label)
 
         self._info_label = QLabel("")

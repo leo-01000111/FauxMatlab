@@ -33,6 +33,7 @@ from ...core.tuning import (
     zn_step,
     zn_ultimate,
 )
+from .. import theme
 from ..guard import GuardedPanel, guard
 from ..plots import (
     add_hline,
@@ -42,6 +43,7 @@ from ..plots import (
     make_freq_plot,
     make_plot,
     plot_freq,
+    role_colour,
 )
 
 
@@ -139,6 +141,7 @@ class DesignTab(QWidget, GuardedPanel):
         left_lay.addWidget(grp_snap)
 
         self._zn_result_label = QLabel("")
+        self._zn_result_label.setFont(theme.data_font(9))
         self._zn_result_label.setWordWrap(True)
         self._zn_result_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         left_lay.addWidget(self._zn_result_label)
@@ -362,7 +365,7 @@ class DesignTab(QWidget, GuardedPanel):
             resp = step_response(arch.get_closed_loop_tf("r", "y"))
             pi.plot(resp.t, resp.y.ravel(),
                     pen=curve_pen(i, 2.2 if i == 0 else 1.5), name=name)
-        add_hline(pi, 1.0, "#888888", width=0.6)
+        add_hline(pi, 1.0, role_colour("muted"), width=0.6)
 
     @guard("Design Bode plot")
     def _draw_bode(self) -> None:
@@ -382,10 +385,10 @@ class DesignTab(QWidget, GuardedPanel):
                       name=f"{name}  (PM {bd.pm_deg:.0f}°)"
                            if np.isfinite(bd.pm_deg) else name)
             if i == 0 and np.isfinite(bd.wc):
-                freq_vline(pi, bd.wc, color="#F4A261",
+                freq_vline(pi, bd.wc, color=role_colour("reference"),
                            label=f"ωc={bd.wc:.3g}")
 
-        add_hline(pi, 0.0, "#888888", width=0.6)
+        add_hline(pi, 0.0, role_colour("muted"), width=0.6)
 
     def refresh(self, arch: CourseArchitecture | None = None) -> None:
         if arch is not None:

@@ -7,7 +7,6 @@ from __future__ import annotations
 import control as ctl
 import numpy as np
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
@@ -33,6 +32,7 @@ from ....core.discrete import (
     settling_samples,
     unit_circle,
 )
+from ... import theme
 from ...guard import GuardedPanel, guard
 from ...plots import (
     add_hline,
@@ -109,7 +109,7 @@ class DiscreteView(QWidget, GuardedPanel):
         dead_lay.addWidget(dead_button)
         self._dead_result = QLabel("")
         self._dead_result.setWordWrap(True)
-        self._dead_result.setFont(QFont("Consolas", 9))
+        self._dead_result.setFont(theme.data_font(9))
         dead_lay.addWidget(self._dead_result)
         left_lay.addWidget(dead_box)
 
@@ -117,7 +117,7 @@ class DiscreteView(QWidget, GuardedPanel):
         jury_lay = QVBoxLayout(jury_box)
         self._jury = QLabel("")
         self._jury.setWordWrap(True)
-        self._jury.setFont(QFont("Consolas", 9))
+        self._jury.setFont(theme.data_font(9))
         self._jury.setTextInteractionFlags(Qt.TextSelectableByMouse)
         jury_lay.addWidget(self._jury)
         left_lay.addWidget(jury_box)
@@ -200,8 +200,8 @@ class DiscreteView(QWidget, GuardedPanel):
         apply_theme(plot, "z-plane", "Re", "Im")
         cx, cy = unit_circle()
         plot.plot(cx, cy, pen=curve_pen(5, 1.2))
-        add_hline(plot, 0.0, "#888888", width=0.6)
-        add_vline(plot, 0.0, "#888888", width=0.6)
+        add_hline(plot, 0.0, theme.plot_colour("muted"), width=0.6)
+        add_vline(plot, 0.0, theme.plot_colour("muted"), width=0.6)
 
         poles = np.atleast_1d(ctl.poles(self._discrete))
         plot.plot([z.real for z in poles], [z.imag for z in poles],
@@ -241,7 +241,7 @@ class DiscreteView(QWidget, GuardedPanel):
         # The methods agree at low frequency and diverge near Nyquist, which
         # is the whole point of the comparison.
         from ...plots import freq_vline
-        freq_vline(plot, nyquist, color="#F45B69", label="Nyquist")
+        freq_vline(plot, nyquist, color=theme.plot_colour("danger"), label="Nyquist")
 
     def _fill_sweep(self) -> None:
         poles = np.atleast_1d(ctl.poles(self.ctx.sys))

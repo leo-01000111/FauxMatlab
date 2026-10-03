@@ -21,8 +21,9 @@ from ...sim.block import block_types
 from ...sim.compile import CompileError, compile_model
 from ...sim.linearize import LinearizationError, plant_seen_by
 from ...sim.model import ModelError, PortRef, SimModel
+from .. import theme
 from . import commands as cmd
-from .items import GRID, BlockItem, PortItem, WireItem, sel_colour, snap, wire_colour
+from .items import GRID, BlockItem, PortItem, WireItem, hover_colour, snap
 
 MIME_TYPE = "application/x-fakematlab-blocks"
 
@@ -61,6 +62,7 @@ class SimCanvas(QGraphicsView):
         self._guides: list = []
 
         self._scene.selectionChanged.connect(self._on_selection)
+        theme.notifier().changed.connect(lambda *_: self._scene.update())
         self.rebuild()
 
     # ── model ↔ scene ───────────────────────────────────────────
@@ -184,7 +186,7 @@ class SimCanvas(QGraphicsView):
         for line in self._guides:
             self._scene.removeItem(line)
         self._guides = []
-        pen = QPen(sel_colour(), 1.0, Qt.DashLine)
+        pen = QPen(hover_colour(), 1.0, Qt.DashLine)
         pen.setCosmetic(True)
         for guide in guides:
             lo, hi = guide.lo - 24.0, guide.hi + 24.0
@@ -280,7 +282,7 @@ class SimCanvas(QGraphicsView):
         self._pending_port = port
         port.set_highlight(True)
         self._rubber_wire = self._scene.addPath(
-            QPainterPath(), QPen(sel_colour(), 1.6, Qt.DashLine))
+            QPainterPath(), QPen(hover_colour(), 2.0, Qt.DashLine))
         self._rubber_wire.setZValue(5)
         kind = "input" if port.is_input else "output"
         self.status.emit(
@@ -607,24 +609,20 @@ class SimCanvas(QGraphicsView):
             self.centerOn(rect.center())
 
     def drawBackground(self, painter: QPainter, rect: QRectF) -> None:
-        super().drawBackground(painter, rect)
-        colour = QColor(wire_colour())
-        colour.setAlpha(36)
-        painter.setPen(QPen(colour, 0.6))
+        """Ground, with a dot at every fifth grid line in the ``rule`` colour."""
+        t = theme.tokens()
+        painter.fillRect(rect, QColor(t.ground))
+        painter.setPen(QPen(QColor(t.rule), 3.0, Qt.SolidLine, Qt.SquareCap))
         step = GRID * 5
-        left = int(rect.left() - rect.left() % step)
-        top = int(rect.top() - rect.top() % step)
-        lines = []
-        x = left
-        while x < rect.right():
-            lines.append(((x, rect.top()), (x, rect.bottom())))
-            x += step
-        y = top
+        x0 = int(rect.left() - rect.left() % step)
+        y0 = int(rect.top() - rect.top() % step)
+        y = y0
         while y < rect.bottom():
-            lines.append(((rect.left(), y), (rect.right(), y)))
+            x = x0
+            while x < rect.right():
+                painter.drawPoint(QPointF(x, y))
+                x += step
             y += step
-        for (x1, y1), (x2, y2) in lines:
-            painter.drawLine(QPointF(x1, y1), QPointF(x2, y2))
 
     def _on_selection(self) -> None:
         blocks = [i for i in self._scene.selectedItems()

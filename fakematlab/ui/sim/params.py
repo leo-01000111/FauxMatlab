@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 )
 
 from ...sim.block import Block, BlockError, create
+from .. import theme
 
 
 class ParamForm(QWidget):
@@ -65,9 +66,13 @@ class ParamForm(QWidget):
 
         self._error = QLabel("")
         self._error.setWordWrap(True)
-        self._error.setStyleSheet("color: #C0392B;")
         self._error.hide()
         root.addWidget(self._error)
+        self._restyle()
+        theme.notifier().changed.connect(self._restyle)
+
+    def _restyle(self, *_args) -> None:
+        self._error.setStyleSheet(f"color: {theme.tokens().hold_ink};")
 
     # ── editors ─────────────────────────────────────────────────
 

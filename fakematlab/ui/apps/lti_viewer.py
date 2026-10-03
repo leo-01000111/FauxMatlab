@@ -35,6 +35,7 @@ from ...core.viewer import (
     ViewerData,
     compute,
 )
+from .. import theme
 from ..design import EmptyState
 from ..guard import GuardedPanel, guard
 from ..plots import (
@@ -322,8 +323,8 @@ class LTIViewer(QWidget, GuardedPanel):
         if nichols:
             self._nichols_furniture(plot, hover)
         if data.kind is ResponseKind.PZMAP:
-            add_vline(plot, 0.0, "#888888", width=0.6)
-            add_hline(plot, 0.0, "#888888", width=0.6)
+            add_vline(plot, 0.0, theme.plot_colour("muted"), width=0.6)
+            add_hline(plot, 0.0, theme.plot_colour("muted"), width=0.6)
         self._install_context_menu(widget)
         self._plot_lay.addWidget(widget)
 
@@ -341,12 +342,12 @@ class LTIViewer(QWidget, GuardedPanel):
         top_plot.addLegend(offset=(-10, 10))
         top_hover = self._new_hover(top_plot, data)
         self._paint(top_plot, data, "main", top_hover)
-        add_hline(top_plot, 0.0, "#888888", width=0.8)
+        add_hline(top_plot, 0.0, theme.plot_colour("muted"), width=0.8)
 
         bottom_plot = bottom.getPlotItem()
         bottom_hover = self._new_hover(bottom_plot, data)
         self._paint(bottom_plot, data, "phase", bottom_hover)
-        add_hline(bottom_plot, -180.0, "#888888", width=0.8)
+        add_hline(bottom_plot, -180.0, theme.plot_colour("reference"), width=0.8)
 
         for widget in (top, bottom):
             self._install_context_menu(widget)
@@ -415,23 +416,23 @@ class LTIViewer(QWidget, GuardedPanel):
     def _nyquist_furniture(self, plot, hover: HoverReadout | None = None) -> None:
         theta = np.linspace(0, 2 * np.pi, 200)
         plot.plot(np.cos(theta), np.sin(theta), pen=_pen(-1, "dashed"))
-        add_marker(plot, -1.0, 0.0, symbol="x", color="#FF4444", size=14)
-        add_text_annotation(plot, -1.0, 0.06, "−1", "#FF4444")
-        add_vline(plot, 0.0, "#888888", width=0.6)
-        add_hline(plot, 0.0, "#888888", width=0.6)
+        add_marker(plot, -1.0, 0.0, symbol="x", color=theme.plot_colour("danger"), size=14)
+        add_text_annotation(plot, -1.0, 0.06, "−1", theme.plot_colour("danger"))
+        add_vline(plot, 0.0, theme.plot_colour("muted"), width=0.6)
+        add_hline(plot, 0.0, theme.plot_colour("muted"), width=0.6)
         if hover is not None:
             hover.model.add_mark(-1.0, 0.0, "critical point −1 + j0",
-                                 colour="#FF4444")
+                                 colour=theme.plot_colour("danger"))
 
     def _nichols_furniture(self, plot, hover: HoverReadout | None = None) -> None:
         """The 0 dB line, the −180° line and the critical point they cross at."""
-        add_vline(plot, -180.0, "#888888", width=0.8)
-        add_hline(plot, 0.0, "#888888", width=0.8)
-        add_marker(plot, -180.0, 0.0, symbol="x", color="#FF4444", size=14)
+        add_vline(plot, -180.0, theme.plot_colour("reference"), width=0.8)
+        add_hline(plot, 0.0, theme.plot_colour("muted"), width=0.8)
+        add_marker(plot, -180.0, 0.0, symbol="x", color=theme.plot_colour("danger"), size=14)
         if hover is not None:
             hover.model.add_mark(-180.0, 0.0,
                                  "critical point (−180°, 0 dB)",
-                                 colour="#FF4444")
+                                 colour=theme.plot_colour("danger"))
 
     def _install_context_menu(self, widget) -> None:
         """
@@ -449,12 +450,12 @@ class LTIViewer(QWidget, GuardedPanel):
 
 def _hex(index: int) -> str:
     """Palette colour of a curve; the reference curves (−1) are grey."""
-    return "#888888" if index < 0 else COLORS[index % len(COLORS)]
+    return theme.plot_colour("muted") if index < 0 else COLORS[index % len(COLORS)]
 
 
 def _pen(index: int, style: str):
     if index < 0:
-        pen = pg.mkPen("#888888", width=1.4)
+        pen = pg.mkPen(theme.plot_colour("muted"), width=1.4)
         pen.setStyle(Qt.DashLine)
         return pen
     pen = curve_pen(index, 2.0 if style == "line" else 1.4)

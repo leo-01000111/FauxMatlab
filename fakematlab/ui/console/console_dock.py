@@ -12,7 +12,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
@@ -27,6 +26,7 @@ from PySide6.QtWidgets import (
 
 from ...console.figures import FigureSpec, set_figure_sink
 from ...console.interpreter import Interpreter
+from .. import theme
 from ..design import EmptyState
 from .console_widget import ConsoleWidget
 from .figure_view import FigureView
@@ -126,7 +126,7 @@ class ScriptEditor(QWidget):
         layout.addLayout(row)
 
         self._editor = QPlainTextEdit()
-        self._editor.setFont(QFont("Consolas", 10))
+        self._editor.setFont(theme.data_font(10))
         self._editor.setPlaceholderText(
             "# Runs against the same workspace as the console.\n"
             "G = tf([1], [1, 2, 1])\n"
@@ -134,8 +134,16 @@ class ScriptEditor(QWidget):
             "step(T)\n"
             "stepinfo(T)")
         layout.addWidget(self._editor, stretch=1)
+        self._restyle()
+        theme.notifier().changed.connect(self._restyle)
 
         self._path: Path | None = None
+
+    def _restyle(self, *_args) -> None:
+        t = theme.tokens()
+        self._editor.setStyleSheet(
+            f"QPlainTextEdit {{ background: {t.surface}; color: {t.ink};"
+            f" border: 2px solid {t.ink_muted}; }}")
 
     def _run(self) -> None:
         self.run_requested.emit(self._editor.toPlainText())

@@ -80,7 +80,10 @@ a = Analysis(
     [str(ROOT / "app.py")],
     pathex=[str(ROOT)],
     binaries=[],
-    datas=[],
+    # The Holding Point typefaces and their licences. Loaded by path at start-up,
+    # so without this the frozen build silently falls back to a system font.
+    datas=[(str(ROOT / "fakematlab" / "ui" / "fonts" / "*"),
+            "fakematlab/ui/fonts")],
     hiddenimports=HIDDEN,
     hookspath=[],
     # Runs before any package is imported. A windowed build has no standard

@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import numpy as np
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QComboBox,
     QGroupBox,
@@ -31,6 +30,7 @@ from ....core.statespace import (
     to_tf,
 )
 from ....core.tf_utils import factored_str
+from ... import theme
 from ...guard import GuardedPanel, guard
 from ...plots import apply_theme, curve_pen, draw_pz_map, make_plot
 from .widgets import MatrixEditor, frame_poles, make_table, parse_matrix, table_item
@@ -88,7 +88,7 @@ class StateSpaceView(QWidget, GuardedPanel):
 
         self._tf_label = QLabel("")
         self._tf_label.setWordWrap(True)
-        self._tf_label.setFont(QFont("Consolas", 9))
+        self._tf_label.setFont(theme.data_font(9))
         self._tf_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         left_lay.addWidget(self._tf_label)
 
@@ -218,7 +218,7 @@ class StateSpaceView(QWidget, GuardedPanel):
         except StateSpaceError as exc:
             # A defective A has no modal split; say so on the plot rather than
             # leaving it blank.
-            plot.setTitle(f"Cannot split into modes — {exc}", color="#F4A261")
+            plot.setTitle(f"Cannot split into modes — {exc}", color=theme.plot_line_highlight())
             return
 
         total = parts.pop("total")

@@ -13,7 +13,6 @@ from __future__ import annotations
 import control as ctl
 import numpy as np
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
@@ -38,6 +37,7 @@ from ...core.pidtune import (
     tune,
 )
 from ...core.timeresp import step_response
+from .. import theme
 from ..guard import GuardedPanel, guard
 from ..plots import (
     add_hline,
@@ -143,7 +143,7 @@ class PIDTuner(QWidget, GuardedPanel):
 
         self._readout = QTextEdit()
         self._readout.setReadOnly(True)
-        self._readout.setFont(QFont("Consolas", 9))
+        self._readout.setFont(theme.data_font(9))
         lay.addWidget(self._readout, stretch=1)
 
         buttons = QHBoxLayout()
@@ -263,7 +263,7 @@ class PIDTuner(QWidget, GuardedPanel):
             y = np.atleast_2d(resp.y)[0]
             plot.plot(resp.t, y, pen=curve_pen(colour, 2.0), name=label)
 
-        add_hline(plot, 1.0, "#888888", width=0.8)
+        add_hline(plot, 1.0, theme.plot_colour("reference"), width=0.8)
         if not curves:
             plot.setTitle("Nothing stable to show at this target")
         else:
@@ -288,9 +288,9 @@ class PIDTuner(QWidget, GuardedPanel):
             bd = _bode(system)
             plot_freq(plot, bd.omega, bd.mag_dB, pen=curve_pen(colour, 2.0),
                       name=label)
-        add_hline(plot, 0.0, "#888888", width=0.8)
+        add_hline(plot, 0.0, theme.plot_colour("muted"), width=0.8)
         if result.feasible and np.isfinite(result.achieved_wc):
-            freq_vline(plot, result.achieved_wc, color="#F4A261",
+            freq_vline(plot, result.achieved_wc, color=theme.plot_line_highlight(),
                        label=f"ωc {result.achieved_wc:.3g}")
 
 

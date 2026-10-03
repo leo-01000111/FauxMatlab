@@ -42,6 +42,10 @@ py-modules = ["app"]
 [tool.setuptools.packages.find]
 include = ["fakematlab*"]
 
+# The bundled typefaces (Archivo, Martian Mono) and their OFL licences.
+[tool.setuptools.package-data]
+"fakematlab.ui" = ["fonts/*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 filterwarnings = ["ignore::DeprecationWarning"]

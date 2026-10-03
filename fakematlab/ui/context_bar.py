@@ -22,6 +22,7 @@ from __future__ import annotations
 import control as ctl
 import numpy as np
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -47,6 +48,7 @@ class ContextBar(QFrame):
         super().__init__(parent)
         self._arch = arch
         self.setFrameShape(QFrame.StyledPanel)
+        self.setProperty("hp", "panel")      # the DataPlate: 2 px ink frame
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
 
         outer = QHBoxLayout(self)
@@ -76,7 +78,7 @@ class ContextBar(QFrame):
         outer.addWidget(self._badge)
 
         self._note = QLabel("")
-        self._note.setStyleSheet("color: palette(mid);")
+        self._note.setForegroundRole(QPalette.Mid)        # ink_muted
         self._note.setWordWrap(True)
         outer.addWidget(self._note, stretch=1)
 
@@ -89,7 +91,7 @@ class ContextBar(QFrame):
 
         outer.addWidget(_divider())
 
-        self._edit_btn = QPushButton("Edit model ▾")
+        self._edit_btn = QPushButton("Edit model")
         self._edit_btn.setToolTip(
             "Show the architecture diagram and the block editor (Ctrl+\\)")
         self._edit_btn.clicked.connect(self.edit_requested)
@@ -185,8 +187,7 @@ class ContextBar(QFrame):
 
 def _divider() -> QFrame:
     line = QFrame()
-    line.setFrameShape(QFrame.VLine)
-    line.setFrameShadow(QFrame.Sunken)
+    line.setProperty("hp", "rule")      # a 1 px rule, drawn by the stylesheet
     line.setContentsMargins(NORMAL, 0, NORMAL, 0)
     return line
 

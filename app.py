@@ -67,11 +67,17 @@ def main() -> None:
     app.setApplicationName("FauxMatlab")
     app.setApplicationDisplayName("FauxMatlab — Classical & Modern Control")
 
-    # Font
-    font = app.font()
-    font.setFamily("Segoe UI")
-    font.setPointSize(10)
-    app.setFont(font)
+    # Identity first: QSettings (the saved theme among them) is keyed on it.
+    app.setOrganizationName("FauxMatlab")
+
+    # Holding Point: bundled typefaces, the saved Day/Night choice, then the
+    # palette and stylesheet. The app font is set in there too — no more
+    # hard-coded "Segoe UI".
+    from fakematlab.ui import theme, theme_qt
+
+    theme.load_fonts()
+    theme.set_mode(theme.saved_mode(), persist=False)
+    theme_qt.apply(app)
 
     # Default architecture: textbook 2nd-order plant, unity feedback
     arch = CourseArchitecture(

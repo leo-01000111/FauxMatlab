@@ -31,6 +31,7 @@ from ..plots import (
     freq_vline,
     make_freq_plot,
     plot_freq,
+    role_colour,
 )
 
 
@@ -149,8 +150,8 @@ class PerformanceTab(QWidget, GuardedPanel):
 
         plot_freq(pi, omega, bd_S.mag_dB, pen=curve_pen(0, 2.0), name="|S|")
         plot_freq(pi, omega, bd_T.mag_dB, pen=curve_pen(1, 2.0), name="|T|")
-        add_hline(pi, 0.0, "#888888", width=0.8)
-        add_hline(pi, -3.0, "#FFAA00", label="−3 dB", width=0.8)
+        add_hline(pi, 0.0, role_colour("muted"), width=0.8)
+        add_hline(pi, -3.0, role_colour("highlight"), label="−3 dB", width=0.8)
 
         # Peak sensitivity Ms: its reciprocal is the modulus margin, so this
         # marker is the single most informative point on the plot (ch.6 23/26).
@@ -158,14 +159,14 @@ class PerformanceTab(QWidget, GuardedPanel):
         Ms_dB = float(bd_S.mag_dB[peak_idx])
         if Ms_dB > 0:
             w_peak = float(omega[peak_idx])
-            freq_marker(pi, w_peak, Ms_dB, symbol="t", color="#F45B69")
+            freq_marker(pi, w_peak, Ms_dB, symbol="t", color=role_colour("danger"))
             freq_text(pi, w_peak, Ms_dB,
                       f"  Ms = {10 ** (Ms_dB / 20):.3g} ({Ms_dB:.2f} dB)\n"
                       f"  → modulus margin {10 ** (-Ms_dB / 20):.3g}",
-                      "#F45B69")
+                      role_colour("danger"))
 
         if np.isfinite(bd_L.bw_3dB):
-            freq_vline(pi, bd_L.bw_3dB, color="#56C271",
+            freq_vline(pi, bd_L.bw_3dB, color=role_colour("ok"),
                        label=f"BW={bd_L.bw_3dB:.3g}")
 
     @guard("Trade-off plot")
@@ -191,7 +192,7 @@ class PerformanceTab(QWidget, GuardedPanel):
         # plotting the sum makes the inequality visible.
         plot_freq(pi, omega, mag_S + mag_T,
                   pen=curve_pen(3, 1.4), name="|S| + |T|  (≥ 1)")
-        add_hline(pi, 1.0, "#888888", label="1", width=0.8)
+        add_hline(pi, 1.0, role_colour("muted"), label="1", width=0.8)
 
         # Where |S| > 1 the loop *amplifies* disturbance — Bode's waterbed.
         # Shading it makes the trade-off a picture rather than a claim: the
@@ -204,7 +205,7 @@ class PerformanceTab(QWidget, GuardedPanel):
             if wb is not None and wb.applies:
                 label += (f"\n  ∫ln|S|dω = {wb.integral:.3g}"
                           f"  (budget {wb.theoretical:.3g})")
-            freq_text(pi, first, 1.05, label, "#F45B69")
+            freq_text(pi, first, 1.05, label, role_colour("danger"))
 
     @staticmethod
     def _shade_amplified_band(pi, omega, amplifying) -> None:
@@ -219,7 +220,7 @@ class PerformanceTab(QWidget, GuardedPanel):
             ends.append(len(omega) - 1)
         for a, b in zip(starts, ends):
             freq_region(pi, float(omega[a]), float(omega[b]),
-                        color="#F45B69", alpha=28)
+                        color=role_colour("danger"), alpha=28)
 
 
 # ── Helpers ───────────────────────────────────────────────────

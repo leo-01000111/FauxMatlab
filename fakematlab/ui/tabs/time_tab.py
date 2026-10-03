@@ -43,6 +43,7 @@ from ..plots import (
     curve_pen,
     install_hover_readout,
     make_plot,
+    role_colour,
 )
 
 
@@ -217,28 +218,28 @@ class TimeTab(QWidget, GuardedPanel):
 
         if rtype == "step" and y_inf is not None and np.isfinite(y_inf):
             # Draw steady-state line
-            add_hline(pi, y_inf, color="#888888", label=f"y∞={y_inf:.4g}")
+            add_hline(pi, y_inf, color=role_colour("muted"), label=f"y∞={y_inf:.4g}")
             # ±2% and ±5% bands
             if self._band_2.isChecked() and not np.isnan(y_inf):
-                add_band(pi, y_inf, abs(y_inf) * 0.02, "#44FF44", alpha=25)
+                add_band(pi, y_inf, abs(y_inf) * 0.02, role_colour("ok"), alpha=25)
             if self._band_5.isChecked() and not np.isnan(y_inf):
-                add_band(pi, y_inf, abs(y_inf) * 0.05, "#FFAA00", alpha=18)
+                add_band(pi, y_inf, abs(y_inf) * 0.05, role_colour("highlight"), alpha=18)
 
             # Markers for metrics
             if not np.isnan(m.tp) and not np.isnan(m.y_max):
-                add_marker(pi, m.tp, m.y_max, symbol="t", color="#F45B69")
+                add_marker(pi, m.tp, m.y_max, symbol="t", color=role_colour("danger"))
                 add_text_annotation(pi, m.tp, m.y_max,
                                     f"  tp={m.tp:.3g}s\n  Mp={m.Mp_pct:.1f}%",
-                                    color="#F45B69")
+                                    color=role_colour("danger"))
                 hover.model.add_mark(
                     m.tp, m.y_max,
                     f"peak {m.y_max:.4g} at t = {m.tp:.3g} s "
-                    f"({m.Mp_pct:.1f}% overshoot)", colour="#F45B69")
+                    f"({m.Mp_pct:.1f}% overshoot)", colour=role_colour("danger"))
             if self._band_2.isChecked() and not np.isnan(m.ts_2pct):
-                add_vline(pi, m.ts_2pct, color="#44CC44",
+                add_vline(pi, m.ts_2pct, color=role_colour("ok"),
                           label=f"ts2%={m.ts_2pct:.3g}s")
             if self._band_5.isChecked() and not np.isnan(m.ts_5pct):
-                add_vline(pi, m.ts_5pct, color="#FFAA00",
+                add_vline(pi, m.ts_5pct, color=role_colour("highlight"),
                           label=f"ts5%={m.ts_5pct:.3g}s")
 
     @guard("Parameter sweep")

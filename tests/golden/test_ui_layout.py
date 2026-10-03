@@ -371,7 +371,7 @@ def test_the_view_menu_agrees_with_the_window_after_a_restore(app, win,
 
 def test_the_spacing_scale_has_four_steps_in_order():
     assert TIGHT < NORMAL < SECTION < PANEL
-    assert (TIGHT, NORMAL, SECTION, PANEL) == (4, 8, 12, 16)
+    assert (TIGHT, NORMAL, SECTION, PANEL) == (4, 8, 12, 20)
 
 
 def test_status_is_never_communicated_by_colour_alone(app):

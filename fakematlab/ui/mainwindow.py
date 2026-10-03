@@ -31,7 +31,7 @@ from pathlib import Path
 
 import control as ctl
 from PySide6.QtCore import QSettings, Qt
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QActionGroup
 from PySide6.QtWidgets import (
     QApplication,
     QDockWidget,
@@ -39,6 +39,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QScrollArea,
     QSplitter,
@@ -59,6 +60,7 @@ from ..core.tf_utils import (
     second_order,
     unity,
 )
+from . import theme, theme_qt
 from .apps import ControlSystemDesigner, LTIViewer, PIDTuner, SnapshotBar
 from .block_editor import BlockEditor
 from .console import ConsolePanel, FigureArea
@@ -636,6 +638,26 @@ class MainWindow(QMainWindow):
 
     # ── Menus ────────────────────────────────────────────────
 
+    def _build_theme_menu(self) -> QMenu:
+        """View ▸ Theme: System / Day / Night, one of them always checked."""
+        menu = QMenu("&Theme", self)
+        group = QActionGroup(self)
+        group.setExclusive(True)
+        self._theme_actions: dict[theme.Mode, QAction] = {}
+        for mode, text, tip in (
+            (theme.Mode.SYSTEM, "&System", "Follow the operating system"),
+            (theme.Mode.DAY, "&Day", "Dry concrete: light ground, black ink"),
+            (theme.Mode.NIGHT, "&Night", "Asphalt: dark ground, pale ink"),
+        ):
+            action = QAction(text, self, checkable=True, statusTip=tip)
+            action.setChecked(theme.mode() is mode)
+            action.triggered.connect(
+                lambda _checked=False, m=mode: theme_qt.choose(m))
+            group.addAction(action)
+            menu.addAction(action)
+            self._theme_actions[mode] = action
+        return menu
+
     def _build_menus(self) -> None:
         mb = self.menuBar()
 
@@ -699,6 +721,8 @@ class MainWindow(QMainWindow):
             lambda: self._stack.set_current(Workspace.CONSOLE))
         self.addAction(console_shortcut)
 
+        view_menu.addSeparator()
+        view_menu.addMenu(self._build_theme_menu())
         view_menu.addSeparator()
         view_menu.addAction(QAction(
             "&Reset layout", self, triggered=self.reset_layout,

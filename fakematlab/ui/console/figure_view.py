@@ -24,6 +24,7 @@ from ..plots import (
     make_freq_plot,
     make_plot,
     plot_freq,
+    role_colour,
 )
 
 
@@ -54,7 +55,7 @@ class FigureView(QWidget):
         for i, trace in enumerate(self.spec.traces):
             plot.plot(trace.x, trace.y, pen=_pen(i, trace.style),
                       name=trace.label or None)
-        add_hline(plot, 0.0, "#888888", width=0.6)
+        add_hline(plot, 0.0, role_colour("muted"), width=0.6)
         layout.addWidget(widget)
 
     def _bode(self, layout) -> None:
@@ -72,26 +73,26 @@ class FigureView(QWidget):
         for i, trace in enumerate(self.spec.traces):
             plot_freq(mag_plot, trace.x, trace.y, pen=_pen(i, trace.style),
                       name=trace.label or None)
-        add_hline(mag_plot, 0.0, "#888888", width=0.8)
+        add_hline(mag_plot, 0.0, role_colour("muted"), width=0.8)
 
         phase_plot = phase.getPlotItem()
         for i, (omega, degrees, _label) in enumerate(
                 self.spec.extra.get("phase", [])):
             plot_freq(phase_plot, omega, degrees, pen=_pen(i, "line"))
-        add_hline(phase_plot, -180.0, "#888888", width=0.8)
+        add_hline(phase_plot, -180.0, role_colour("muted"), width=0.8)
 
         # The margins are the reason anyone draws a Bode plot; mark them.
         for margins in self.spec.extra.get("margins", []):
             wc = margins.get("wc", float("nan"))
             w180 = margins.get("w180", float("nan"))
             if np.isfinite(wc):
-                freq_vline(mag_plot, wc, color="#F4A261",
+                freq_vline(mag_plot, wc, color=role_colour("reference"),
                            label=f"ωc={wc:.3g}")
-                freq_vline(phase_plot, wc, color="#F4A261",
+                freq_vline(phase_plot, wc, color=role_colour("reference"),
                            label=f"PM={margins.get('pm_deg', float('nan')):.1f}°")
             if np.isfinite(w180) and np.isfinite(margins.get("gm_dB",
                                                              float("inf"))):
-                freq_vline(mag_plot, w180, color="#F45B69",
+                freq_vline(mag_plot, w180, color=role_colour("danger"),
                            label=f"GM={margins['gm_dB']:.2f} dB")
 
     def _nyquist(self, layout) -> None:
@@ -107,10 +108,10 @@ class FigureView(QWidget):
         theta = np.linspace(0, 2 * np.pi, 200)
         plot.plot(np.cos(theta), np.sin(theta),
                   pen=_pen(5, "dashed"))
-        add_marker(plot, -1.0, 0.0, symbol="x", color="#FF4444", size=14)
-        add_text_annotation(plot, -1.0, 0.06, "−1", "#FF4444")
-        add_hline(plot, 0.0, "#888888", width=0.6)
-        add_vline(plot, 0.0, "#888888", width=0.6)
+        add_marker(plot, -1.0, 0.0, symbol="x", color=role_colour("danger"), size=14)
+        add_text_annotation(plot, -1.0, 0.06, "−1", role_colour("danger"))
+        add_hline(plot, 0.0, role_colour("muted"), width=0.6)
+        add_vline(plot, 0.0, role_colour("muted"), width=0.6)
 
         for counts in self.spec.extra.get("counts", []):
             verdict = ("closed loop stable" if counts["Z"] == 0
@@ -134,8 +135,8 @@ class FigureView(QWidget):
             theta = np.linspace(0, 2 * np.pi, 200)
             plot.plot(np.cos(theta), np.sin(theta), pen=_pen(5, "dashed"))
             plot.setAspectLocked(True)
-        add_hline(plot, 0.0, "#888888", width=0.6)
-        add_vline(plot, 0.0, "#888888", width=0.6)
+        add_hline(plot, 0.0, role_colour("muted"), width=0.6)
+        add_vline(plot, 0.0, role_colour("muted"), width=0.6)
         _frame(plot, self.spec)
         layout.addWidget(widget)
 
@@ -145,8 +146,8 @@ class FigureView(QWidget):
         plot = widget.getPlotItem()
         for i, trace in enumerate(self.spec.traces):
             plot.plot(trace.x, trace.y, pen=_pen(i, "line"))
-        add_hline(plot, 0.0, "#888888", width=0.6)
-        add_vline(plot, 0.0, "#888888", width=0.6)
+        add_hline(plot, 0.0, role_colour("muted"), width=0.6)
+        add_vline(plot, 0.0, role_colour("muted"), width=0.6)
 
         marginal = self.spec.extra.get("K_marginal")
         if marginal is not None and np.isfinite(marginal):

@@ -167,6 +167,7 @@ class AnalysisPane(QFrame):
                  source: Source | None = None) -> None:
         super().__init__(parent)
         self.setFrameShape(QFrame.StyledPanel)
+        self.setProperty("hp", "plain")
         self._arch = arch
         self._tab_factory = tab_factory or (lambda name, arch: None)
         self._content: QWidget | None = None

@@ -15,39 +15,39 @@ from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import (
     QBrush,
     QColor,
-    QFont,
     QPainter,
     QPainterPath,
     QPen,
     QPolygonF,
 )
 from PySide6.QtWidgets import (
-    QApplication,
     QGraphicsItem,
     QGraphicsObject,
 )
 
+from .. import theme
+
 # ──────────────────────────────────────────────────────────────
-#  Colours (palette-independent fallbacks)
+#  Colours — read from the Holding Point tokens at paint time, so a
+#  theme switch only needs the scene to repaint.
 # ──────────────────────────────────────────────────────────────
 
-def _clr(light: str, dark: str) -> QColor:
-    """Choose colour based on application theme."""
-    palette = QApplication.palette()
-    bg = palette.window().color()
-    is_dark = bg.lightness() < 128
-    return QColor(dark if is_dark else light)
+def _c(name: str) -> QColor:
+    return QColor(getattr(theme.tokens(), name))
 
 
-BLOCK_BG      = lambda: _clr("#D6E8FF", "#1E3A5F")
-BLOCK_BORDER  = lambda: _clr("#2255AA", "#5599FF")
-BLOCK_TEXT    = lambda: _clr("#000000", "#E8F0FF")
-SUMMER_BG     = lambda: _clr("#FFF0D0", "#3A2800")
-SUMMER_BORDER = lambda: _clr("#AA7700", "#FFB300")
-WIRE_COLOR    = lambda: _clr("#333333", "#CCCCCC")
-SIGNAL_TEXT   = lambda: _clr("#006600", "#00CC44")
-SELECTED_BG   = lambda: _clr("#FFE066", "#665500")
-HOVER_BORDER  = lambda: _clr("#FF4400", "#FF8844")
+BLOCK_BG      = lambda: _c("surface")
+BLOCK_BORDER  = lambda: _c("ink")
+BLOCK_TEXT    = lambda: _c("ink")
+SUMMER_BG     = lambda: _c("surface")
+SUMMER_BORDER = lambda: _c("ink")
+WIRE_COLOR    = lambda: _c("ink")
+SIGNAL_TEXT   = lambda: _c("ink_muted")
+SELECTED_RING = lambda: _c("signal")
+HOVER_BORDER  = lambda: _c("edge")
+ACTIVE_TEXT   = lambda: _c("ink")
+
+SHADOW_OFFSET = 4   # the brand's hard "lift": an offset slab, never a blur
 
 
 # ──────────────────────────────────────────────────────────────
@@ -56,7 +56,7 @@ HOVER_BORDER  = lambda: _clr("#FF4400", "#FF8844")
 
 class DiagramBlock(QGraphicsObject):
     """
-    A TF block rendered as a rounded rectangle with a label.
+    A TF block: a square plate (surface, 2px ink border) with a data-font label.
     Emits `clicked(block_id)` when pressed.
     """
 
@@ -78,6 +78,13 @@ class DiagramBlock(QGraphicsObject):
     # ── geometry ─────────────────────────────────────────────
 
     def boundingRect(self) -> QRectF:
+        # Room for the 2px stroke and the lifted block's hard shadow.
+        pad = 2
+        return QRectF(-self.W / 2 - pad, -self.H / 2 - pad,
+                      self.W + 2 * pad + SHADOW_OFFSET,
+                      self.H + 2 * pad + SHADOW_OFFSET)
+
+    def plate(self) -> QRectF:
         return QRectF(-self.W / 2, -self.H / 2, self.W, self.H)
 
     def centre(self) -> QPointF:
@@ -94,20 +101,28 @@ class DiagramBlock(QGraphicsObject):
     # ── painting ─────────────────────────────────────────────
 
     def paint(self, painter: QPainter, option, widget=None) -> None:
-        painter.setRenderHint(QPainter.Antialiasing)
+        r = self.plate()
+        painter.setRenderHint(QPainter.Antialiasing, False)
 
-        bg     = SELECTED_BG() if self._selected else BLOCK_BG()
-        border = HOVER_BORDER() if self._hovered  else BLOCK_BORDER()
+        if self._selected:
+            # Lifted: a hard offset slab in the shadow colour, no blur.
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor(theme.tokens().shadow))
+            painter.drawRect(r.translated(SHADOW_OFFSET, SHADOW_OFFSET))
 
-        pen = QPen(border, 2.0)
-        painter.setPen(pen)
-        painter.setBrush(QBrush(bg))
-        painter.drawRoundedRect(self.boundingRect(), 8, 8)
+        border = HOVER_BORDER() if self._hovered else BLOCK_BORDER()
+        painter.setPen(QPen(border, 2.0, Qt.SolidLine, Qt.SquareCap, Qt.MiterJoin))
+        painter.setBrush(QBrush(BLOCK_BG()))
+        painter.drawRect(r)
+        if self._selected:
+            painter.setPen(QPen(SELECTED_RING(), 3.0, Qt.SolidLine,
+                                Qt.SquareCap, Qt.MiterJoin))
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRect(r.adjusted(4, 4, -4, -4))
 
         painter.setPen(QPen(BLOCK_TEXT()))
-        font = QFont("Segoe UI", 11, QFont.Bold)
-        painter.setFont(font)
-        painter.drawText(self.boundingRect(), Qt.AlignCenter, self.label)
+        painter.setFont(theme.data_font(10.5, 600))
+        painter.drawText(r, Qt.AlignCenter, self.label)
 
     # ── interaction ───────────────────────────────────────────
 
@@ -181,14 +196,13 @@ class DiagramSummer(QGraphicsObject):
         painter.drawLine(QPointF(0, -r * 0.5), QPointF(0, r * 0.5))
 
         # ± labels near ports
-        font = QFont("Segoe UI", 8, QFont.Bold)
-        painter.setFont(font)
+        painter.setFont(theme.data_font(8.5, 600))
         painter.setPen(QPen(SIGNAL_TEXT()))
         label_offset = r + 4
         pos_map = {
             "left":   QPointF(-label_offset - 8, -8),
             "right":  QPointF(label_offset,      -8),
-            "top":    QPointF(-6, -label_offset - 10),
+            "top":    QPointF(5, -label_offset - 4),
             "bottom": QPointF(-6,  label_offset + 2),
         }
         for direction, sign in self.signs.items():
@@ -236,9 +250,9 @@ class DiagramWire(QGraphicsItem):
         if len(self.points) < 2:
             return
         painter.setRenderHint(QPainter.Antialiasing)
-        pen = QPen(WIRE_COLOR(), 1.8)
-        pen.setCapStyle(Qt.RoundCap)
-        pen.setJoinStyle(Qt.RoundJoin)
+        pen = QPen(WIRE_COLOR(), 2.0)
+        pen.setCapStyle(Qt.FlatCap)
+        pen.setJoinStyle(Qt.MiterJoin)
         painter.setPen(pen)
         painter.setBrush(Qt.NoBrush)
 
@@ -308,13 +322,20 @@ class DiagramSignalLabel(QGraphicsObject):
 
     def paint(self, painter: QPainter, option, widget=None) -> None:
         painter.setRenderHint(QPainter.Antialiasing)
-        color = HOVER_BORDER() if self._hovered else (
-            QColor("#FF6600") if self._active else SIGNAL_TEXT()
-        )
+        t = theme.tokens()
+        rect = self.boundingRect()
+        color = QColor(t.edge) if self._hovered else QColor(t.ink)
+        if self._active:
+            # The active tap reads as a small location plate.
+            plate = rect.adjusted(8, 2, -8, -2)
+            painter.setRenderHint(QPainter.Antialiasing, False)
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor(t.plate))
+            painter.drawRect(plate)
+            color = QColor(t.on_plate)
         painter.setPen(QPen(color, 1.5))
-        font = QFont("Segoe UI", 10, QFont.Bold)
-        painter.setFont(font)
-        painter.drawText(self.boundingRect(), Qt.AlignCenter, self.display)
+        painter.setFont(theme.data_font(10, 700 if self._active else 500))
+        painter.drawText(rect, Qt.AlignCenter, self.display)
 
     def mousePressEvent(self, event) -> None:
         self.clicked.emit(self.signal_id)

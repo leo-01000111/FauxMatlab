@@ -18,7 +18,7 @@ import control as ctl
 import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QCheckBox,
     QDoubleSpinBox,
@@ -43,6 +43,7 @@ from ...core.designer import (
     gain_for_overshoot,
     point_to_gain,
 )
+from .. import theme
 from ..guard import GuardedPanel, guard
 from ..plots import (
     add_hline,
@@ -178,7 +179,7 @@ class ControlSystemDesigner(QWidget, GuardedPanel):
 
         self._readout = QTextEdit()
         self._readout.setReadOnly(True)
-        self._readout.setFont(QFont("Consolas", 9))
+        self._readout.setFont(theme.data_font(9))
         lay.addWidget(self._readout, stretch=1)
 
         apply_btn = QPushButton("Apply as K₂")
@@ -382,15 +383,15 @@ class ControlSystemDesigner(QWidget, GuardedPanel):
 
         L_unit = _unit_loop(self._plant, self.compensator, self._sensor)
         for root, symbol, colour in (
-                (np.atleast_1d(ctl.poles(L_unit)), "x", "#F45B69"),
-                (np.atleast_1d(ctl.zeros(L_unit)), "o", "#4C9BE8")):
+                (np.atleast_1d(ctl.poles(L_unit)), "x", theme.plot_colour("danger")),
+                (np.atleast_1d(ctl.zeros(L_unit)), "o", theme.plot_colour("data"))):
             if len(root):
                 plot.plot(root.real, root.imag, pen=None, symbol=symbol,
                           symbolSize=14, symbolPen=pg.mkPen(colour, width=2.4),
                           symbolBrush=None)
 
-        add_vline(plot, 0.0, "#888888", width=0.8)
-        add_hline(plot, 0.0, "#888888", width=0.8)
+        add_vline(plot, 0.0, theme.plot_colour("muted"), width=0.8)
+        add_hline(plot, 0.0, theme.plot_colour("muted"), width=0.8)
         _frame(plot, locus.roots)
 
         if self._rays_check.isChecked():
@@ -414,7 +415,7 @@ class ControlSystemDesigner(QWidget, GuardedPanel):
             ray = damping_ray(zeta, radius * 1.2)
             for sign in (1, -1):
                 plot.plot(ray.real, sign * ray.imag,
-                          pen=pg.mkPen("#555577", width=0.9,
+                          pen=pg.mkPen(theme.plot_colour("grid"), width=0.9,
                                        style=Qt.DotLine))
 
     def _install_target(self, plot, summary: DesignSummary) -> None:
@@ -426,8 +427,8 @@ class ControlSystemDesigner(QWidget, GuardedPanel):
         self._target = pg.TargetItem(
             pos=(float(dominant.real), float(dominant.imag)),
             size=14, symbol="s", movable=True,
-            pen=pg.mkPen("#F4A261", width=2.5),
-            hoverPen=pg.mkPen("#FFD166", width=3.0),
+            pen=pg.mkPen(theme.plot_line_highlight(), width=2.5),
+            hoverPen=pg.mkPen(theme.plot_colour("reference"), width=3.0),
             label="drag me",
         )
         self._target.sigPositionChanged.connect(self._on_target_moved)
@@ -444,8 +445,8 @@ class ControlSystemDesigner(QWidget, GuardedPanel):
             return
         self._pole_markers = pg.ScatterPlotItem(
             x=poles.real, y=poles.imag, symbol="s", size=11,
-            pen=pg.mkPen("#F4A261", width=2.0),
-            brush=pg.mkBrush("#F4A26180"))
+            pen=pg.mkPen(theme.plot_line_highlight(), width=2.0),
+            brush=pg.mkBrush(_translucent(theme.plot_line_highlight())))
         plot.addItem(self._pole_markers)
 
     def _draw_bode(self, summary: DesignSummary) -> None:
@@ -455,12 +456,12 @@ class ControlSystemDesigner(QWidget, GuardedPanel):
         plot.clear()
         bd = _bode(summary.L)
         plot_freq(plot, bd.omega, bd.mag_dB, pen=curve_pen(0, 2.0))
-        add_hline(plot, 0.0, "#888888", width=0.8)
+        add_hline(plot, 0.0, theme.plot_colour("muted"), width=0.8)
         if np.isfinite(bd.wc) and bd.wc > 0:
-            freq_vline(plot, bd.wc, color="#F4A261",
+            freq_vline(plot, bd.wc, color=theme.plot_line_highlight(),
                        label=f"PM {bd.pm_deg:.1f}°")
         if np.isfinite(bd.w180) and bd.w180 > 0 and np.isfinite(bd.gm_dB):
-            freq_vline(plot, bd.w180, color="#F45B69",
+            freq_vline(plot, bd.w180, color=theme.plot_colour("danger"),
                        label=f"GM {bd.gm_dB:.2f} dB")
 
     def _draw_step(self, summary: DesignSummary) -> None:
@@ -474,19 +475,26 @@ class ControlSystemDesigner(QWidget, GuardedPanel):
         resp = step_response(summary.T)
         y = np.atleast_2d(resp.y)[0]
         plot.plot(resp.t, y, pen=curve_pen(0, 2.0))
-        add_hline(plot, 0.0, "#888888", width=0.6)
+        add_hline(plot, 0.0, theme.plot_colour("muted"), width=0.6)
         metrics = summary.metrics
         if metrics is not None and np.isfinite(metrics.y_inf):
-            add_hline(plot, metrics.y_inf, "#56C271", width=0.8,
+            add_hline(plot, metrics.y_inf, theme.plot_colour("reference"), width=0.8,
                       label=f"y∞ = {metrics.y_inf:.4g}")
             if np.isfinite(metrics.tp):
-                add_marker(plot, metrics.tp, metrics.y_max, color="#F45B69")
+                add_marker(plot, metrics.tp, metrics.y_max, color=theme.plot_colour("danger"))
         plot.setTitle("Closed-loop step response")
 
 
 # ──────────────────────────────────────────────────────────────
 #  Helpers
 # ──────────────────────────────────────────────────────────────
+
+
+def _translucent(colour: str, alpha: int = 128) -> QColor:
+    c = QColor(colour)
+    c.setAlpha(alpha)
+    return c
+
 
 def _unit_loop(plant, compensator: Compensator, sensor):
     """``C/K · G · H`` — the loop whose root locus the gain slides along."""

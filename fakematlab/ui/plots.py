@@ -42,22 +42,64 @@ it obeys the same contract as the ``freq_*`` helpers.
 
 from __future__ import annotations
 
+import weakref
 from dataclasses import dataclass
 
 import numpy as np
 import pyqtgraph as pg
 from pyqtgraph import InfiniteLine, PlotItem, PlotWidget, mkBrush, mkPen
 from PySide6.QtCore import QEvent, QObject, Qt
-from PySide6.QtGui import QColor
-from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QBrush, QColor, QPen
+from PySide6.QtWidgets import QAbstractGraphicsShapeItem
+
+from . import theme
 
 # ──────────────────────────────────────────────────────────────
 #  Theme
 # ──────────────────────────────────────────────────────────────
 
-def _is_dark() -> bool:
-    pal = QApplication.palette()
-    return pal.window().color().lightness() < 128
+#: Thin yellow lines vanish on the Day surface (1.3:1), so on Day the
+#: "highlight" series is a darker amber of the same hue. Night uses ``signal``.
+_DAY_AMBER = "#b8900a"
+
+
+def role_colours(t: theme.Tokens | None = None) -> dict[str, str]:
+    """
+    Every colour a plot may use, by role, for theme ``t`` (default: current).
+
+    The brand's plot rule: ``data`` is ink, ``highlight`` the one series that
+    matters (amber/signal), ``reference`` taxiway blue, ``danger`` red (poles,
+    instability), ``ok`` the lamp green. Roles, not hexes, are what the plot
+    code names, so a theme switch can re-map a drawn plot colour for colour.
+    """
+    t = t or theme.tokens()
+    return {
+        "data": t.ink,
+        "highlight": t.signal if t.is_night else _DAY_AMBER,   # = theme.plot_line_highlight()
+        "reference": t.edge,
+        "danger": t.hold_ink if t.is_night else t.hold,
+        "ok": t.lamp_go,
+        "muted": t.ink_muted,
+        "grid": t.rule,
+        "background": t.surface,
+    }
+
+
+def role_colour(role: str) -> str:
+    """The hex of plot ``role`` in the theme in force right now."""
+    return role_colours()[role]
+
+
+#: Series order: ink, highlight, danger, ok, muted ink. Blue is reserved for
+#: reference lines and never colours a data series. Beyond five, the same
+#: colours come round again in a dashed line (see :func:`curve_pen`) — the
+#: brand has no sixth hue, and a dash survives greyscale printing.
+_PALETTE_ROLES = ("data", "highlight", "danger", "ok", "muted")
+
+
+def _palette(t: theme.Tokens | None = None) -> list[str]:
+    roles = role_colours(t)
+    return [roles[r] for r in _PALETTE_ROLES]
 
 
 def set_title(plot: PlotItem, title: str, **kwargs) -> None:
@@ -82,28 +124,271 @@ def set_title(plot: PlotItem, title: str, **kwargs) -> None:
         label.setMaximumWidth(1)
 
 
+def _label_style(t: theme.Tokens) -> dict[str, str]:
+    """Axis captions are keys: Martian Mono, small, in the muted ink."""
+    return {"color": t.ink_muted, "font-size": "8.5pt",
+            "font-family": f"'{theme.MONO}', Consolas, monospace"}
+
+
+def _style_chrome(plot: PlotItem) -> None:
+    """Background, frame, axes, grid, titles: everything but the data."""
+    t = theme.tokens()
+    vb = plot.getViewBox()
+    vb.setBackgroundColor(t.surface)
+    vb.setBorder(mkPen(t.ink, width=theme.STROKE_BOLD))     # the DataPlate frame
+    view = plot.getViewWidget()
+    if view is not None:
+        view.setBackground(t.surface)
+    style = _label_style(t)
+    for name in ("left", "bottom"):
+        axis = plot.getAxis(name)
+        axis.setPen(mkPen(t.ink_muted, width=theme.STROKE_HAIR))
+        axis.setTextPen(mkPen(t.ink_muted))
+        axis.setTickPen(mkPen(t.rule, width=theme.STROKE_HAIR))
+        axis.setStyle(tickFont=theme.data_font(8))
+        if axis.labelText:
+            axis.setLabel(axis.labelText, axis.labelUnits, axis.labelUnitPrefix,
+                          **style)
+    label = getattr(plot, "titleLabel", None)
+    if label is not None and label.text:
+        # Left-aligned: the label is capped at 1 px wide (see set_title), so a
+        # centred title would straddle the plot's left edge and be clipped.
+        label.setText(label.text, color=t.ink, justify="left")
+        label.item.setFont(theme.title_font(10))
+    plot.showGrid(x=True, y=True, alpha=1.0)        # the rule colour does the fading
+
+
 def apply_theme(plot: PlotItem, title: str = "",
                 xlabel: str = "", ylabel: str = "") -> None:
-    """Apply consistent colours, grid, labels to a PlotItem."""
-    dark = _is_dark()
-    bg   = "#1A1A2E" if dark else "#FAFAFA"
-    fg   = "#E8E8F0" if dark else "#111111"
+    """
+    Apply the Holding Point chrome, grid and labels to a PlotItem.
 
-    plot.getViewBox().setBackgroundColor(bg)
-    label_style = {"color": fg, "font-size": "11pt"}
-
+    The plot is registered, so :func:`theme.notifier` ``.changed`` re-themes it
+    live: chrome *and* every curve, marker, line and legend already drawn
+    (see :func:`retheme_plot`). Role colours are re-mapped one for one, so a
+    switch needs no redraw; an explicit custom colour is left as it is.
+    """
+    style = _label_style(theme.tokens())
     if title:
-        set_title(plot, title, color=fg, size="12pt")
+        set_title(plot, title, color=theme.tokens().ink)
     if xlabel:
-        plot.setLabel("bottom", xlabel, **label_style)
+        plot.setLabel("bottom", xlabel, **style)
     if ylabel:
-        plot.setLabel("left",   ylabel, **label_style)
+        plot.setLabel("left", ylabel, **style)
+    _wrap_legend(plot)
+    _style_chrome(plot)
+    _register(plot)
 
-    plot.showGrid(x=True, y=True, alpha=0.3)
-    plot.getAxis("left"  ).setPen(mkPen(fg))
-    plot.getAxis("bottom").setPen(mkPen(fg))
-    plot.getAxis("left"  ).setTextPen(mkPen(fg))
-    plot.getAxis("bottom").setTextPen(mkPen(fg))
+
+# ── live re-theming ─────────────────────────────────────────────
+
+_PLOTS: weakref.WeakSet[PlotItem] = weakref.WeakSet()
+_connected = False
+_last: theme.Tokens | None = None
+
+
+def _listen() -> None:
+    """
+    Follow theme changes from import time, not from the first plot.
+
+    ``app.py`` applies the saved theme after this module is imported but
+    before any plot exists. Connecting lazily, on the first registration,
+    missed that switch: ``COLORS`` kept the Day palette, and a Night start
+    drew near-black curves on the asphalt surface.
+    """
+    global _connected, _last
+    if not _connected:
+        _connected = True
+        _last = theme.tokens()
+        theme.notifier().changed.connect(_on_theme_changed)
+
+
+def _register(plot: PlotItem) -> None:
+    _listen()
+    _PLOTS.add(plot)
+
+
+def _colour_map(old: theme.Tokens, new: theme.Tokens) -> dict[str, str]:
+    """Old theme's role colours to the new theme's, keyed by lower-case hex."""
+    a, b = role_colours(old), role_colours(new)
+    mapping = {a[r].lower(): b[r] for r in a}
+    mapping[old.signal.lower()] = new.signal       # fills use plain signal
+    mapping[old.hold.lower()] = b["danger"]
+    return mapping
+
+
+def _on_theme_changed(new: theme.Tokens) -> None:
+    global _last
+    old, _last = _last or new, new
+    mapping = _colour_map(old, new)
+    COLORS[:] = _palette(new)
+    for plot in list(_PLOTS):
+        try:
+            retheme_plot(plot, mapping)
+        except RuntimeError:          # the C++ side died with its widget
+            _PLOTS.discard(plot)
+
+
+def _remap(c: QColor, mapping: dict[str, str]) -> QColor | None:
+    hexv = mapping.get(c.name().lower())
+    if hexv is None or hexv.lower() == c.name().lower():
+        return None
+    out = QColor(hexv)
+    out.setAlpha(c.alpha())
+    return out
+
+
+def _remap_pen(pen, mapping):
+    if pen is None:
+        return None
+    pen = mkPen(pen)
+    if pen.style() == Qt.NoPen:
+        return None
+    c = _remap(pen.color(), mapping)
+    if c is None:
+        return None
+    out = QPen(pen)
+    out.setColor(c)
+    return out
+
+
+def _remap_brush(brush, mapping):
+    if brush is None:
+        return None
+    brush = mkBrush(brush)
+    if brush.style() == Qt.NoBrush:
+        return None
+    c = _remap(brush.color(), mapping)
+    return None if c is None else QBrush(c)
+
+
+def retheme_plot(plot: PlotItem, mapping: dict[str, str] | None = None) -> None:
+    """
+    Re-theme ``plot`` to the current tokens: chrome, then every item on it.
+
+    ``mapping`` (old hex to new hex) is what :func:`_colour_map` builds from the
+    two themes; items whose colour is not a role colour are left alone.
+    Called for every registered plot on a theme change.
+    """
+    _style_chrome(plot)
+    _restyle_legend(plot)
+    hover = getattr(plot, "_faux_hover", None)
+    if hover is not None:
+        hover.retheme()
+    if not mapping:
+        return
+    for item in list(plot.items):
+        _remap_item(item, mapping)
+
+
+def _remap_item(item, mapping) -> None:
+    if isinstance(item, pg.PlotDataItem):
+        for key, setter in (("pen", item.setPen),
+                            ("symbolPen", item.setSymbolPen),
+                            ("shadowPen", item.setShadowPen)):
+            pen = _remap_pen(item.opts.get(key), mapping)
+            if pen is not None:
+                setter(pen)
+        for key, setter in (("symbolBrush", item.setSymbolBrush),
+                            ("fillBrush", item.setFillBrush)):
+            brush = _remap_brush(item.opts.get(key), mapping)
+            if brush is not None:
+                setter(brush)
+    elif isinstance(item, pg.ScatterPlotItem):
+        pen = _remap_pen(item.opts.get("pen"), mapping)
+        if pen is not None:
+            item.setPen(pen)
+        brush = _remap_brush(item.opts.get("brush"), mapping)
+        if brush is not None:
+            item.setBrush(brush)
+    elif isinstance(item, InfiniteLine):
+        pen = _remap_pen(item.pen, mapping)
+        if pen is not None:
+            item.setPen(pen)
+        label = getattr(item, "label", None)
+        if label is not None:
+            _restyle_line_label(label, mapping)
+    elif isinstance(item, pg.LinearRegionItem):
+        brush = _remap_brush(item.brush, mapping)
+        if brush is not None:
+            item.setBrush(brush)
+        for line in item.lines:
+            pen = _remap_pen(line.pen, mapping)
+            if pen is not None:
+                line.setPen(pen)
+    elif isinstance(item, pg.TextItem):
+        c = _remap(item.color, mapping)
+        if c is not None:
+            item.setColor(c)
+    elif isinstance(item, QAbstractGraphicsShapeItem):
+        pen = _remap_pen(item.pen(), mapping)
+        if pen is not None:
+            item.setPen(pen)
+        brush = _remap_brush(item.brush(), mapping)
+        if brush is not None:
+            item.setBrush(brush)
+
+
+def _restyle_line_label(label, mapping) -> None:
+    c = _remap(label.color, mapping)
+    if c is not None:
+        label.setColor(c)
+    label.fill = _surface_fill()
+    label.update()
+
+
+def _surface_fill() -> QBrush:
+    c = QColor(theme.tokens().surface)
+    c.setAlpha(225)
+    return mkBrush(c)
+
+
+# ── legends ─────────────────────────────────────────────────────
+
+def _style_legend(legend) -> None:
+    t = theme.tokens()
+    legend.setBrush(_surface_fill())
+    legend.setPen(mkPen(t.rule, width=theme.STROKE_HAIR))
+    legend.setLabelTextColor(t.ink)
+    for _sample, label in legend.items:
+        label.setText(label.text)          # setAttr alone does not re-render
+        label.item.setFont(theme.data_font(8))
+        label.updateMin()
+    legend.updateSize()
+
+
+def _restyle_legend(plot: PlotItem) -> None:
+    legend = getattr(plot, "legend", None)
+    if legend is not None:
+        _style_legend(legend)
+
+
+def _wrap_legend(plot: PlotItem) -> None:
+    """
+    Make ``plot.addLegend`` (and ``legend.addItem``) hand back a themed legend.
+
+    Dozens of call sites create legends after ``apply_theme``; patching the
+    plot instance here themes all of them without each one having to ask.
+    """
+    if getattr(plot, "_hp_legend_wrapped", False):
+        return
+    plot._hp_legend_wrapped = True
+    add_legend = plot.addLegend
+
+    def themed_add_legend(*args, **kwargs):
+        legend = add_legend(*args, **kwargs)
+        add_item = legend.addItem
+
+        def themed_add_item(*a, **k):
+            result = add_item(*a, **k)
+            _style_legend(legend)
+            return result
+
+        legend.addItem = themed_add_item
+        _style_legend(legend)
+        return legend
+
+    plot.addLegend = themed_add_legend
 
 
 def make_plot(title: str = "", xlabel: str = "",
@@ -123,7 +408,7 @@ def make_plot(title: str = "", xlabel: str = "",
     if y_unit in _UNIT_AXES:
         axes["left"] = _UNIT_AXES[y_unit](orientation="left")
     pw = PlotWidget(axisItems=axes) if axes else PlotWidget()
-    pw.setBackground("transparent")
+    pw.setBackground(theme.tokens().surface)
     pi = pw.getPlotItem()
     apply_theme(pi, title, xlabel, ylabel)
     if log_x:
@@ -316,7 +601,7 @@ def make_freq_plot(title: str = "", ylabel: str = "",
     if y_unit in _UNIT_AXES:
         axes["left"] = _UNIT_AXES[y_unit](orientation="left")
     pw = PlotWidget(axisItems=axes)
-    pw.setBackground("transparent")
+    pw.setBackground(theme.tokens().surface)
     pi = pw.getPlotItem()
     apply_theme(pi, title, xlabel, ylabel)
     pi.setLogMode(x=True, y=False)
@@ -341,9 +626,9 @@ def plot_freq(plot: PlotItem, omega, y, **kwargs):
     return plot.plot(omega[ok], y[ok], **kwargs)
 
 
-def freq_vline(plot: PlotItem, omega: float, color: str = "#FF6600",
+def freq_vline(plot: PlotItem, omega: float, color: str | None = None,
                label: str = "", width: float = 1.5):
-    """Vertical marker at a frequency, given in **raw ω**."""
+    """Vertical marker at a frequency, given in **raw ω** (default: reference blue)."""
     if omega is None or not np.isfinite(omega) or omega <= 0:
         return None
     return add_vline(plot, float(to_freq_coord(omega)),
@@ -351,8 +636,8 @@ def freq_vline(plot: PlotItem, omega: float, color: str = "#FF6600",
 
 
 def freq_marker(plot: PlotItem, omega: float, y: float,
-                symbol: str = "o", color: str = "#FF6600", size: int = 10):
-    """Point marker at (**raw ω**, y)."""
+                symbol: str = "o", color: str | None = None, size: int = 10):
+    """Point marker at (**raw ω**, y) (default: highlight)."""
     if not (np.isfinite(omega) and np.isfinite(y)) or omega <= 0:
         return None
     return add_marker(plot, float(to_freq_coord(omega)), float(y),
@@ -360,8 +645,8 @@ def freq_marker(plot: PlotItem, omega: float, y: float,
 
 
 def freq_text(plot: PlotItem, omega: float, y: float, text: str,
-              color: str = "#FFAA00", anchor=(0, 1)):
-    """Text annotation anchored at (**raw ω**, y)."""
+              color: str | None = None, anchor=(0, 1)):
+    """Text annotation anchored at (**raw ω**, y) (default: ink)."""
     if not (np.isfinite(omega) and np.isfinite(y)) or omega <= 0:
         return None
     return add_text_annotation(plot, float(to_freq_coord(omega)), float(y),
@@ -369,10 +654,11 @@ def freq_text(plot: PlotItem, omega: float, y: float, text: str,
 
 
 def freq_region(plot: PlotItem, omega_lo: float, omega_hi: float,
-                color: str = "#F45B69", alpha: int = 30):
-    """Shaded frequency band between two **raw ω** limits."""
+                color: str | None = None, alpha: int = 30):
+    """Shaded frequency band between two **raw ω** limits (default: hold red)."""
     if not (np.isfinite(omega_lo) and np.isfinite(omega_hi)):
         return None
+    color = color or role_colour("danger")
     brush = QColor(color)
     brush.setAlpha(alpha)
     region = pg.LinearRegionItem(
@@ -389,21 +675,18 @@ def freq_region(plot: PlotItem, omega_lo: float, omega_hi: float,
 #  Line styles
 # ──────────────────────────────────────────────────────────────
 
-COLORS = [
-    "#4C9BE8",  # blue
-    "#F45B69",  # red
-    "#56C271",  # green
-    "#F4A261",  # orange
-    "#9B72CF",  # purple
-    "#26BFBF",  # teal
-    "#E9C46A",  # yellow
-    "#FF6B9D",  # pink
-]
+#: The series palette of the current theme, as hex. A *live* list: it is
+#: rewritten in place when the theme changes, so ``COLORS[i]`` read at draw
+#: time is always current (modules that did ``from .plots import COLORS``
+#: keep working, because the list object never changes).
+COLORS: list[str] = _palette()
+_listen()
 
 STYLES = [Qt.SolidLine, Qt.DashLine, Qt.DotLine, Qt.DashDotLine]
 
 
 def curve_pen(idx: int, width: float = 2.0) -> pg.mkPen:
+    """Pen for series ``idx``: ink, highlight, hold, ok, muted, then dashed."""
     color = COLORS[idx % len(COLORS)]
     style = STYLES[(idx // len(COLORS)) % len(STYLES)]
     return mkPen(color=color, width=width, style=style)
@@ -413,37 +696,50 @@ def curve_pen(idx: int, width: float = 2.0) -> pg.mkPen:
 #  Annotation helpers
 # ──────────────────────────────────────────────────────────────
 
-def add_vline(plot: PlotItem, x: float, color: str = "#FF6600",
+def _line_label_opts(color: str) -> dict:
+    """A line's caption: its own colour as text, on a surface plate."""
+    return {"position": 0.92, "color": color, "fill": _surface_fill(),
+            "movable": False}
+
+
+def add_vline(plot: PlotItem, x: float, color: str | None = None,
               label: str = "", width: float = 1.5) -> InfiniteLine:
-    """Add a vertical dashed line annotation."""
+    """Add a vertical dashed line annotation (default: reference blue)."""
+    color = color or role_colour("reference")
     # Pass label through constructor — pyqtgraph 0.14 has no setLabel method.
-    opts = {"position": 0.92, "color": color,
-            "fill": mkBrush(QColor(color).darker(180))} if label else {}
     line = InfiniteLine(pos=x, angle=90, movable=False,
                         pen=mkPen(color=color, width=width, style=Qt.DashLine),
                         label=label or None,
-                        labelOpts=opts or None)
+                        labelOpts=_line_label_opts(color) if label else None)
+    _style_line_label(line)
     plot.addItem(line)
     return line
 
 
-def add_hline(plot: PlotItem, y: float, color: str = "#FF6600",
+def add_hline(plot: PlotItem, y: float, color: str | None = None,
               label: str = "", width: float = 1.5) -> InfiniteLine:
-    """Add a horizontal dashed line annotation."""
-    opts = {"position": 0.92, "color": color,
-            "fill": mkBrush(QColor(color).darker(180))} if label else {}
+    """Add a horizontal dashed line annotation (default: reference blue)."""
+    color = color or role_colour("reference")
     line = InfiniteLine(pos=y, angle=0, movable=False,
                         pen=mkPen(color=color, width=width, style=Qt.DashLine),
                         label=label or None,
-                        labelOpts=opts or None)
+                        labelOpts=_line_label_opts(color) if label else None)
+    _style_line_label(line)
     plot.addItem(line)
     return line
 
 
+def _style_line_label(line: InfiniteLine) -> None:
+    label = getattr(line, "label", None)
+    if label is not None:
+        label.setFont(theme.data_font(8))
+
+
 def add_marker(plot: PlotItem, x: float, y: float,
-               symbol: str = "o", color: str = "#FF6600",
+               symbol: str = "o", color: str | None = None,
                size: int = 10) -> pg.ScatterPlotItem:
-    """Place a single marker at (x, y)."""
+    """Place a single marker at (x, y) (default: highlight)."""
+    color = color or role_colour("highlight")
     scatter = pg.ScatterPlotItem(
         x=[x], y=[y],
         symbol=symbol, size=size,
@@ -455,8 +751,9 @@ def add_marker(plot: PlotItem, x: float, y: float,
 
 
 def add_band(plot: PlotItem, y_center: float, half_width: float,
-             color: str = "#44FF44", alpha: int = 40) -> pg.LinearRegionItem:
-    """Add a horizontal shaded band (±half_width around y_center)."""
+             color: str | None = None, alpha: int = 40) -> pg.LinearRegionItem:
+    """Add a horizontal shaded band (default: the lamp green of "settled")."""
+    color = color or role_colour("ok")
     brush_color = QColor(color)
     brush_color.setAlpha(alpha)
     region = pg.LinearRegionItem(
@@ -470,10 +767,11 @@ def add_band(plot: PlotItem, y_center: float, half_width: float,
 
 
 def add_text_annotation(plot: PlotItem, x: float, y: float,
-                         text: str, color: str = "#FFAA00",
+                         text: str, color: str | None = None,
                          anchor=(0, 1)) -> pg.TextItem:
-    """Add a floating text annotation."""
-    item = pg.TextItem(text=text, color=color, anchor=anchor)
+    """Add a floating text annotation (default: ink, in the data font)."""
+    item = pg.TextItem(text=text, color=color or role_colour("data"), anchor=anchor)
+    item.setFont(theme.data_font(8.5))
     item.setPos(x, y)
     plot.addItem(item)
     return item
@@ -529,13 +827,15 @@ def draw_asymptotes(plot: PlotItem, segments, colour: str, *,
 
 def draw_pz_map(plot: PlotItem,
                 poles: list[complex], zeros: list[complex],
-                pole_color: str = "#F45B69",
-                zero_color: str = "#4C9BE8",
+                pole_color: str | None = None,
+                zero_color: str | None = None,
                 label_prefix: str = "") -> None:
-    """Draw poles (×) and zeros (○) on a complex-plane plot."""
+    """Draw poles (hold-red ×) and zeros (ink ○) on a complex-plane plot."""
+    pole_color = pole_color or role_colour("danger")
+    zero_color = zero_color or role_colour("data")
     # Imaginary axis
-    add_vline(plot, 0.0, color="#666666", width=0.8)
-    add_hline(plot, 0.0, color="#666666", width=0.8)
+    add_vline(plot, 0.0, color=role_colour("muted"), width=0.8)
+    add_hline(plot, 0.0, color=role_colour("muted"), width=0.8)
 
     if poles:
         pr = [p.real for p in poles]
@@ -821,14 +1121,14 @@ class HoverReadout(QObject):
         super().__init__()
         self.plot = plot_item
         self.model = HoverModel(log_x)
-        dark = _is_dark()
-        self._fg = "#E8E8F0" if dark else "#111111"
-        fill = QColor(26, 26, 46, 235) if dark else QColor(255, 255, 255, 240)
+        t = theme.tokens()
+        self._fg = t.ink
         self._marker = pg.ScatterPlotItem(size=10, symbol="o",
                                           brush=mkBrush(None))
         self._label = pg.TextItem(color=self._fg, anchor=(0, 1),
-                                  fill=mkBrush(fill),
-                                  border=mkPen("#888888", width=0.8))
+                                  fill=_surface_fill(),
+                                  border=mkPen(t.ink_muted, width=1))
+        self._label.setFont(theme.data_font(8.5))
         for item in (self._marker, self._label):
             item.setZValue(1000)
         self.attach()
@@ -841,6 +1141,14 @@ class HoverReadout(QObject):
         if view is not None:
             self._filter = _LeaveFilter(self)
             view.viewport().installEventFilter(self._filter)
+
+    def retheme(self) -> None:
+        """Pick up the current tokens (the readout paints its own colours)."""
+        t = theme.tokens()
+        self._fg = t.ink
+        self._label.fill = _surface_fill()
+        self._label.border = mkPen(t.ink_muted, width=1)
+        self._label.setColor(t.ink)
 
     def attach(self) -> None:
         """(Re-)add the marker and label — ``PlotItem.clear()`` removes them."""
@@ -863,8 +1171,8 @@ class HoverReadout(QObject):
         if hit is None:
             self.hide()
             return
-        colour = hit.colour or "#FF6600"
-        self._marker.setData([hit.x], [hit.y], pen=mkPen(colour, width=2))
+        hit_colour = hit.colour or role_colour("highlight")
+        self._marker.setData([hit.x], [hit.y], pen=mkPen(hit_colour, width=2))
         self._marker.setVisible(True)
         vb = self.plot.getViewBox()
         (x0, x1), (y0, y1) = vb.viewRange()

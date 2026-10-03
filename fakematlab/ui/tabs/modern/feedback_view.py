@@ -7,7 +7,6 @@ from __future__ import annotations
 import control as ctl
 import numpy as np
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QCheckBox,
     QGroupBox,
@@ -23,6 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 from ....core.statefbk import DesignError, acker, control_effort, lqi, lqr, place
+from ... import theme
 from ...guard import GuardedPanel, guard
 from ...plots import add_hline, apply_theme, curve_pen, make_plot
 from .widgets import fill_table, frame_poles, make_table
@@ -101,7 +101,7 @@ class FeedbackView(QWidget, GuardedPanel):
 
         self._result = QLabel("")
         self._result.setWordWrap(True)
-        self._result.setFont(QFont("Consolas", 9))
+        self._result.setFont(theme.data_font(9))
         self._result.setTextInteractionFlags(Qt.TextSelectableByMouse)
         left_lay.addWidget(self._result)
         left_lay.addStretch()
@@ -215,7 +215,7 @@ class FeedbackView(QWidget, GuardedPanel):
                 [v.imag for v in design.eigenvalues],
                 pen=None, symbol="o", symbolSize=11,
                 symbolPen=curve_pen(0, 2.0), name="closed loop")
-        add_hline(pz, 0.0, "#888888", width=0.6)
+        add_hline(pz, 0.0, theme.plot_colour("muted"), width=0.6)
         frame_poles(pz, list(design.eigenvalues) + list(
             np.linalg.eigvals(np.asarray(self.ctx.sys.A))))
 
@@ -235,13 +235,13 @@ class FeedbackView(QWidget, GuardedPanel):
             _, y = ctl.step_response(design.closed_loop, T=t)
             response.plot(t, np.atleast_2d(y)[0], pen=curve_pen(0, 2.2),
                           name="y (with integral action)")
-            add_hline(response, 1.0, "#888888", width=0.6)
+            add_hline(response, 1.0, theme.plot_colour("reference"), width=0.6)
             return
 
         y, u = control_effort(self.ctx.sys, design.K, design.Nbar, t)
         response.plot(t, y, pen=curve_pen(0, 2.2), name="y")
         response.plot(t, u, pen=curve_pen(3, 1.6), name="u (control effort)")
-        add_hline(response, 1.0, "#888888", width=0.6)
+        add_hline(response, 1.0, theme.plot_colour("reference"), width=0.6)
 
     def _clear_plots(self) -> None:
         for widget, title in ((self._pz, "Eigenvalues"),

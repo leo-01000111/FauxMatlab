@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import numpy as np
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QFormLayout,
     QHBoxLayout,
@@ -16,6 +15,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+from ... import theme
 
 
 def make_table(headers: list[str], max_height: int | None = None) -> QTableWidget:
@@ -97,7 +98,7 @@ class MatrixEditor(QWidget):
         for name, height in (("A", 84), ("B", 60), ("C", 46), ("D", 34)):
             box = QPlainTextEdit()
             box.setMaximumHeight(height)
-            box.setFont(QFont("Consolas", 9))
+            box.setFont(theme.data_font(9))
             box.setPlaceholderText("rows on separate lines, or 0 1; -2 -3")
             self._boxes[name] = box
             form.addRow(f"{name}:", box)

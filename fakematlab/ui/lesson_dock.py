@@ -12,7 +12,7 @@ stale.
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QColor, QPalette
 from PySide6.QtWidgets import (
     QDockWidget,
     QHBoxLayout,
@@ -29,10 +29,9 @@ from PySide6.QtWidgets import (
 
 from ..core.architecture import CourseArchitecture
 from ..core.lessons import Lesson
+from . import theme
+from .design import Status
 from .guard import GuardedPanel, guard
-
-_OK = "#56C271"
-_BAD = "#F45B69"
 
 
 class LessonDock(QDockWidget, GuardedPanel):
@@ -55,14 +54,12 @@ class LessonDock(QDockWidget, GuardedPanel):
 
         self._title = QLabel("")
         self._title.setWordWrap(True)
-        title_font = QFont()
-        title_font.setBold(True)
-        title_font.setPointSize(title_font.pointSize() + 1)
-        self._title.setFont(title_font)
+        self._title.setFont(theme.title_font(11))
         outer.addWidget(self._title)
 
         self._slides = QLabel("")
-        self._slides.setStyleSheet("color: palette(mid);")
+        self._slides.setFont(theme.label_font())
+        self._slides.setForegroundRole(QPalette.Mid)      # ink_muted
         outer.addWidget(self._slides)
 
         split = QSplitter(Qt.Vertical)
@@ -107,6 +104,8 @@ class LessonDock(QDockWidget, GuardedPanel):
         outer.addLayout(row)
 
         self.setWidget(body)
+        self._passed = self._total = 0
+        theme.notifier().changed.connect(self._restyle)
 
     # ── loading ─────────────────────────────────────────────────
 
@@ -145,9 +144,21 @@ class LessonDock(QDockWidget, GuardedPanel):
             self._add_row(claim, measured, ok)
 
         total = len(self.lesson.claims)
-        colour = _OK if passed == total else _BAD
+        self._passed, self._total = passed, total
         self._verdict.setText(f"{passed}/{total} hold")
-        self._verdict.setStyleSheet(f"color: {colour}; font-weight: bold;")
+        self._verdict.setFont(theme.label_font(8, 700))
+        self._restyle()
+
+    def _restyle(self, *_ignored) -> None:
+        """Re-colour what is coloured by hand: the verdict and the ticks."""
+        status = Status.OK if self._passed == self._total else Status.CRITICAL
+        self._verdict.setStyleSheet(f"color: {status.colour};")
+        for row in range(self._table.rowCount()):
+            tick = self._table.item(row, 0)
+            if tick is not None:
+                tick.setForeground(QColor(
+                    (Status.OK if tick.text() == "✓" else Status.CRITICAL)
+                    .colour))
 
     def _add_row(self, claim, measured: float, ok: bool) -> None:
         row = self._table.rowCount()
@@ -155,7 +166,8 @@ class LessonDock(QDockWidget, GuardedPanel):
         symbol = {"equals": "=", "at_least": "≥", "at_most": "≤"}[claim.mode]
 
         tick = QTableWidgetItem("✓" if ok else "✗")
-        tick.setForeground(Qt.GlobalColor.green if ok else Qt.GlobalColor.red)
+        tick.setForeground(QColor(
+            (Status.OK if ok else Status.CRITICAL).colour))
         self._table.setItem(row, 0, tick)
 
         text = QTableWidgetItem(claim.text)

@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from ...console.interpreter import Interpreter
+from .. import theme
 
 
 class WorkspaceWidget(QWidget):
@@ -62,6 +63,8 @@ class WorkspaceWidget(QWidget):
         self._table.verticalHeader().setVisible(False)
         self._table.horizontalHeader().setSectionResizeMode(
             2, QHeaderView.Stretch)
+        # Header = the label style (mono, small, uppercase); cells = data.
+        self._table.horizontalHeader().setFont(theme.label_font(8))
         self._table.itemDoubleClicked.connect(self._on_double_click)
         layout.addWidget(self._table, stretch=1)
 
@@ -168,4 +171,5 @@ def _decay(sys, poles) -> np.ndarray:
 def _item(text: str) -> QTableWidgetItem:
     item = QTableWidgetItem(text)
     item.setToolTip(text)
+    item.setFont(theme.data_font(9))
     return item

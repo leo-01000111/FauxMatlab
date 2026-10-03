@@ -16,7 +16,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..plots import add_hline, apply_theme, curve_pen, make_plot
+from .. import theme
+from ..plots import add_hline, apply_theme, curve_pen, make_plot, role_colour
 
 #: Above this many samples the display is decimated. The full data is kept for
 #: export — only the drawing is thinned, because a pyqtgraph curve of a
@@ -45,13 +46,14 @@ class ScopeWidget(QWidget):
         root.addWidget(self._plot, stretch=1)
 
         self._cursor = pg.InfiniteLine(angle=90, movable=True,
-                                       pen=pg.mkPen("#F4A261", width=1.2,
+                                       pen=pg.mkPen(role_colour("reference"), width=1.2,
                                                     style=Qt.DashLine))
         self._cursor.sigPositionChanged.connect(self._update_readout)
 
         self._readout = QLabel("")
         self._readout.setTextFormat(Qt.PlainText)
         self._readout.setWordWrap(True)
+        self._readout.setFont(theme.data_font(9))      # a readout is data
         root.addWidget(self._readout)
 
         picker = QScrollArea()
@@ -108,7 +110,7 @@ class ScopeWidget(QWidget):
                 drawn += 1
 
         if drawn:
-            add_hline(plot, 0.0, "#888888", width=0.6)
+            add_hline(plot, 0.0, role_colour("muted"), width=0.6)
             plot.addItem(self._cursor)
             self._cursor.setPos(float(t[len(t) // 2]) if len(t) else 0.0)
             self._update_readout()
