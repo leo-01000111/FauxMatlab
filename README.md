@@ -105,6 +105,10 @@ It wears the same design system as [leongorecki.eu](https://leongorecki.eu): Arc
 Martian Mono, concrete and asphalt grounds, sign-yellow highlights. View ▸ Theme picks Day,
 Night or follows the system.
 
+| Day | Night |
+|---|---|
+| ![FauxMatlab, Day theme](docs/theme-day.png) | ![FauxMatlab, Night theme](docs/theme-night.png) |
+
 It fits a **1280 × 720** screen, and is tested at 1366 × 768 and 1920 × 1080 too.
 
 ---
