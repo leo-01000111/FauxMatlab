@@ -13,16 +13,20 @@ writes one as PNG, SVG or CSV, choosing by the file's extension.
 from __future__ import annotations
 
 import csv
+import math
 import re
 from pathlib import Path
 
 import numpy as np
+import pyqtgraph as pg
 from pyqtgraph import PlotWidget
 from pyqtgraph.exporters import SVGExporter
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QFileDialog,
+    QGridLayout,
+    QLabel,
     QMenu,
     QMessageBox,
     QSplitter,
@@ -66,6 +70,7 @@ class FigureView(QWidget):
             "nyquist": self._nyquist,
             "pzmap": self._pzmap,
             "rlocus": self._rlocus,
+            "subplot": self._subplots,
         }.get(spec.kind, self._plain)
         builder(layout)
         self._install_export_menu()
@@ -148,6 +153,18 @@ class FigureView(QWidget):
                 plot.plot(x, y, pen=None, symbol="o", symbolSize=6,
                           symbolPen=curve_pen(i, 1.4),
                           name=trace.label or None)
+            elif trace.style == "stem":     # a line up from zero to each dot
+                plot.plot(np.repeat(x, 2), np.column_stack(
+                    [np.zeros_like(y), y]).ravel(), pen=_pen(i, "line"),
+                    connect="pairs")
+                plot.plot(x, y, pen=None, symbol="o", symbolSize=7,
+                          symbolPen=curve_pen(i, 1.4), symbolBrush=None,
+                          name=trace.label or None)
+            elif trace.style == "bar":
+                width = self.spec.extra.get("bar_width", 0.8)
+                plot.addItem(pg.BarGraphItem(x=x, height=y, width=width,
+                                             pen=curve_pen(i, 1.0),
+                                             brush=curve_pen(i, 1.0).color()))
             else:
                 plot.plot(x, y, pen=_pen(i, trace.style),
                           name=trace.label or None)
@@ -157,6 +174,26 @@ class FigureView(QWidget):
             add_hline(plot, 0.0, role_colour("muted"), width=0.6)
         _limits(plot, self.spec)
         layout.addWidget(widget)
+
+    def _subplots(self, layout) -> None:
+        """``subplot``'s axes, each a figure of its own, on one grid."""
+        panes = [p for p in self.spec.extra.get("panes", [])
+                 if p["spec"] is not None]
+        if self.spec.title:
+            layout.addWidget(QLabel(self.spec.title, alignment=Qt.AlignCenter))
+        grid = QGridLayout()
+        layout.addLayout(grid)
+        # Panes from different m×n grids share the least common multiple.
+        rows = math.lcm(*(p["rows"] for p in panes)) if panes else 1
+        cols = math.lcm(*(p["cols"] for p in panes)) if panes else 1
+        for pane in panes:
+            m, n = pane["rows"], pane["cols"]
+            cells = [c - 1 for c in pane["cells"]]
+            r0, r1 = min(c // n for c in cells), max(c // n for c in cells)
+            c0, c1 = min(c % n for c in cells), max(c % n for c in cells)
+            grid.addWidget(FigureView(pane["spec"]), r0 * rows // m,
+                           c0 * cols // n, (r1 - r0 + 1) * rows // m,
+                           (c1 - c0 + 1) * cols // n)
 
     def _bode(self, layout) -> None:
         """Magnitude over phase, sharing one frequency axis."""

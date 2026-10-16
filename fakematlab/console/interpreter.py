@@ -73,6 +73,9 @@ class Interpreter:
         self.history: list[str] = []
         #: Set by the UI: what ``close all`` in a MATLAB script calls.
         self.close_figures = None
+        #: Set by the UI: the folder of the script being run. A MATLAB script
+        #: finds its function files (``name.m``) and data files there.
+        self.script_folder: str | None = None
         self._matlab = None
 
     # ── execution ───────────────────────────────────────────────
@@ -126,12 +129,15 @@ class Interpreter:
         result.output = buffer.getvalue()
         return result
 
-    def run_script(self, source: str, language: str = "auto") -> list[Result]:
+    def run_script(self, source: str, language: str = "auto",
+                   folder: str | None = None) -> list[Result]:
         """
         Run a whole script, one top-level statement at a time.
 
         ``language`` is ``"matlab"``, ``"python"`` or ``"auto"`` — which
-        guesses from the text, so a pasted ``.m`` file just runs.
+        guesses from the text, so a pasted ``.m`` file just runs. ``folder``
+        is the script's own folder (else :attr:`script_folder`, else the
+        process's): a MATLAB script's current folder.
 
         Statement by statement rather than in one block so that output appears
         in order and a failure reports *which* line stopped it — running the
@@ -140,7 +146,7 @@ class Interpreter:
         from .matlab import looks_like_matlab
         if language == "matlab" or (language == "auto"
                                     and looks_like_matlab(source)):
-            return self.run_matlab(source)
+            return self.run_matlab(source, folder)
         try:
             tree = ast.parse(source)
         except SyntaxError as exc:
@@ -159,7 +165,8 @@ class Interpreter:
                 break
         return results
 
-    def run_matlab(self, source: str) -> list[Result]:
+    def run_matlab(self, source: str,
+                   folder: str | None = None) -> list[Result]:
         """
         Translate a MATLAB script and run it, statement by statement.
 
@@ -182,7 +189,7 @@ class Interpreter:
                            else "")]
 
         runtime = self._matlab_runtime()
-        runtime.begin()
+        runtime.begin(folder or self.script_folder)
         previous = set_figure_sink(lambda spec: runtime.figures.collect(spec))
         line_maps: dict[str, list[int]] = {}
         results: list[Result] = []
@@ -227,9 +234,8 @@ class Interpreter:
             figures = runtime.figures
             if figures.close_requested and self.close_figures is not None:
                 self.close_figures()
-            for spec in figures.specs:
-                if spec.traces:
-                    previous(spec)
+            for spec in figures.drawable():
+                previous(spec)
         return results
 
     def _matlab_runtime(self):
