@@ -20,6 +20,9 @@ dependencies = [
     "control>=0.10.1",
     "PySide6>=6.7",
     "pyqtgraph>=0.13.4",
+    # Already required by python-control; named because live scripts use it
+    # directly — mathtext draws their equations, Agg their report figures.
+    "matplotlib>=3.8",
 ]
 
 [project.optional-dependencies]

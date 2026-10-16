@@ -35,6 +35,7 @@ from .. import theme
 from ..design import TIGHT, EmptyState
 from .console_widget import ConsoleWidget
 from .figure_view import FigureView
+from .live_editor import LiveScriptEditor
 from .workspace_widget import WorkspaceWidget
 
 #: Beyond this many open figures the oldest is closed, the way MATLAB reuses
@@ -602,6 +603,14 @@ class ConsolePanel(QWidget):
         self.editor = ScriptEditor()
         self.editor.run_requested.connect(self._run_script)
         self._tabs.addTab(self.editor, "Script")
+
+        # Live scripts: cells of code and formatted text, run in this same
+        # workspace. `live.folder` is its current folder, as `editor.path`
+        # is the plain script's file.
+        self.live = LiveScriptEditor(self.interpreter)
+        self.live.ran.connect(self.workspace.refresh)
+        self.live.figure_requested.connect(self.figures.show_figure)
+        self._tabs.addTab(self.live, "Live")
 
         layout.addWidget(self._tabs)
 
