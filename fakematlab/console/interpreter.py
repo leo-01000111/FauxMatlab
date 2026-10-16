@@ -32,6 +32,7 @@ from typing import Any
 
 from .api import build_namespace, command_names
 from .figures import set_figure_sink
+from .tracer import Interrupted, Tracer, write_back
 
 
 @dataclass
@@ -43,6 +44,8 @@ class Result:
     has_value: bool = False
     error:     str = ""
     hint:      str = ""
+    #: The line of the script (or command) an error or interrupt names.
+    line:      int | None = None
 
     @property
     def ok(self) -> bool:
@@ -74,11 +77,22 @@ class Interpreter:
         #: Set by the UI: what ``close all`` in a MATLAB script calls.
         self.close_figures = None
         self._matlab = None
+        #: Stops and pauses what runs; see :mod:`.tracer`.
+        self.tracer = Tracer()
+        #: Output of the statement now running, so far (see drain_output).
+        self._buffers: list[io.StringIO] = []
 
     # ── execution ───────────────────────────────────────────────
 
-    def run(self, source: str) -> Result:
-        """Execute one statement or block."""
+    def run(self, source: str, *, first_line: int = 1,
+            filename: str = "<console>", debuggable: bool = False) -> Result:
+        """
+        Execute one statement or block.
+
+        ``first_line`` is where ``source`` starts in a script, so line
+        numbers (errors, interrupts, breakpoints) are the script's own.
+        While the debugger is paused, it runs in the paused frame's scope.
+        """
         source = source.rstrip()
         if not source.strip():
             return Result(source)
@@ -92,7 +106,11 @@ class Interpreter:
         except SyntaxError as exc:
             result.error = f"SyntaxError: {exc.msg}"
             result.hint = _syntax_hint(source, exc)
+            if exc.lineno:
+                result.line = exc.lineno + first_line - 1
             return result
+        if first_line > 1:
+            ast.increment_lineno(tree, first_line - 1)
 
         # A trailing bare expression is evaluated separately so its value can
         # be echoed and bound to `ans`, the way a REPL does.
@@ -100,33 +118,66 @@ class Interpreter:
         if body and isinstance(body[-1], ast.Expr):
             tail = body.pop()
 
+        paused = self.tracer.paused
+        glob = paused.frame.f_globals if paused else self.namespace
+        loc = paused.scope if paused else glob
+        # Decided now: reading f_locals again would refresh it from the
+        # frame and lose what the command assigned before it is written back.
+        in_function = loc is not glob
         buffer = io.StringIO()
+        self._buffers.append(buffer)
         try:
-            with redirect_stdout(buffer), redirect_stderr(buffer):
+            with self.tracer.active(self.namespace), \
+                    redirect_stdout(buffer), redirect_stderr(buffer):
                 if body:
-                    exec(compile(ast.Module(body, []), "<console>", "exec"),
-                         self.namespace)
+                    code = compile(ast.Module(body, []), filename, "exec")
+                    self.tracer.watch(code, debuggable=debuggable)
+                    exec(code, glob, loc)
                 if tail is not None:
-                    value = eval(
-                        compile(ast.Expression(tail.value), "<console>",
-                                "eval"),
-                        self.namespace)
+                    code = compile(ast.Expression(tail.value), filename,
+                                   "eval")
+                    self.tracer.watch(code, debuggable=debuggable)
+                    value = eval(code, glob, loc)
                     if value is not None:
-                        self.namespace["ans"] = value
+                        loc["ans"] = value
                     result.value = value
                     result.has_value = echo
         except SystemExit:
             raise
+        except Interrupted as exc:
+            result.output = buffer.getvalue()
+            result.error = str(exc)
+            result.line = exc.line
+            return result
         except BaseException as exc:                        # noqa: BLE001
             result.output = buffer.getvalue()
             result.error = _format_exception(exc)
             result.hint = _runtime_hint(exc, self.namespace)
+            result.line = _traceback_line(exc, filename)
             return result
+        finally:
+            self._buffers.remove(buffer)
+            if in_function:
+                write_back(paused.frame)
 
         result.output = buffer.getvalue()
         return result
 
-    def run_script(self, source: str, language: str = "auto") -> list[Result]:
+    def drain_output(self) -> str:
+        """
+        What the statement now running has printed so far, taken out of its
+        result — so a pause can show it before the statement finishes.
+        """
+        if not self._buffers:
+            return ""
+        buffer = self._buffers[-1]
+        text = buffer.getvalue()
+        buffer.seek(0)
+        buffer.truncate()
+        return text
+
+    def run_script(self, source: str, language: str = "auto", *,
+                   on_result=None, debuggable: bool = False) -> list[Result]:
         """
         Run a whole script, one top-level statement at a time.
 
@@ -136,30 +187,42 @@ class Interpreter:
         Statement by statement rather than in one block so that output appears
         in order and a failure reports *which* line stopped it — running the
         file as a single exec gives one traceback and no partial results.
+
+        ``on_result`` is called with each result as it is produced, so a long
+        run shows its progress; ``debuggable`` lets the tracer's breakpoints
+        apply (the script editor's runs, not the prompt's).
         """
         from .matlab import looks_like_matlab
         if language == "matlab" or (language == "auto"
                                     and looks_like_matlab(source)):
-            return self.run_matlab(source)
+            return self.run_matlab(source, on_result=on_result,
+                                   debuggable=debuggable)
         try:
             tree = ast.parse(source)
         except SyntaxError as exc:
             result = Result(source, error=f"SyntaxError: {exc.msg}",
-                            hint=_syntax_hint(source, exc))
+                            hint=_syntax_hint(source, exc), line=exc.lineno)
+            if on_result is not None:
+                on_result(result)
             return [result]
 
         lines = source.splitlines()
         results: list[Result] = []
-        for node in tree.body:
-            end = getattr(node, "end_lineno", node.lineno)
-            chunk = "\n".join(lines[node.lineno - 1:end])
-            outcome = self.run(chunk)
-            results.append(outcome)
-            if outcome.error:
-                break
+        with self.tracer.active(self.namespace):
+            for node in tree.body:
+                end = getattr(node, "end_lineno", node.lineno)
+                chunk = "\n".join(lines[node.lineno - 1:end])
+                outcome = self.run(chunk, first_line=node.lineno,
+                                   filename="<script>", debuggable=debuggable)
+                results.append(outcome)
+                if on_result is not None:
+                    on_result(outcome)
+                if outcome.error:
+                    break
         return results
 
-    def run_matlab(self, source: str) -> list[Result]:
+    def run_matlab(self, source: str, *, on_result=None,
+                   debuggable: bool = False) -> list[Result]:
         """
         Translate a MATLAB script and run it, statement by statement.
 
@@ -167,6 +230,13 @@ class Interpreter:
         ``legend`` can amend a plot already made — and drawn at the end, even
         if a statement fails part-way. Errors name the MATLAB line.
         """
+        # One tracer session for the whole run, so a stop requested between
+        # two statements still lands.
+        with self.tracer.active(self.namespace):
+            return self._run_matlab(source, on_result, debuggable)
+
+    def _run_matlab(self, source: str, on_result,
+                    debuggable: bool) -> list[Result]:
         from .matlab import MatlabSyntaxError, translate
         from .matlab_runtime import ScriptReturn
 
@@ -176,16 +246,25 @@ class Interpreter:
             lines = source.splitlines()
             text = lines[exc.line - 1].strip() if 0 < exc.line <= len(
                 lines) else ""
-            return [Result(text or source,
-                           error=f"Error: {exc.message} (line {exc.line})",
-                           hint=f"  → line {exc.line}:  {text}" if text
-                           else "")]
+            result = Result(text or source,
+                            error=f"Error: {exc.message} (line {exc.line})",
+                            hint=f"  → line {exc.line}:  {text}" if text
+                            else "", line=exc.line)
+            if on_result is not None:
+                on_result(result)
+            return [result]
 
         runtime = self._matlab_runtime()
         runtime.begin()
         previous = set_figure_sink(lambda spec: runtime.figures.collect(spec))
         line_maps: dict[str, list[int]] = {}
         results: list[Result] = []
+
+        def done(result: Result) -> None:
+            results.append(result)
+            if on_result is not None:
+                on_result(result)
+
         try:
             for k, chunk in enumerate(chunks):
                 filename = f"<matlab:{k}>"
@@ -194,34 +273,49 @@ class Interpreter:
                 if not chunk.function:
                     self.history.append(chunk.matlab)
                 buffer = io.StringIO()
+                self._buffers.append(buffer)
                 try:
                     code = compile(chunk.python, filename, "exec")
-                    with redirect_stdout(buffer), redirect_stderr(buffer):
+                    self.tracer.watch(code, chunk.lines,
+                                      debuggable=debuggable,
+                                      quiet=chunk.function)
+                    with self.tracer.active(self.namespace), \
+                            redirect_stdout(buffer), redirect_stderr(buffer):
                         exec(code, self.namespace)
                 except ScriptReturn:
                     result.output = buffer.getvalue()
-                    results.append(result)
+                    done(result)
                     break
                 except SystemExit:
                     raise
+                except Interrupted as exc:
+                    result.output = buffer.getvalue()
+                    result.error = str(exc)
+                    result.line = exc.line
+                    done(result)
+                    break
                 except SyntaxError as exc:              # our bug, not theirs
                     result.output = buffer.getvalue()
                     result.error = (f"Error: this line could not be "
                                     f"translated ({exc.msg}).")
-                    results.append(result)
+                    result.line = chunk.first
+                    done(result)
                     break
                 except BaseException as exc:            # noqa: BLE001
                     result.output = buffer.getvalue()
                     line = _matlab_line(exc, line_maps) or chunk.first
                     result.error = (f"Error in line {line}: "
                                     f"{_matlab_message(exc)}")
+                    result.line = line
                     if not _is_matlab_error(exc):
                         result.hint = _runtime_hint(exc, self.namespace)
-                    results.append(result)
+                    done(result)
                     break
+                finally:
+                    self._buffers.remove(buffer)
                 result.output = buffer.getvalue()
                 if not chunk.function:
-                    results.append(result)
+                    done(result)
         finally:
             set_figure_sink(previous)
             figures = runtime.figures
@@ -244,9 +338,16 @@ class Interpreter:
     # ── namespace ───────────────────────────────────────────────
 
     def variables(self) -> dict[str, Any]:
-        """User variables — the commands and modules are filtered out."""
+        """
+        User variables — the commands and modules are filtered out.
+
+        While the debugger is paused inside a function, that function's
+        variables: the workspace shows the scope the prompt evaluates in.
+        """
+        paused = self.tracer.paused
+        scope = paused.scope if paused is not None else self.namespace
         return {
-            name: value for name, value in self.namespace.items()
+            name: value for name, value in scope.items()
             if not name.startswith("_")
             and name not in self._commands
             and not _is_module(value)
@@ -400,6 +501,17 @@ def _matlab_line(exc: BaseException,
             lines = line_maps[name]
             if 0 < tb.tb_lineno <= len(lines):
                 found = lines[tb.tb_lineno - 1]
+        tb = tb.tb_next
+    return found
+
+
+def _traceback_line(exc: BaseException, filename: str) -> int | None:
+    """The line of the deepest frame compiled as ``filename``."""
+    found = None
+    tb = exc.__traceback__
+    while tb is not None:
+        if tb.tb_frame.f_code.co_filename == filename:
+            found = tb.tb_lineno
         tb = tb.tb_next
     return found
 

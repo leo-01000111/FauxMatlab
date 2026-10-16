@@ -12,8 +12,11 @@ does so automatically — but the common case stays one keystroke.
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QKeyEvent, QTextCursor
+from contextlib import contextmanager
+from pathlib import Path
+
+from PySide6.QtCore import QEvent, QObject, Qt, Signal
+from PySide6.QtGui import QKeyEvent, QKeySequence, QTextCursor
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -27,9 +30,12 @@ from PySide6.QtWidgets import (
 
 from ...console.interpreter import Interpreter, Result
 from .. import theme
+from ..code.completer import Completer, completion_candidates
 
 PROMPT = ">> "
 CONTINUATION = ".. "
+#: The prompt while the debugger is paused, as MATLAB writes it.
+DEBUG_PROMPT = "K>> "
 
 
 class _InputLine(QLineEdit):
@@ -39,9 +45,22 @@ class _InputLine(QLineEdit):
     continued = Signal(str)
     history_move = Signal(int)
     complete = Signal()
+    #: Ctrl+C with nothing selected.
+    interrupt = Signal()
+
+    #: Set by the console: while its popup is open, keys go to it.
+    completer: Completer | None = None
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         key = event.key()
+        if self.completer is not None and self.completer.is_open() and key in (
+                Qt.Key_Return, Qt.Key_Enter, Qt.Key_Escape, Qt.Key_Tab,
+                Qt.Key_Backtab):
+            event.ignore()
+            return
+        if event.matches(QKeySequence.Copy) and not self.hasSelectedText():
+            self.interrupt.emit()
+            return
         if key in (Qt.Key_Return, Qt.Key_Enter):
             text = self.text()
             if event.modifiers() & Qt.ShiftModifier:
@@ -60,12 +79,40 @@ class _InputLine(QLineEdit):
             return
         super().keyPressEvent(event)
 
+    def event(self, event) -> bool:
+        # Tab would otherwise move the focus before keyPressEvent sees it.
+        if event.type() == QEvent.KeyPress and event.key() == Qt.Key_Tab:
+            self.keyPressEvent(event)
+            return True
+        return super().event(event)
+
+
+class _CopyOrInterrupt(QObject):
+    """Ctrl+C in the transcript: copy a selection, else interrupt."""
+
+    def __init__(self, transcript: QPlainTextEdit, interrupt) -> None:
+        super().__init__(transcript)
+        self._transcript = transcript
+        self._interrupt = interrupt
+
+    def eventFilter(self, obj, event) -> bool:        # noqa: N802 (Qt API)
+        if event.type() == QEvent.KeyPress and event.matches(
+                QKeySequence.Copy) \
+                and not self._transcript.textCursor().hasSelection():
+            self._interrupt()
+            return True
+        return False
+
 
 class ConsoleWidget(QWidget):
     """Transcript plus prompt."""
 
     #: Something ran; the workspace browser listens for this.
     executed = Signal(object)              # Result
+    #: User code started (True) or finished (False) running.
+    running_changed = Signal(bool)
+    #: Stop, or Ctrl+C while something runs.
+    stop_requested = Signal()
 
     def __init__(self, interpreter: Interpreter | None = None,
                  parent=None) -> None:
@@ -73,6 +120,8 @@ class ConsoleWidget(QWidget):
         self.interpreter = interpreter or Interpreter()
         self._history_index = 0
         self._pending: list[str] = []
+        #: Where ``.m`` files are completed from; the script's folder.
+        self.folder: Path | None = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(2, 2, 2, 2)
@@ -82,6 +131,8 @@ class ConsoleWidget(QWidget):
         self._transcript.setReadOnly(True)
         self._transcript.setFont(theme.data_font(10))
         self._transcript.setMaximumBlockCount(5000)
+        self._transcript.installEventFilter(
+            _CopyOrInterrupt(self._transcript, self._interrupt))
         layout.addWidget(self._transcript, stretch=1)
 
         row = QHBoxLayout()
@@ -96,9 +147,20 @@ class ConsoleWidget(QWidget):
         self._input.continued.connect(self._extend)
         self._input.history_move.connect(self._recall)
         self._input.complete.connect(self._complete)
+        self._input.interrupt.connect(self._interrupt)
+        self._completer = Completer(self._input, self.candidates)
+        self._input.completer = self._completer
         row.addWidget(self._input, stretch=1)
         # Sized by its label, like the workspace's "Clear all": a pixel cap
         # does not know the button font is the wide uppercase sign face.
+        stop = QPushButton("Stop")
+        stop.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        stop.setToolTip("Interrupt what is running (Ctrl+C here with "
+                        "nothing selected, or Shift+F5)")
+        stop.setEnabled(False)
+        stop.clicked.connect(self.stop_requested)
+        row.addWidget(stop)
+        self._stop_button = stop
         clear = QPushButton("Clear")
         clear.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         clear.clicked.connect(self.clear_transcript)
@@ -139,13 +201,50 @@ class ConsoleWidget(QWidget):
 
     # ── running ─────────────────────────────────────────────────
 
+    @property
+    def busy(self) -> bool:
+        """User code is running and not paused: the prompt must wait."""
+        tracer = self.interpreter.tracer
+        return tracer.running and tracer.paused is None
+
+    @contextmanager
+    def running(self):
+        """Mark a run, for the Stop button and anyone listening."""
+        outermost = not self.interpreter.tracer.running
+        if outermost:
+            self._stop_button.setEnabled(True)
+            self.running_changed.emit(True)
+        try:
+            yield
+        finally:
+            if outermost:
+                self._stop_button.setEnabled(False)
+                self.running_changed.emit(False)
+
+    def _interrupt(self) -> None:
+        if self.interpreter.tracer.running:
+            self.stop_requested.emit()
+
+    def set_debugging(self, paused: bool) -> None:
+        """The ``K>>`` prompt while the debugger holds a paused frame."""
+        if not self._pending:
+            self._prompt.setText(DEBUG_PROMPT if paused else PROMPT)
+        self._stop_button.setEnabled(self.interpreter.tracer.running)
+
+    def _busy_note(self) -> None:
+        self.note("Busy — Stop (or Ctrl+C) interrupts what is running.")
+
     def _submit(self, text: str) -> None:
+        if self.busy:
+            self._busy_note()
+            return
         self._input.clear()
         if self._pending:
             self._pending.append(text)
             source = "\n".join(self._pending)
             self._pending = []
-            self._prompt.setText(PROMPT)
+            self._prompt.setText(DEBUG_PROMPT if self.interpreter.tracer.paused
+                                 else PROMPT)
         else:
             source = text
             # A block opener would fail on its own, so keep collecting.
@@ -163,10 +262,22 @@ class ConsoleWidget(QWidget):
             for i, line in enumerate(self._pending)), "prompt")
 
     def execute(self, source: str) -> Result:
-        """Run a command and show what it produced."""
+        """
+        Run a command and show what it produced.
+
+        While a script is paused in the debugger, the command runs in the
+        paused scope. While something runs (and is not paused) it is refused:
+        the event loop turns during a run, so Return can arrive mid-script.
+        """
+        if self.busy:
+            self._busy_note()
+            return Result(source, error="Busy: something is already running.")
+        paused = self.interpreter.tracer.paused is not None
         if not self._pending:
-            self._echo(PROMPT + source, "prompt")
-        result = self.interpreter.run(source)
+            self._echo((DEBUG_PROMPT if paused else PROMPT) + source,
+                       "prompt")
+        with self.running():
+            result = self.interpreter.run(source)
         shown = result.display()
         if shown:
             self._echo(shown, "error" if result.error else "output")
@@ -174,18 +285,34 @@ class ConsoleWidget(QWidget):
         self.executed.emit(result)
         return result
 
-    def run_script(self, source: str, language: str = "auto") -> list[Result]:
-        """Run a whole script, echoing each statement as it goes."""
-        results = []
-        for result in self.interpreter.run_script(source, language):
-            self._echo(PROMPT + result.source.splitlines()[0]
-                       + (" …" if "\n" in result.source else ""), "prompt")
+    def run_script(self, source: str, language: str = "auto", *,
+                   debuggable: bool = False) -> list[Result]:
+        """
+        Run a whole script, echoing each statement as it finishes — not at
+        the end, so a long run shows its progress (and what Stop cut short).
+        """
+        if self.busy:
+            self._busy_note()
+            return []
+
+        def show(result: Result) -> None:
+            self._echo(PROMPT + result.source.strip("\n").splitlines()[0]
+                       + (" …" if "\n" in result.source.strip("\n") else ""),
+                       "prompt")
             shown = result.display()
             if shown:
                 self._echo(shown, "error" if result.error else "output")
-            results.append(result)
+
+        with self.running():
+            results = self.interpreter.run_script(
+                source, language, on_result=show, debuggable=debuggable)
         self.executed.emit(results[-1] if results else None)
         return results
+
+    def show_output(self, text: str) -> None:
+        """Printed output from code that has not finished (a paused run)."""
+        if text.strip():
+            self._echo(text.rstrip("\n"), "output")
 
     # ── transcript ──────────────────────────────────────────────
 
@@ -238,51 +365,30 @@ class ConsoleWidget(QWidget):
                             if self._history_index < len(history) else "")
         self._input.setCursorPosition(len(self._input.text()))
 
-    def _complete(self) -> None:
-        text = self._input.text()
-        cursor = self._input.cursorPosition()
-        head = text[:cursor]
-        prefix = _word_at_end(head)
-        if not prefix:
-            return
+    def candidates(self, prefix: str) -> list[str]:
+        """What Tab offers for ``prefix`` at this prompt."""
+        return completion_candidates(prefix, self.interpreter,
+                                     folder=self.folder, language="python")
 
-        matches = self.interpreter.completions(prefix)
-        if not matches:
-            return
-        if len(matches) == 1:
-            completed = matches[0]
-        else:
-            completed = _common_prefix(matches)
-            if completed == prefix:
-                # Nothing more to fill in, so show the options instead of
-                # silently doing nothing — a Tab that appears broken is worse
-                # than one that prints.
-                self._echo("  " + "  ".join(matches[:40]), "note")
-                return
-        self._input.setText(head[:cursor - len(prefix)] + completed
-                            + text[cursor:])
-        self._input.setCursorPosition(cursor - len(prefix) + len(completed))
+    def _complete(self) -> None:
+        """
+        One match is filled in; several open a popup to choose from. With
+        no word before the cursor, Tab indents (a block's body, say).
+        """
+        if not self._completer.complete():
+            self._input.insert("    ")
 
     def focus_input(self) -> None:
         self._input.setFocus()
 
+    def set_input(self, text: str) -> None:
+        """Put ``text`` at the prompt, cursor at its end, without running it."""
+        self._input.setText(text)
+        self._input.setCursorPosition(len(text))
+        self._history_index = len(self.interpreter.history)
 
-def _word_at_end(text: str) -> str:
-    out = []
-    for char in reversed(text):
-        if char.isalnum() or char in "_.":
-            out.append(char)
-        else:
-            break
-    return "".join(reversed(out))
-
-
-def _common_prefix(items: list[str]) -> str:
-    first = items[0]
-    for i, char in enumerate(first):
-        if any(len(other) <= i or other[i] != char for other in items[1:]):
-            return first[:i]
-    return first
+    def input_text(self) -> str:
+        return self._input.text()
 
 
 def _escape(text: str) -> str:
