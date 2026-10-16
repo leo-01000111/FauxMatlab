@@ -567,3 +567,15 @@ None of these is in the current round.
 Deferred medium features (wanted, not crucial): variable editor, compare simulation runs,
 model workspace + parameter sweep, log a signal from a wire, `sim('model.fmdl')`/`set_param`
 from scripts, live parameter sliders.
+
+## Part 7 — Next up (from first hands-on use, 2026-10-16)
+
+1. **Live tab still shows the bottom figure area.** In a live script figures are inline under
+   their cell, so the Console's figure strip below is redundant there. Decide: hide it while
+   the Live tab is active (keeping "Open in figures" as the way to pop one out larger), or
+   argue for keeping it — and record the reasoning either way.
+2. **Export report → PDF doesn't work.** Find out why: no TeX engine on PATH (expected
+   fallback is HTML plus an install hint — check that message appears), the engine search
+   missing MiKTeX's install folder, the background build failing silently, or the .tex not
+   compiling. Make the failure visible and the success path work with MiKTeX and tectonic.
+3. **Model canvas: middle-mouse-button drag pans the canvas**, as in Simulink.
