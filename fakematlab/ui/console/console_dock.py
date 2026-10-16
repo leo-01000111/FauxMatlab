@@ -34,7 +34,8 @@ from ...console.matlab import looks_like_matlab
 from .. import theme
 from ..design import TIGHT, EmptyState
 from .console_widget import ConsoleWidget
-from .figure_view import FigureView
+from .figure_view import FigureView, export_figure
+from .history_widget import HistoryWidget
 from .workspace_widget import WorkspaceWidget
 
 #: Beyond this many open figures the oldest is closed, the way MATLAB reuses
@@ -91,7 +92,7 @@ class FigureWindow(QWidget):
         row.addStretch()
         save = QToolButton()
         save.setText("Save…")
-        save.setToolTip("Save this figure as a PNG image")
+        save.setToolTip("Save this figure as PNG, SVG or CSV data")
         save.clicked.connect(lambda: self.save_requested.emit(self.view))
         row.addWidget(save)
         dock = QToolButton()
@@ -203,7 +204,7 @@ class FigureArea(QWidget):
             "Undock", "Open the current figure in a window of its own",
             lambda: self.undock())
         self._save_button = tool(
-            "Save…", "Save the current figure as a PNG image",
+            "Save…", "Save the current figure as PNG, SVG or CSV data",
             lambda: self.save_current())
         return header
 
@@ -387,11 +388,12 @@ class FigureArea(QWidget):
 
     @staticmethod
     def save_figure(view: FigureView, path: str | Path) -> bool:
-        """Write a figure as a PNG — the way Export writes the analysis grid."""
-        if view.grab().save(str(path)):
-            view.saved = True
-            return True
-        return False
+        """Write a figure, as PNG, SVG or CSV by the path's extension."""
+        try:
+            export_figure(view, path)
+        except (OSError, ValueError):
+            return False
+        return True
 
     def save_figures(self, views: Iterable[FigureView],
                      folder: str | Path) -> list[Path]:
@@ -404,14 +406,8 @@ class FigureArea(QWidget):
     def save_current(self, view: FigureView | None = None) -> None:
         """Save a figure (the current one by default) where the user says."""
         view = view or self.current_figure()
-        if view is None:
-            return
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Save figure", f"{PLACEHOLDER_STEM}_{view.number}.png",
-            "PNG images (*.png)")
-        if path and not self.save_figure(view, path):
-            QMessageBox.warning(self, "Save failed",
-                                f"Qt could not write {path}")
+        if view is not None:
+            view.save_dialog()
 
     # ── script runs ─────────────────────────────────────────────
 
@@ -451,6 +447,8 @@ class ScriptEditor(QWidget):
 
     #: (source, language) — language is "matlab" or "python".
     run_requested = Signal(str, str)
+    #: A file was opened or saved — the recent-files list listens.
+    file_used = Signal(object)                 # Path
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -537,13 +535,17 @@ class ScriptEditor(QWidget):
             self, "Open script", "",
             "Scripts (*.m *.py);;MATLAB scripts (*.m);;Python scripts (*.py);;"
             "All files (*)")
-        if not path:
-            return
+        if path:
+            self.load_file(path)
+
+    def load_file(self, path: str | Path) -> None:
+        """Open a script into the editor, choosing its language by suffix."""
         self._path = Path(path)
         self._editor.setPlainText(self._path.read_text(encoding="utf-8"))
         self._path_label.setText(self._path.name)
         self.set_language({".m": "matlab", ".py": "python"}.get(
             self._path.suffix.lower(), "auto"))
+        self.file_used.emit(self._path)
 
     def _save(self) -> None:
         default = self._path or Path(
@@ -556,6 +558,7 @@ class ScriptEditor(QWidget):
         self._path = Path(path)
         self._path.write_text(self._editor.toPlainText(), encoding="utf-8")
         self._path_label.setText(self._path.name)
+        self.file_used.emit(self._path)
 
     @property
     def path(self) -> Path | None:
@@ -570,7 +573,10 @@ class ScriptEditor(QWidget):
 
 
 class ConsolePanel(QWidget):
-    """Command window on the left, workspace on the right, script behind."""
+    """
+    Command window on the left; workspace and history on the right, as tabs;
+    the script behind.
+    """
 
     #: A system in the workspace was double-clicked.
     open_system = Signal(str, object)
@@ -593,8 +599,15 @@ class ConsolePanel(QWidget):
         split = QSplitter(Qt.Horizontal)
         self.console = ConsoleWidget(self.interpreter)
         split.addWidget(self.console)
+        # The history shares the workspace's side as a second tab: both are
+        # lookups beside the prompt, and a third column would squeeze it.
+        self._side = QTabWidget()
+        self._side.setDocumentMode(True)
         self.workspace = WorkspaceWidget(self.interpreter)
-        split.addWidget(self.workspace)
+        self._side.addTab(self.workspace, "Workspace")
+        self.history = HistoryWidget()
+        self._side.addTab(self.history, "History")
+        split.addWidget(self._side)
         split.setStretchFactor(0, 3)
         split.setStretchFactor(1, 2)
         self._tabs.addTab(split, "Console")
@@ -606,6 +619,13 @@ class ConsolePanel(QWidget):
         layout.addWidget(self._tabs)
 
         self.console.executed.connect(self.workspace.refresh)
+        self.console.executed.connect(self._record)
+        self.history.recall.connect(self.recall)
+        self.history.rerun.connect(self.execute)
+        self._running_script = False
+        # Last session's commands are on ↑ as well as in the panel.
+        self.interpreter.history[:0] = self.history.commands()
+        self.console._history_index = len(self.interpreter.history)
         self.workspace.open_system.connect(self.open_system)
         self.workspace.open_model.connect(self.open_model)
 
@@ -637,9 +657,11 @@ class ConsolePanel(QWidget):
                 f"from the last run to {saved[0].parent}: "
                 + ", ".join(p.name for p in saved))
         self.figures.begin_script_run()
+        self._running_script = True
         try:
             self.console.run_script(source, language)
         finally:
+            self._running_script = False
             self.figures.end_script_run()
         self.workspace.refresh()
         return True
@@ -690,6 +712,27 @@ class ConsolePanel(QWidget):
         folder = QFileDialog.getExistingDirectory(
             self, "Save figures to", str(start))
         return Path(folder) if folder else None
+
+    # ── history ─────────────────────────────────────────────────
+
+    def _record(self, result) -> None:
+        """A command ran at the prompt: keep it. A script's lines are not."""
+        if result is not None and not self._running_script:
+            self.history.add(result.source)
+
+    def recall(self, command: str) -> None:
+        """Put a command back at the prompt, ready to edit."""
+        self._tabs.setCurrentIndex(0)
+        # The input line is the console widget's own; there is no setter.
+        self.console._input.setText(command)
+        self.console.focus_input()
+
+    def show_history(self) -> None:
+        self._tabs.setCurrentIndex(0)
+        self._side.setCurrentWidget(self.history)
+
+    def show_script(self) -> None:
+        self._tabs.setCurrentWidget(self.editor)
 
     # ── outside access ──────────────────────────────────────────
 

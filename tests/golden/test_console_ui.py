@@ -351,3 +351,253 @@ def test_two_figures_side_by_side(app, win, answers):
     figures.set_split(True)
     figures.set_split(False)
     assert figures._tabs.count() == 2 and figures._side.count() == 0
+
+
+# ──────────────────────────────────────────────────────────────
+#  Command history
+# ──────────────────────────────────────────────────────────────
+
+@pytest.fixture
+def history(win):
+    panel = win._console.history
+    panel.clear()
+    panel.set_filter("")
+    yield panel
+    panel.set_filter("")
+    panel.clear()
+
+
+def test_typed_commands_are_listed_in_the_history(app, win, history):
+    win._console.execute("hx = 1")
+    win._console.execute("hx = 1")              # an immediate repeat: once
+    win._console.execute("hy = hx + 1")
+    _settle(app)
+    assert history.commands() == ["hx = 1", "hy = hx + 1"]
+
+
+def test_script_lines_stay_out_of_the_history(app, win, history, answers):
+    win._console.execute("typed = 1")
+    win._console._run_script("from_script = 2", "python")
+    _settle(app)
+    assert history.commands() == ["typed = 1"]
+
+
+def test_the_history_outlives_the_session(app, win, history):
+    from fakematlab.ui.console.history_widget import HistoryWidget
+    from fakematlab.ui.persist import CommandHistory
+
+    win._console.execute("kept = 3")
+    _settle(app)
+    assert CommandHistory().items[-1] == "kept = 3"
+    assert HistoryWidget().commands()[-1] == "kept = 3"
+
+
+def test_the_history_filter(app, win, history):
+    for command in ("step(G)", "bode(G)", "Gs = step(G)"):
+        win._console.execute(command)
+    history.set_filter("STEP")                  # case does not matter
+    assert history.commands(visible_only=True) == ["step(G)", "Gs = step(G)"]
+    win._console.execute("stepinfo(G)")         # arrives filtered too
+    win._console.execute("margin(G)")
+    assert history.commands(visible_only=True)[-1] == "stepinfo(G)"
+    history.set_filter("")
+    assert len(history.commands(visible_only=True)) == 5
+
+
+def test_double_click_puts_a_command_back_at_the_prompt(app, win, history):
+    win._console.execute("recalled = 5")
+    _settle(app)
+    item = history._list.item(0)
+    history._list.itemDoubleClicked.emit(item)
+    assert win._console.console._input.text() == "recalled = 5"
+    win._console.console._input.clear()
+
+
+def test_run_again_from_the_context_menu(app, win, history):
+    win._console.execute("counter = 1")
+    win._console.execute("counter = counter + 1")
+    _settle(app)
+    history._list.setCurrentRow(1)
+    menu = history.context_menu()
+    run = next(a for a in menu.actions() if a.text() == "Run again")
+    run.trigger()
+    _settle(app)
+    assert win._console.interpreter.namespace["counter"] == 3
+
+
+def test_the_history_is_a_tab_beside_the_workspace(app, win):
+    panel = win._console
+    tabs = panel._side
+    assert [tabs.tabText(i) for i in range(tabs.count())] == [
+        "Workspace", "History"]
+    panel.show_history()
+    assert tabs.currentWidget() is panel.history
+    tabs.setCurrentWidget(panel.workspace)
+
+
+# ──────────────────────────────────────────────────────────────
+#  Recent files
+# ──────────────────────────────────────────────────────────────
+
+@pytest.fixture
+def recent(win):
+    win.recent_files.clear()
+    yield win.recent_files
+    win.recent_files.clear()
+
+
+def test_recent_files_are_newest_first_without_repeats(tmp_path, recent):
+    paths = []
+    for name in ("a.m", "b.fmdl", "c.py"):
+        (tmp_path / name).write_text("x = 1\n", encoding="utf-8")
+        paths.append(tmp_path / name)
+        recent.add(tmp_path / name)
+    recent.add(paths[0])                         # reopened: moves to the top
+    recent.add(tmp_path / "notes.txt")           # not a script or model
+    assert [p.name for p in recent.paths()] == ["a.m", "c.py", "b.fmdl"]
+
+
+def test_recent_files_keep_ten(tmp_path, recent):
+    for n in range(14):
+        path = tmp_path / f"s{n}.m"
+        path.write_text("", encoding="utf-8")
+        recent.add(path)
+    names = [p.name for p in recent.paths()]
+    assert len(names) == 10 and names[0] == "s13.m"
+
+
+def test_missing_recent_files_are_forgotten(tmp_path, recent):
+    from fakematlab.ui.persist import RecentFiles
+
+    gone = tmp_path / "gone.m"
+    gone.write_text("", encoding="utf-8")
+    recent.add(gone)
+    gone.unlink()
+    assert recent.paths() == []
+    assert RecentFiles()._stored() == []         # and the forgetting sticks
+
+
+def test_the_recent_menu_lists_and_clears(app, win, tmp_path, recent):
+    script = tmp_path / "loop.m"
+    script.write_text("x = 1;\n", encoding="utf-8")
+    recent.add(script)
+    win._fill_recent_menu()
+    texts = [a.text() for a in win._recent_menu.actions() if a.text()]
+    assert any("loop.m" in t for t in texts)
+    clear = next(a for a in win._recent_menu.actions()
+                 if "Clear recent" in a.text())
+    clear.trigger()
+    win._fill_recent_menu()
+    actions = win._recent_menu.actions()
+    assert not any("loop.m" in a.text() for a in actions)
+    assert not next(a for a in actions
+                    if "Clear recent" in a.text()).isEnabled()
+
+
+def test_opening_a_script_records_it_and_reopens_it(app, win, tmp_path,
+                                                    recent):
+    script = tmp_path / "first.m"
+    script.write_text("a = 1;\n", encoding="utf-8")
+    win._console.editor.load_file(script)
+    assert recent.paths() == [script.resolve()]
+
+    win._console.editor.set_text("")
+    assert win.open_recent(script)
+    _settle(app)
+    assert win._console.editor.text() == "a = 1;\n"
+    assert win._stack.current is Workspace.CONSOLE
+    assert win._console._tabs.currentWidget() is win._console.editor
+    win._console._tabs.setCurrentIndex(0)
+
+
+def test_a_recent_model_opens_on_the_canvas(app, win, tmp_path, recent):
+    path = tmp_path / "loop.fmdl"
+    win._sim_tab._canvas.root_model().save(path)
+    recent.add(path)
+    assert win.open_recent(path)
+    _settle(app)
+    assert win._stack.current is Workspace.MODEL
+    assert recent.paths()[0] == path.resolve()
+
+
+# ──────────────────────────────────────────────────────────────
+#  Figure export
+# ──────────────────────────────────────────────────────────────
+
+def _figure(app, win, command: str):
+    win._console.execute(command)
+    _settle(app)
+    return win._figures.current_figure()
+
+
+@pytest.mark.parametrize("command", ["step(G)", "bode(G)"])
+def test_a_figure_exports_as_png_svg_and_csv(app, win, tmp_path, command):
+    from fakematlab.ui.console.figure_view import export_figure
+
+    view = _figure(app, win, command)
+    png = export_figure(view, tmp_path / "f.png")
+    assert png.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+    svg = (export_figure(view, tmp_path / "f.svg")
+           .read_text(encoding="utf-8"))
+    assert svg.lstrip().startswith("<?xml") and svg.rstrip().endswith("</svg>")
+    # One nested plot per pane: a Bode diagram is two.
+    assert svg.count("<svg") == 1 + len(view.plot_widgets())
+    assert view.saved
+
+
+def test_csv_has_an_x_and_a_y_column_per_series(app, win, tmp_path):
+    import csv
+
+    from fakematlab.ui.console.figure_view import export_figure
+
+    view = _figure(app, win, "bode(G)")
+    with export_figure(view, tmp_path / "bode.csv").open(
+            encoding="utf-8") as handle:
+        rows = list(csv.reader(handle))
+    header, first = rows[0], rows[1]
+    assert len(header) == 4                     # magnitude x/y, phase x/y
+    assert "phase" in header[3]
+    trace = view.spec.traces[0]
+    assert len(rows) - 1 == len(trace.x)
+    assert float(first[0]) == pytest.approx(trace.x[0])
+    assert float(first[1]) == pytest.approx(trace.y[0])
+
+
+def test_an_unknown_extension_is_refused(app, win, tmp_path):
+    from fakematlab.ui.console.figure_view import export_figure
+
+    view = _figure(app, win, "step(G)")
+    with pytest.raises(ValueError, match=".png"):
+        export_figure(view, tmp_path / "f.gif")
+
+
+def test_the_plot_menu_offers_export(app, win, tmp_path, monkeypatch):
+    from fakematlab.ui.console import figure_view
+
+    view = _figure(app, win, "step(G)")
+    menu = view.plot_widgets()[0].getPlotItem().getViewBox().menu
+    export = next(a.menu() for a in menu.actions()
+                  if a.text() == "Export figure")
+    labels = [a.text() for a in export.actions()]
+    assert labels == ["As PNG image…", "As SVG vector image…",
+                      "Data as CSV…"]
+
+    # A name typed without an extension takes the chosen filter's.
+    monkeypatch.setattr(
+        figure_view.QFileDialog, "getSaveFileName",
+        lambda *args, **kwargs: (str(tmp_path / "plain"),
+                                 figure_view.EXPORT_FILTERS["svg"]))
+    export.actions()[1].trigger()
+    assert (tmp_path / "plain.svg").is_file()
+
+
+def test_the_save_button_saves_svg_too(app, win, tmp_path, monkeypatch):
+    from fakematlab.ui.console import figure_view
+
+    view = _figure(app, win, "step(G)")
+    monkeypatch.setattr(
+        figure_view.QFileDialog, "getSaveFileName",
+        lambda *args, **kwargs: (str(tmp_path / "saved.csv"), ""))
+    win._figures.save_current()
+    assert (tmp_path / "saved.csv").is_file()
+    assert view.saved

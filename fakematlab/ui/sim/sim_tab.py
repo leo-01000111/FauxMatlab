@@ -8,6 +8,8 @@ crashed one — so the UI stays live, shows progress, and can be cancelled.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from PySide6.QtCore import QObject, QSettings, QSize, Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QComboBox,
@@ -82,6 +84,8 @@ class SimTab(QWidget, GuardedPanel):
 
     #: Emitted when the user linearises a model — the analysis tabs pick it up.
     linearised = Signal(object, str)       # TransferFunction, description
+    #: A model file was opened or saved — the recent-files list listens.
+    file_used = Signal(object)             # Path
 
     #: Where the palette's folded/unfolded state is remembered.
     SETTINGS_ORG = "FauxMatlab"
@@ -527,12 +531,17 @@ class SimTab(QWidget, GuardedPanel):
     def open_model(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self, "Open model", "", "FakeMatlab models (*.fmdl *.json)")
-        if not path:
-            return
+        if path:
+            self.load_model(path)
+
+    @guard("Open model")
+    def load_model(self, path: str | Path) -> None:
+        """Open a model file onto the canvas."""
         self._canvas.set_model(SimModel.load(path))
         self._canvas.fit_all()
         self._scope.clear()
         self._status.setText(f"Loaded {path}")
+        self.file_used.emit(Path(path))
 
     @guard("Save model")
     def save_model(self) -> None:
@@ -543,6 +552,7 @@ class SimTab(QWidget, GuardedPanel):
             return
         self._canvas.root_model().save(path)
         self._status.setText(f"Saved {path}")
+        self.file_used.emit(Path(path))
 
     # ── misc ────────────────────────────────────────────────────
 

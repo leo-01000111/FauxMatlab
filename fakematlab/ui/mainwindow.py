@@ -69,6 +69,7 @@ from .design import TIGHT
 from .diagram.fixed_diagram import FixedDiagramView
 from .lesson_dock import LessonDock
 from .panes import DEFAULT_LAYOUT, LAYOUTS, PANE_KINDS, PaneGrid, Source
+from .persist import RecentFiles
 from .sim.sim_tab import SimTab
 from .tabs.modern import ModernTab
 from .workspace import Workspace, WorkspaceStack
@@ -93,6 +94,8 @@ class MainWindow(QMainWindow):
         self.snapshots = SnapshotStore()
         self._apps: dict[str, QWidget] = {}
         self._app_docks: dict[str, QDockWidget] = {}
+        #: Scripts and models opened or saved, for File ▸ Open recent.
+        self.recent_files = RecentFiles()
         self._build_ui()
         self._build_docks()
         self._build_menus()
@@ -120,6 +123,8 @@ class MainWindow(QMainWindow):
         self._diagram.architecture_changed.connect(self._on_arch_changed)
         self._editor.tf_changed.connect(self._on_tf_edited)
         self._sim_tab.linearised.connect(self._on_linearised)
+        self._sim_tab.file_used.connect(self.recent_files.add)
+        self._console.editor.file_used.connect(self.recent_files.add)
 
     def _build_analyse(self) -> QWidget:
         central = QWidget()
@@ -671,11 +676,17 @@ class MainWindow(QMainWindow):
         act_open.triggered.connect(self._open_session)
         act_save.triggered.connect(self._save_session)
         act_quit.triggered.connect(self.close)
-        for a in [act_new, act_open, act_save, None, act_quit]:
+        for a in [act_new, act_open, act_save, None]:
             if a is None:
                 file_menu.addSeparator()
             else:
                 file_menu.addAction(a)
+        self._recent_menu = file_menu.addMenu("Open &recent")
+        self._recent_menu.setToolTipsVisible(True)
+        self._recent_menu.aboutToShow.connect(self._fill_recent_menu)
+        self._fill_recent_menu()
+        file_menu.addSeparator()
+        file_menu.addAction(act_quit)
 
         # Export menu
         export_menu = mb.addMenu("&Export")
@@ -924,6 +935,56 @@ class MainWindow(QMainWindow):
             self._status.showMessage(f"Loaded {path}", 4000)
         except Exception as exc:
             QMessageBox.critical(self, "Load error", str(exc))
+
+    def _fill_recent_menu(self) -> None:
+        """
+        List the recent scripts and models, newest first.
+
+        Rebuilt each time the menu opens, so a file deleted since it was
+        opened is simply not offered.
+        """
+        menu = self._recent_menu
+        menu.clear()
+        paths = self.recent_files.paths()
+        for n, path in enumerate(paths, start=1):
+            prefix = f"&{n}  " if n < 10 else f"{n}  "
+            action = QAction(f"{prefix}{path.name}   —   {path.parent}", menu)
+            action.setToolTip(str(path))
+            action.triggered.connect(
+                lambda _checked=False, p=path: self.open_recent(p))
+            menu.addAction(action)
+        if not paths:
+            empty = QAction("No recent files", menu)
+            empty.setEnabled(False)
+            menu.addAction(empty)
+        menu.addSeparator()
+        clear = QAction("&Clear recent files", menu)
+        clear.setEnabled(bool(paths))
+        clear.triggered.connect(self.recent_files.clear)
+        menu.addAction(clear)
+
+    def open_recent(self, path: str | Path) -> bool:
+        """
+        Open a recent file where it belongs: a model on the Model canvas, a
+        script in the Console's Script tab. Returns whether it opened.
+        """
+        path = Path(path)
+        if not path.is_file():
+            self.recent_files.paths()          # forgets it
+            self._status.showMessage(f"{path} no longer exists", 6000)
+            return False
+        if path.suffix.lower() == ".fmdl":
+            self._sim_tab.load_model(path)
+            self._stack.set_current(Workspace.MODEL)
+        else:
+            try:
+                self._console.editor.load_file(path)
+            except (OSError, UnicodeDecodeError) as exc:
+                QMessageBox.critical(self, "Open error", str(exc))
+                return False
+            self._stack.set_current(Workspace.CONSOLE)
+            self._console.show_script()
+        return True
 
     # ── Export ────────────────────────────────────────────────
 

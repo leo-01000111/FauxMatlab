@@ -5,13 +5,30 @@ The console's API never touches Qt — it describes a figure and hands the
 description to whatever sink is installed. This module is the sink the UI
 installs, which is what keeps ``step(G)`` runnable from a headless script and
 drawable in the window from the same code.
+
+It is also where a figure leaves the application: :func:`export_figure`
+writes one as PNG, SVG or CSV, choosing by the file's extension.
 """
 
 from __future__ import annotations
 
+import csv
+import re
+from pathlib import Path
+
 import numpy as np
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QSplitter, QVBoxLayout, QWidget
+from pyqtgraph import PlotWidget
+from pyqtgraph.exporters import SVGExporter
+from PySide6.QtCore import QPoint, Qt
+from PySide6.QtGui import QAction
+from PySide6.QtWidgets import (
+    QFileDialog,
+    QMenu,
+    QMessageBox,
+    QSplitter,
+    QVBoxLayout,
+    QWidget,
+)
 
 from ...console.figures import FigureSpec
 from ..plots import (
@@ -51,6 +68,63 @@ class FigureView(QWidget):
             "rlocus": self._rlocus,
         }.get(spec.kind, self._plain)
         builder(layout)
+        self._install_export_menu()
+
+    # ── export ──────────────────────────────────────────────────
+
+    def plot_widgets(self) -> list[PlotWidget]:
+        """The figure's plots, top to bottom — two for a Bode diagram."""
+        return sorted(self.findChildren(PlotWidget),
+                      key=lambda w: w.mapTo(self, QPoint(0, 0)).y())
+
+    def _install_export_menu(self) -> None:
+        """
+        Put *Export figure* on the plot's own right-click menu.
+
+        Added to pyqtgraph's view-box menu rather than replacing it, so
+        right-click still offers the zoom and axis controls as well.
+        """
+        for widget in self.plot_widgets():
+            menu = widget.getPlotItem().getViewBox().menu
+            if menu is None:
+                continue
+            menu.addSeparator()
+            submenu = QMenu("Export figure", menu)
+            for fmt, label in (("png", "As PNG image…"),
+                               ("svg", "As SVG vector image…"),
+                               ("csv", "Data as CSV…")):
+                action = QAction(label, submenu)
+                action.triggered.connect(
+                    lambda _checked=False, f=fmt: self.save_dialog(f))
+                submenu.addAction(action)
+            menu.addMenu(submenu)
+
+    def save_dialog(self, fmt: str | None = None) -> Path | None:
+        """
+        Ask where to save the figure, then save it.
+
+        ``fmt`` picks the filter the dialog starts on; the file's extension
+        decides what is written. Returns the file written, or None.
+        """
+        start = fmt if fmt in EXPORT_FORMATS else "png"
+        filters = ";;".join(EXPORT_FILTERS.values())
+        path, chosen = QFileDialog.getSaveFileName(
+            self, "Save figure", f"figure_{self.number or 1}.{start}",
+            filters, EXPORT_FILTERS[start])
+        if not path:
+            return None
+        path = Path(path)
+        if path.suffix.lower().lstrip(".") not in EXPORT_FORMATS:
+            # No extension typed: take the one the chosen filter names.
+            picked = next((f for f, text in EXPORT_FILTERS.items()
+                           if text == chosen), start)
+            path = path.with_name(f"{path.name}.{picked}")
+        try:
+            export_figure(self, path)
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "Save failed", str(exc))
+            return None
+        return path
 
     # ── kinds ───────────────────────────────────────────────────
 
@@ -221,3 +295,112 @@ def _pen(index: int, style: str):
     if style == "dashed":
         pen.setStyle(_Qt.DashLine)
     return pen
+
+
+# ──────────────────────────────────────────────────────────────
+#  Export
+# ──────────────────────────────────────────────────────────────
+
+#: What a figure can be saved as, with the file dialog's filter for each.
+EXPORT_FILTERS = {
+    "png": "PNG image (*.png)",
+    "svg": "SVG vector image (*.svg)",
+    "csv": "CSV data (*.csv)",
+}
+EXPORT_FORMATS = tuple(EXPORT_FILTERS)
+
+
+def export_figure(fig: FigureView, path: str | Path) -> Path:
+    """
+    Write a figure to ``path``, in the format its extension names.
+
+    ``.png`` is a picture of the figure as it is on screen; ``.svg`` is the
+    same as vector graphics (both plots of a Bode diagram, one above the
+    other); ``.csv`` is the plotted data, an x and a y column per series.
+
+    This is the one place a figure is written from, so the Save button, the
+    plot's right-click menu and MATLAB's ``saveas``/``print`` all agree.
+    Raises ``ValueError`` for an extension it does not know and ``OSError``
+    when the file cannot be written. Marks the figure saved; returns the path.
+    """
+    path = Path(path)
+    fmt = path.suffix.lower().lstrip(".")
+    if fmt not in EXPORT_FORMATS:
+        raise ValueError(
+            f"cannot save a figure as '{path.suffix or path.name}': use "
+            + ", ".join(f".{f}" for f in EXPORT_FORMATS))
+    if fmt == "png":
+        if not fig.grab().save(str(path), "PNG"):
+            raise OSError(f"Qt could not write {path}")
+    elif fmt == "svg":
+        path.write_text(_figure_svg(fig), encoding="utf-8")
+    else:
+        _write_csv(fig.spec, path)
+    fig.saved = True
+    return path
+
+
+def figure_series(spec: FigureSpec) -> list[tuple[str, np.ndarray]]:
+    """
+    The plotted data as named columns: an x and a y column per series.
+
+    A Bode figure's phase curves are in ``spec.extra`` rather than in its
+    traces; they are included, after the magnitudes.
+    """
+    bode = spec.kind == "bode"
+    x_name = "w (rad/s)" if bode else (spec.xlabel or "x")
+    y_name = "|G| (dB)" if bode else (spec.ylabel or "y")
+    columns: list[tuple[str, np.ndarray]] = []
+    for k, trace in enumerate(spec.traces):
+        name = trace.label or f"series {k + 1}"
+        columns.append((f"{name}: {x_name}", np.asarray(trace.x, float)))
+        columns.append((f"{name}: {y_name}", np.asarray(trace.y, float)))
+    if bode:
+        for k, (omega, degrees, label) in enumerate(
+                spec.extra.get("phase", [])):
+            name = label or f"series {k + 1}"
+            columns.append((f"{name}: {x_name}", np.asarray(omega, float)))
+            columns.append((f"{name}: phase (deg)",
+                            np.asarray(degrees, float)))
+    return columns
+
+
+def _write_csv(spec: FigureSpec, path: Path) -> None:
+    """Series of different lengths leave the shorter columns blank below."""
+    columns = figure_series(spec)
+    rows = max((len(values) for _name, values in columns), default=0)
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        writer.writerow([name for name, _values in columns])
+        for i in range(rows):
+            writer.writerow([repr(float(values[i])) if i < len(values) else ""
+                             for _name, values in columns])
+
+
+def _figure_svg(fig: FigureView) -> str:
+    """
+    The figure as one SVG document.
+
+    pyqtgraph exports one scene at a time, and a Bode figure is two plot
+    widgets; each is exported and nested in an outer document, stacked as
+    they are on screen.
+    """
+    parts = []
+    width = height = 0.0
+    for widget in fig.plot_widgets():
+        text = SVGExporter(widget.scene()).export(toBytes=True).decode("utf-8")
+        text = re.sub(r"<\?xml[^>]*\?>", "", text, count=1).strip()
+        box = re.search(r'viewBox\s*=\s*"([^"]+)"', text)
+        w, h = ((float(v) for v in box.group(1).split()[2:4]) if box
+                else (widget.width(), widget.height()))
+        text = text.replace(
+            "<svg", f'<svg x="0" y="{height:g}" width="{w:g}" '
+                    f'height="{h:g}"', 1)
+        parts.append(text)
+        width, height = max(width, w), height + h
+    return ('<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n'
+            '<svg xmlns="http://www.w3.org/2000/svg" '
+            'xmlns:xlink="http://www.w3.org/1999/xlink" version="1.2" '
+            f'width="{width:g}" height="{height:g}" '
+            f'viewBox="0 0 {width:g} {height:g}">\n'
+            + "\n".join(parts) + "\n</svg>\n")
