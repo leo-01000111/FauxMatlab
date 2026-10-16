@@ -587,3 +587,9 @@ from scripts, live parameter sliders.
      3 gives 6 left / 5 right. The older figure should stay left, the newer one right.
    - *Move ↔* does nothing different from pressing Split again when already split. It should
      swap the shown figure to the other side (or be removed if Split already covers it).
+5. **Make the repo usable from a fresh clone:** fix the Ubuntu-only algebraic-loop test
+   failure so CI is green; add a README Quick start (clone → venv → `pip install -e ".[dev]"`
+   → `python app.py` → `pyinstaller …`); choose an open licence and add `LICENSE` (pyproject
+   says "Proprietary"); add `.claude/` to `.gitignore`; move `debug_runner.py` and the
+   planning docs out of the root; set a repo description; tag a version so CI publishes the
+   exe as a GitHub Release anyone can download.
