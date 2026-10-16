@@ -27,7 +27,10 @@ They are handed to the real figure sink when the script finishes.
 from __future__ import annotations
 
 import math
+import os
 import re
+import struct
+import sys
 import time
 import types
 from collections.abc import Callable, Mapping
@@ -492,13 +495,24 @@ def _system_text(sys) -> str:
 # ──────────────────────────────────────────────────────────────
 
 class Figures:
-    """Plot requests made during one script run, open to amendment."""
+    """
+    Plot requests made during one script run, open to amendment.
+
+    ``subplot`` makes a figure of kind ``"subplot"`` whose
+    ``extra["panes"]`` lists the axes laid out in it — each a dict of the
+    grid it was placed on (``rows``, ``cols``), the cells it covers
+    (``cells``, 1-based like MATLAB's ``p``) and the ordinary
+    :class:`FigureSpec` drawn there (``spec``). While a pane is selected, a
+    plot command lands in it rather than opening a figure of its own.
+    """
 
     def __init__(self) -> None:
         self.specs: list[FigureSpec] = []
         self.current: FigureSpec | None = None
         self.hold = False
         self.close_requested = False
+        self.grid: FigureSpec | None = None
+        self.pane: dict | None = None
 
     def collect(self, spec: FigureSpec) -> FigureSpec:
         cur = self.current
@@ -515,7 +529,11 @@ class Figures:
                 else:
                     cur.extra.setdefault(key, value)
             return cur
-        self.specs.append(spec)
+        if self.pane is not None:
+            # A new plot in a subplot replaces what that axes showed.
+            self.pane["spec"] = spec
+        else:
+            self.specs.append(spec)
         self.current = spec
         return spec
 
@@ -527,6 +545,39 @@ class Figures:
     def new(self) -> None:
         self.current = None
         self.hold = False
+        self.grid = None
+        self.pane = None
+
+    def subplot(self, rows: int, cols: int, cells: tuple[int, ...]) -> None:
+        """Select (or add) the axes at ``cells`` of a rows × cols grid."""
+        if self.pane is not None:
+            self.pane["hold"] = self.hold
+        if self.grid is None:
+            self.grid = FigureSpec("subplot")
+            self.grid.extra["panes"] = []
+            self.specs.append(self.grid)
+        panes = self.grid.extra["panes"]
+        for pane in panes:
+            if (pane["rows"], pane["cols"], pane["cells"]) == (rows, cols,
+                                                               cells):
+                break
+        else:
+            pane = {"rows": rows, "cols": cols, "cells": cells,
+                    "spec": None, "hold": False}
+            panes.append(pane)
+        self.pane = pane
+        self.current = pane["spec"]
+        self.hold = pane["hold"]
+
+    def figure(self) -> FigureSpec | None:
+        """The current figure: a subplot grid, or the current plot."""
+        return self.grid if self.grid is not None else self.current
+
+    def drawable(self) -> list[FigureSpec]:
+        """The figures worth drawing: those with something on them."""
+        return [s for s in self.specs if s.traces or any(
+            p["spec"] is not None and p["spec"].traces
+            for p in s.extra.get("panes", ()))]
 
 
 # ──────────────────────────────────────────────────────────────
@@ -549,6 +600,15 @@ class Runtime:
         self.figures = Figures()
         self.script_functions: set[str] = set()
         self._tic = time.perf_counter()
+        #: The running script's folder; ``cd`` moves away from it.
+        self.script_folder: str | None = None
+        self._cwd: str | None = None
+        #: Folders added with ``addpath``, searched after the current one.
+        self.path: list[str] = []
+        self._listing: dict[str, set[str]] = {}
+        self._files: dict[str, tuple[int, Callable]] = {}
+        #: Set once "no audio output" has been said, so it is said once.
+        self._quiet = False
         self.lib = _Library(self)
 
     # ── names ───────────────────────────────────────────────────
@@ -557,8 +617,10 @@ class Runtime:
         """
         Resolve a name the script never assigns.
 
-        A variable from the console wins; then the MATLAB library (whose
-        ``zeros(3)`` is 3×3, unlike numpy's); then the console's commands.
+        A variable from the console wins; then a function file ``name.m``
+        in the current folder or on the path, as in MATLAB; then the MATLAB
+        library (whose ``zeros(3)`` is 3×3, unlike numpy's); then the
+        console's commands.
         """
         if loc is not glob and name in loc:
             return loc[name]
@@ -567,8 +629,15 @@ class Runtime:
             if not (name in self.lib.names
                     and value is self.base.get(name, object())):
                 return value
+        path = self.find_file(name)
+        if path is not None:
+            return self._file_function(name, path)
         if name in self.lib.names:
             return getattr(self.lib, _lib_attr(name))
+        # The folder may have gained the file since it was last listed.
+        path = self.find_file(name, refresh=True)
+        if path is not None:
+            return self._file_function(name, path)
         if name == "syms":
             raise MatlabError(
                 "syms (symbolic maths) is not supported. For transfer "
@@ -587,6 +656,100 @@ class Runtime:
         if value is not None and value is self.base.get(name, object()):
             return None
         return value
+
+    # ── the current folder and the path ─────────────────────────
+
+    @property
+    def folder(self) -> str:
+        """MATLAB's current folder: ``cd``'s, else the script's, else ours."""
+        return self._cwd or self.script_folder or os.getcwd()
+
+    def resolve(self, name) -> str:
+        """A file name as a script wrote it, made absolute."""
+        name = _as_text(name)
+        if os.sep == "/":
+            name = name.replace("\\", "/")     # "data\x.wav" written on Windows
+        name = os.path.expanduser(name)
+        return os.path.normpath(name if os.path.isabs(name)
+                                else os.path.join(self.folder, name))
+
+    def cd(self, folder) -> None:
+        target = self.resolve(folder)
+        if not os.path.isdir(target):
+            raise MatlabError(f"Cannot CD to {_as_text(folder)} (Name is "
+                              f"nonexistent or not a folder).")
+        self._cwd = target
+
+    def find_file(self, name: str, refresh: bool = False) -> str | None:
+        """
+        ``name.m`` in the current folder, then on the path.
+
+        Folders are listed once per run (and again on a miss), so a loop
+        calling ``zeros`` does not touch the disk every time round.
+        """
+        for folder in [self.folder, *self.path]:
+            names = None if refresh else self._listing.get(folder)
+            if names is None:
+                try:
+                    names = {e.name[:-2] for e in os.scandir(folder)
+                             if e.name.endswith(".m") and e.is_file()}
+                except OSError:
+                    names = set()
+                self._listing[folder] = names
+            if name in names:
+                return os.path.join(folder, name + ".m")
+        return None
+
+    def _file_function(self, name: str, path: str):
+        """
+        Load a function file as a callable, cached until the file changes.
+
+        A file that starts with ``function`` defines its first function
+        under the file's name, with the rest as its local functions; they
+        run in a namespace of their own, so they see none of the caller's
+        variables. Any other file is a script, run in the workspace.
+        """
+        try:
+            stamp = os.stat(path).st_mtime_ns
+        except OSError:
+            raise MatlabError(f"Unrecognized function or variable "
+                              f"'{name}'.") from None
+        cached = self._files.get(path)
+        if cached is not None and cached[0] == stamp:
+            return cached[1]
+        from .matlab import MatlabSyntaxError, translate
+        with open(path, "rb") as fh:
+            raw = fh.read()
+        try:
+            source = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            source = raw.decode("cp1252", errors="replace")
+        try:
+            chunks = translate(source)
+        except MatlabSyntaxError as exc:
+            raise MatlabError(f"{name}.m, line {exc.line}: "
+                              f"{exc.message}") from None
+        functions = [c for c in chunks if c.function]
+        filename = f"<{name}.m>"
+        if functions and min(c.first for c in functions) == min(
+                c.first for c in chunks):
+            scope = dict(self.base)
+            scope["__ml__"] = self
+            for chunk in functions:
+                exec(compile(chunk.python, filename, "exec"), scope)
+            main = min(functions, key=lambda c: c.first)
+            fn = scope[re.search(r"^def (\w+)\(", main.python, re.M).group(1)]
+        else:
+            codes = [compile(c.python, filename, "exec") for c in chunks]
+
+            def fn(*_args, nargout=0):
+                for code in codes:
+                    exec(code, self.ns)
+
+            fn._ml_function = fn._ml_nargout = True
+            fn.__name__ = name
+        self._files[path] = (stamp, fn)
+        return fn
 
     def value(self, x):
         """A bare function name in an expression calls it with no inputs."""
@@ -1188,8 +1351,11 @@ class Runtime:
 
     # ── running a script ────────────────────────────────────────
 
-    def begin(self) -> None:
+    def begin(self, folder: str | None = None) -> None:
         self.figures = Figures()
+        self.script_folder = folder
+        self._cwd = None
+        self._listing.clear()
 
     def clear(self, names: tuple[str, ...]) -> None:
         keep = self.script_functions
@@ -1201,6 +1367,16 @@ class Runtime:
         saved = {n: self.ns[n] for n in keep if n in self.ns}
         self._clear()
         self.ns.update(saved)
+
+    def workspace(self) -> dict[str, Any]:
+        """The script's variables, as ``save`` and ``whos`` see them."""
+        return {
+            name: value for name, value in self.ns.items()
+            if not name.startswith("_")
+            and value is not self.base.get(name, object())
+            and (value is None or _is_number(value) or isinstance(
+                value, (str, np.ndarray, Struct, StructArray, Cell)))
+        }
 
 
 def _normalise_row(a: np.ndarray, was_row: bool):
@@ -1340,20 +1516,49 @@ class _Library:
 
     def f_clf(self, *_):
         figs = self.rt.figures
-        if figs.current in figs.specs:
-            figs.specs.remove(figs.current)
-        figs.current = None
+        if figs.figure() in figs.specs:
+            figs.specs.remove(figs.figure())
+        figs.new()
 
-    def f_figure(self, *_):
-        self.rt.figures.new()
+    @_nargout
+    def f_figure(self, *_, nargout=0):
+        figs = self.rt.figures
+        figs.new()
+        # A handle is the figure's number: the one its next plot will get.
+        return len(figs.specs) + 1 if nargout else None
 
-    def f_subplot(self, *_):
-        self.rt.figures.new()
+    @_nargout
+    def f_gcf(self, nargout=1):
+        figs = self.rt.figures
+        current = figs.figure()
+        return (figs.specs.index(current) + 1 if current in figs.specs
+                else len(figs.specs) + 1)
+
+    f_gca = f_gcf
+
+    def f_subplot(self, m, n=None, p=None, *_):
+        if n is None:                      # subplot(211)
+            digits = str(int(m))
+            if len(digits) != 3:
+                raise MatlabError("subplot needs subplot(m, n, p).")
+            m, n, p = (int(d) for d in digits)
+        rows, cols = int(m), int(n)
+        cells = tuple(sorted(int(c) for c in np.atleast_1d(p).reshape(-1)))
+        if not cells or cells[0] < 1 or cells[-1] > rows * cols:
+            raise MatlabError(f"Index exceeds number of subplots "
+                              f"({rows * cols}).")
+        self.rt.figures.subplot(rows, cols, cells)
+
+    def f_sgtitle(self, text, *_):
+        figs = self.rt.figures
+        (figs.grid or figs.ensure()).title = _as_text(text)
 
     def f_hold(self, state=None):
         figs = self.rt.figures
         figs.hold = (not figs.hold) if state is None else \
             str(state).lower() in ("on", "all")
+        if figs.pane is not None:
+            figs.pane["hold"] = figs.hold
 
     def f_grid(self, *args):
         figs = self.rt.figures
@@ -1370,8 +1575,13 @@ class _Library:
         _FORMAT["long"] = bool(args) and str(args[0]).lower().startswith(
             "long")
 
-    def f_pause(self, *_):
-        return None
+    def f_pause(self, seconds=None, *_):
+        """``pause(t)`` waits t seconds; a bare ``pause`` waits for no key."""
+        if seconds is None or isinstance(seconds, str):
+            return None
+        t = float(np.real(_scalar_of(seconds)))
+        if math.isfinite(t) and t > 0:
+            _pause_for(t)
 
     def f_tic(self):
         self.rt._tic = time.perf_counter()
@@ -1385,8 +1595,64 @@ class _Library:
         return elapsed
 
     def f_exist(self, name, *_):
-        return 1 if name in self.rt.ns else (
-            2 if name in self.names else 0)
+        if name in self.rt.ns:
+            return 1
+        if self.rt.find_file(name, refresh=True) is not None \
+                or os.path.isfile(self.rt.resolve(name)):
+            return 2
+        if os.path.isdir(self.rt.resolve(name)):
+            return 7
+        return 5 if name in self.names else 0
+
+    # ── files and folders ───────────────────────────────────────
+
+    @_nargout
+    def f_cd(self, folder=None, nargout=0):
+        if folder is not None:
+            self.rt.cd(folder)
+            return None
+        if nargout:
+            return self.rt.folder
+        print(self.rt.folder)
+        return None
+
+    def f_pwd(self):
+        return self.rt.folder
+
+    def f_addpath(self, *folders):
+        at_end = any(str(f).lower() == "-end" for f in folders)
+        added = [self.rt.resolve(p) for f in folders
+                 if not str(f).startswith("-")
+                 for p in _as_text(f).split(os.pathsep) if p]
+        path = [p for p in self.rt.path if p not in added]
+        self.rt.path = path + added if at_end else added + path
+
+    def f_rmpath(self, *folders):
+        gone = {self.rt.resolve(f) for f in folders}
+        self.rt.path = [p for p in self.rt.path if p not in gone]
+
+    def f_fullfile(self, *parts):
+        return os.path.join(*(_as_text(p) for p in parts)) if parts else ""
+
+    @_nargout
+    def f_fileparts(self, name, nargout=1):
+        name = _as_text(name)
+        folder, base = os.path.split(name)
+        stem, ext = os.path.splitext(base)
+        return (folder, stem, ext)[:nargout] if nargout >= 2 else folder
+
+    def f_isfile(self, name):
+        return os.path.isfile(self.rt.resolve(name))
+
+    def f_isfolder(self, name):
+        return os.path.isdir(self.rt.resolve(name))
+
+    f_isdir = f_isfolder
+
+    def f_mkdir(self, *parts):
+        os.makedirs(self.rt.resolve(os.path.join(*map(_as_text, parts))),
+                    exist_ok=True)
+        return True
 
     def f_input(self, *_):
         raise MatlabError("input() needs a keyboard; scripts here run "
@@ -1833,14 +2099,96 @@ class _Library:
             idx = idx.reshape(-1, 1)
         return idx
 
-    def f_trapz(self, x, y=None):
+    @staticmethod
+    def _integrand(x, y, dim):
+        """``trapz``'s inputs: the samples, their spacing, and the axis."""
         if y is None:
-            return float(np.trapz(np.asarray(x)))
-        return float(np.trapz(np.asarray(y), np.asarray(x)))
+            x, y = None, x
+        Y = np.asarray(y)
+        if Y.ndim == 2 and dim is None and Y.shape[0] == 1:
+            Y = Y.reshape(-1)
+        axis = (int(dim) - 1) if dim is not None and Y.ndim == 2 else (
+            0 if Y.ndim == 2 and Y.shape[0] > 1 else -1)
+        if x is None:
+            return Y, {"dx": 1.0}, axis
+        if _numel(x) == 1:
+            return Y, {"dx": float(_scalar_of(x))}, axis
+        return Y, {"x": np.asarray(x, float).reshape(-1)}, axis
 
-    def f_interp1(self, x, y, xi, *_):
-        out = np.interp(xi, np.asarray(x), np.asarray(y))
-        return _scalar(out) if np.ndim(out) == 0 else out
+    def f_trapz(self, x, y=None, dim=None):
+        from scipy.integrate import trapezoid
+        Y, step, axis = self._integrand(x, y, dim)
+        out = trapezoid(Y, axis=axis, **step)
+        return _normalise(np.asarray(out)) if np.ndim(out) else _scalar(out)
+
+    def f_cumtrapz(self, x, y=None, dim=None):
+        from scipy.integrate import cumulative_trapezoid
+        Y, step, axis = self._integrand(x, y, dim)
+        return cumulative_trapezoid(Y, axis=axis, initial=0, **step)
+
+    def f_interp1(self, *args):
+        """
+        ``interp1(x, v, xq[, method][, extrapolation])`` or
+        ``interp1(v, xq)``. Outside the samples the answer is NaN unless
+        extrapolation is asked for — except for 'spline', 'pchip' and
+        'makima', which extrapolate by default, as in MATLAB.
+        """
+        from scipy import interpolate
+        first_text = next((k for k, a in enumerate(args)
+                           if isinstance(a, str)), len(args))
+        data, options = args[:first_text], args[first_text:]
+        if len(data) == 2:
+            v, xq = data
+            r, c = _shape(v)
+            x = np.arange(1.0, (r * c if 1 in (r, c) else r) + 1)
+        elif len(data) >= 3:
+            x, v, xq = data[:3]
+            options = args[3:]
+        else:
+            raise MatlabError("interp1 needs sample points and values.")
+        method = "linear"
+        fill = math.nan
+        extrapolate = None
+        for opt in options:
+            if isinstance(opt, str):
+                word = opt.lower().lstrip("*")
+                if word == "extrap":
+                    extrapolate = True
+                else:
+                    method = word
+            else:
+                fill, extrapolate = float(_scalar_of(opt)), False
+        if extrapolate is None:
+            extrapolate = method in ("spline", "pchip", "cubic", "makima")
+        x = np.asarray(x, float).reshape(-1)
+        V = np.asarray(v)
+        if V.ndim == 2 and 1 in V.shape:
+            V = V.reshape(-1)
+        order = np.argsort(x, kind="stable")
+        x, V = x[order], V[order]
+        q = np.asarray(xq, float)
+        if method in ("spline",):
+            f = interpolate.CubicSpline(x, V, axis=0)
+        elif method in ("pchip", "cubic"):
+            f = interpolate.PchipInterpolator(x, V, axis=0)
+        elif method == "makima":
+            f = interpolate.Akima1DInterpolator(x, V, axis=0, method="makima")
+        elif method in ("linear", "nearest", "previous", "next"):
+            f = interpolate.interp1d(x, V, kind=method, axis=0,
+                                     bounds_error=False,
+                                     fill_value="extrapolate" if extrapolate
+                                     else fill, assume_sorted=True)
+        else:
+            raise MatlabError(f"Invalid interpolation method '{method}'.")
+        flat = q.reshape(-1)
+        out = np.asarray(f(flat))
+        if not extrapolate:
+            outside = (flat < x[0]) | (flat > x[-1])
+            out[outside] = fill
+        if V.ndim == 1:
+            out = out.reshape(q.shape)
+            return _scalar(out) if out.ndim == 0 else out
+        return out
 
     # ── linear algebra and polynomials ──────────────────────────
 
@@ -1889,13 +2237,622 @@ class _Library:
         return np.polyfit(np.asarray(x).reshape(-1),
                           np.asarray(y).reshape(-1), int(n))
 
-    def f_conv(self, a, b):
-        return np.convolve(np.atleast_1d(a), np.atleast_1d(b))
+    def f_conv(self, a, b, shape="full"):
+        u = np.atleast_1d(np.asarray(a)).reshape(-1)
+        v = np.atleast_1d(np.asarray(b)).reshape(-1)
+        full = np.convolve(u, v)
+        shape = str(shape).lower()
+        if shape == "same":              # the central part, as long as u
+            start = int(math.ceil((v.size - 1) / 2))
+            out = full[start:start + u.size]
+        elif shape == "valid":
+            out = full[v.size - 1:u.size] if u.size >= v.size else \
+                np.zeros(0)
+        else:
+            out = full
+        # Shaped like the longer input (b on a tie), as MATLAB's conv.m
+        # filters the longer one; 'same' is shaped like u.
+        like = a if shape == "same" or u.size > v.size else b
+        column = _shape(like)[1] == 1 and _numel(like) > 1
+        return out.reshape(-1, 1) if column else out
 
     @_nargout
     def f_deconv(self, a, b, nargout=1):
-        q, r = np.polydiv(np.atleast_1d(a), np.atleast_1d(b))
+        u = np.atleast_1d(np.asarray(a)).reshape(-1)
+        q, r = np.polydiv(u, np.atleast_1d(np.asarray(b)).reshape(-1))
+        # MATLAB's remainder is as long as the dividend, zeros in front.
+        r = np.concatenate([np.zeros(max(u.size - r.size, 0)), r])
         return (q, r) if nargout >= 2 else q
+
+    @_nargout
+    def f_meshgrid(self, x, y=None, z=None, nargout=1):
+        xv = np.asarray(x).reshape(-1)
+        yv = xv if y is None else np.asarray(y).reshape(-1)
+        X, Y = np.meshgrid(xv, yv)
+        out = (_normalise(X), _normalise(Y))
+        return out[:nargout] if nargout >= 2 else out[0]
+
+    # ── signal processing ───────────────────────────────────────
+
+    @staticmethod
+    def _along(x, dim=None) -> tuple[np.ndarray, int]:
+        """
+        ``x`` as 2-D and the axis an operation runs along: ``dim``, else
+        the first dimension that is not 1 — down the columns of a matrix,
+        along a vector whichever way it lies.
+        """
+        A = _as2d(np.asarray(x))
+        if dim is not None and _numel(dim):
+            return A, int(_scalar_of(dim)) - 1
+        return A, (0 if A.shape[0] != 1 or A.shape[1] == 1 else 1)
+
+    @staticmethod
+    def _length(n):
+        return None if n is None or _numel(n) == 0 else int(_scalar_of(n))
+
+    def f_fft(self, x, n=None, dim=None):
+        A, axis = self._along(x, dim)
+        if axis > 1:
+            return x
+        return _normalise(np.fft.fft(A, n=self._length(n), axis=axis))
+
+    def f_ifft(self, x, *args):
+        symmetric = any(str(a).lower() == "symmetric" for a in args
+                        if isinstance(a, str))
+        nums = [a for a in args if not isinstance(a, str)]
+        A, axis = self._along(x, nums[1] if len(nums) > 1 else None)
+        if axis > 1:
+            return x
+        n = self._length(nums[0] if nums else None) or A.shape[axis]
+        # The spectrum actually transformed: x cut or zero-padded to n.
+        if n <= A.shape[axis]:
+            X = np.take(A, range(n), axis=axis)
+        else:
+            pad = [(0, 0), (0, 0)]
+            pad[axis] = (0, n - A.shape[axis])
+            X = np.pad(A, pad)
+        if symmetric:
+            half = np.take(X, range(n // 2 + 1), axis=axis)
+            return _normalise(np.fft.irfft(half, n=n, axis=axis))
+        out = np.fft.ifft(X, axis=axis)
+        # MATLAB returns a real signal when the spectrum is exactly
+        # conjugate-symmetric, as a real signal's always is.
+        mirror = np.roll(np.flip(X, axis=axis), 1, axis=axis)
+        if np.array_equal(X, np.conj(mirror)):
+            out = out.real
+        return _normalise(out)
+
+    def _shift(self, fn, x, dim):
+        a = np.asarray(x)
+        if dim is not None:
+            A = _as2d(a)
+            return _normalise(fn(A, axes=int(_scalar_of(dim)) - 1))
+        return fn(a)
+
+    def f_fftshift(self, x, dim=None):
+        return self._shift(np.fft.fftshift, x, dim)
+
+    def f_ifftshift(self, x, dim=None):
+        return self._shift(np.fft.ifftshift, x, dim)
+
+    @_nargout
+    def f_filter(self, b, a, x, zi=None, dim=None, nargout=1):
+        from scipy.signal import lfilter
+        bb = np.atleast_1d(np.asarray(b)).reshape(-1)
+        aa = np.atleast_1d(np.asarray(a)).reshape(-1)
+        if not aa.size or aa[0] == 0:
+            raise MatlabError("First denominator filter coefficient must be "
+                              "non-zero.")
+        A, axis = self._along(x, dim)
+        k = max(aa.size, bb.size) - 1
+        z = None
+        if zi is not None and _numel(zi):
+            z = np.asarray(zi).reshape(k, -1)
+            z = z if axis == 0 else z.T
+        elif nargout >= 2:
+            z = np.zeros((k, A.shape[1]) if axis == 0 else (A.shape[0], k))
+        if z is None:
+            y = lfilter(bb, aa, A, axis=axis)
+        else:
+            y, zf = lfilter(bb, aa, A, axis=axis, zi=z)
+        y = y.reshape(-1) if np.ndim(x) <= 1 else y
+        y = _scalar(y.reshape(-1)[0]) if np.ndim(x) == 0 else y
+        if nargout >= 2:
+            zf = zf if axis == 0 else zf.T
+            return y, (zf.reshape(-1, 1) if 1 in zf.shape else zf)
+        return y
+
+    def _iir(self, design, n, edges, options, nargout, *ripple):
+        """butter, cheby1, cheby2, ellip: MATLAB's argument order."""
+        from scipy import signal
+        wn = np.asarray(edges, float).reshape(-1)
+        btype, analog = ("bandpass" if wn.size == 2 else "lowpass"), False
+        for opt in options:
+            word = str(opt).lower()
+            if word == "s":
+                analog = True
+            elif word in ("low", "high", "bandpass", "stop", "bandstop"):
+                btype = {"low": "lowpass", "high": "highpass",
+                         "stop": "bandstop"}.get(word, word)
+        output = {3: "zpk", 4: "ss"}.get(nargout, "ba")
+        out = getattr(signal, design)(int(n), *ripple,
+                                      wn if wn.size > 1 else float(wn[0]),
+                                      btype=btype, analog=analog,
+                                      output=output)
+        if output == "zpk":
+            z, p, k = out
+            return z.reshape(-1, 1), p.reshape(-1, 1), float(k)
+        if output == "ss":
+            return tuple(_normalise(np.asarray(m)) for m in out)
+        b, a = (np.real_if_close(np.asarray(c)) for c in out)
+        return (b, a) if nargout >= 2 else b
+
+    @_nargout
+    def f_butter(self, n, wn, *options, nargout=1):
+        return self._iir("butter", n, wn, options, nargout)
+
+    @_nargout
+    def f_cheby1(self, n, rp, wp, *options, nargout=1):
+        return self._iir("cheby1", n, wp, options, nargout, float(rp))
+
+    @_nargout
+    def f_cheby2(self, n, rs, ws, *options, nargout=1):
+        return self._iir("cheby2", n, ws, options, nargout, float(rs))
+
+    @_nargout
+    def f_ellip(self, n, rp, rs, wp, *options, nargout=1):
+        return self._iir("ellip", n, wp, options, nargout, float(rp),
+                         float(rs))
+
+    @_nargout
+    def f_freqz(self, b, a=1, n=512, *rest, nargout=1):
+        """
+        ``[h, w] = freqz(b, a, n)`` over [0, π) rad/sample, or
+        ``[h, f] = freqz(b, a, n, fs)`` in Hz; ``n`` may be the frequencies
+        themselves. With no outputs, magnitude over phase.
+        """
+        from scipy import signal
+        whole = any(isinstance(r, str) and r.lower() == "whole"
+                    for r in rest)
+        numbers = [r for r in rest if not isinstance(r, str)]
+        fs = float(_scalar_of(numbers[0])) if numbers else None
+        grid = np.asarray(n, float).reshape(-1) if _numel(n) > 1 \
+            else int(_scalar_of(n))
+        w, h = signal.freqz(np.atleast_1d(np.asarray(b)).reshape(-1),
+                            np.atleast_1d(np.asarray(a)).reshape(-1),
+                            worN=grid, whole=whole,
+                            fs=fs if fs else 2 * np.pi)
+        if nargout == 0:
+            figs = self.rt.figures
+            figs.new()
+            x = w if fs else w / np.pi
+            label = "Frequency (Hz)" if fs else \
+                "Normalized Frequency (×π rad/sample)"
+            with np.errstate(divide="ignore"):
+                magnitude = 20 * np.log10(np.abs(h))
+            for k, (y, ylabel) in enumerate((
+                    (magnitude, "Magnitude (dB)"),
+                    (np.degrees(np.unwrap(np.angle(h))), "Phase (degrees)"))):
+                figs.subplot(2, 1, (k + 1,))
+                figs.collect(FigureSpec("xy", "", label, ylabel).add(x, y))
+            figs.new()
+            return None
+        return (h.reshape(-1, 1), w.reshape(-1, 1))[:nargout] \
+            if nargout >= 2 else h.reshape(-1, 1)
+
+    @_nargout
+    def f_findpeaks(self, y, *args, nargout=1):
+        """
+        Local maxima, the way MATLAB's findpeaks finds and filters them:
+        a plateau counts once (at its left edge), the ends never count,
+        then MinPeakHeight, Threshold, MinPeakProminence, MinPeakDistance,
+        SortStr and NPeaks, in that order.
+        """
+        rest = list(args)
+        data = np.asarray(y, float)
+        flat = data.reshape(-1)
+        x = np.arange(1.0, flat.size + 1)
+        if rest and not isinstance(rest[0], str):
+            given = rest.pop(0)
+            if _numel(given) == 1:                 # findpeaks(y, Fs)
+                x = np.arange(flat.size) / float(_scalar_of(given))
+            else:
+                x = np.asarray(given, float).reshape(-1)
+        opts = {str(rest[k]).lower(): rest[k + 1]
+                for k in range(0, len(rest) - 1, 2)}
+
+        def opt(name, default):
+            value = opts.get(name.lower())
+            return default if value is None or (
+                not isinstance(value, str) and _numel(value) == 0) else value
+
+        padded = np.concatenate([[np.nan], flat, [np.nan]])
+        index = np.arange(padded.size)
+        finite = ~np.isnan(padded)
+        keep = np.concatenate([[True], (padded[:-1] != padded[1:])
+                               & (finite[:-1] | finite[1:])])
+        index = index[keep]
+        with np.errstate(invalid="ignore"):
+            slope = np.sign(np.diff(padded[index]))
+            peaks = index[1 + np.nonzero(np.diff(slope) < 0)[0]] - 1
+        peaks = peaks[flat[peaks] > float(opt("MinPeakHeight", -np.inf))]
+        threshold = float(opt("Threshold", 0.0))
+        if threshold > 0 and peaks.size:
+            base = np.maximum(flat[peaks - 1], flat[peaks + 1])
+            peaks = peaks[flat[peaks] - base >= threshold]
+        prominence = None
+        if peaks.size and (nargout >= 4 or "minpeakprominence" in opts):
+            from scipy.signal import peak_prominences
+            prominence = peak_prominences(flat, peaks)[0]
+            keep = prominence >= float(opt("MinPeakProminence", 0.0))
+            peaks, prominence = peaks[keep], prominence[keep]
+        distance = float(opt("MinPeakDistance", 0.0))
+        if distance > 0 and peaks.size > 1:
+            locs = x[peaks]
+            delete = np.zeros(peaks.size, bool)
+            for i in np.argsort(-flat[peaks], kind="stable"):
+                if not delete[i]:
+                    delete |= (locs >= locs[i] - distance) & (
+                        locs <= locs[i] + distance)
+                    delete[i] = False
+            if prominence is not None:
+                prominence = prominence[~delete]
+            peaks = peaks[~delete]
+        order = np.arange(peaks.size)
+        sort = str(opt("SortStr", "none")).lower()
+        if sort.startswith("desc"):
+            order = np.argsort(-flat[peaks], kind="stable")
+        elif sort.startswith("asc"):
+            order = np.argsort(flat[peaks], kind="stable")
+        npeaks = opt("NPeaks", None)
+        if npeaks is not None:
+            order = order[:int(_scalar_of(npeaks))]
+        peaks = peaks[order]
+        pks, locs = flat[peaks], x[peaks]
+        if nargout == 0:
+            spec = FigureSpec("xy").add(x, flat)
+            spec.add(locs, pks, style="scatter")
+            self.rt.figures.collect(spec)
+            return None
+        outputs = [pks, locs]
+        if nargout >= 3:
+            from scipy.signal import peak_widths
+            widths = peak_widths(flat, peaks, rel_height=0.5)
+            left = np.interp(widths[2], np.arange(flat.size), x)
+            right = np.interp(widths[3], np.arange(flat.size), x)
+            outputs.append(right - left)
+            outputs.append(prominence[order] if prominence is not None
+                           else np.zeros(peaks.size))
+        column = data.ndim == 2 and data.shape[0] > 1
+        outputs = [v.reshape(-1, 1) if column else v for v in outputs]
+        return tuple(outputs[:nargout]) if nargout >= 2 else outputs[0]
+
+    # ── differential equations and optimisation ─────────────────
+
+    def f_odeset(self, *pairs):
+        if pairs and isinstance(pairs[0], Mapping):
+            out = Struct(pairs[0])
+            pairs = pairs[1:]
+        else:
+            out = Struct()
+        for k in range(0, len(pairs) - 1, 2):
+            out[str(pairs[k])] = pairs[k + 1]
+        return out
+
+    f_optimset = f_odeset
+
+    @staticmethod
+    def _option(options, name, default):
+        if isinstance(options, Mapping):
+            for key, value in options.items():
+                if key.lower() == name.lower() and _numel(value):
+                    return value
+        return default
+
+    def _ode(self, solver, method, refine, f, tspan, y0, options, nargout):
+        """
+        Solve ``y' = f(t, y)`` with scipy's solver of the same family.
+
+        With a two-element ``tspan`` the output is the solver's own steps,
+        each refined with interpolated points (four for ode45, as MATLAB's
+        Refine does); with more, the solution at exactly those times.
+        """
+        from scipy.integrate import solve_ivp
+        ts = np.asarray(tspan, float).reshape(-1)
+        if ts.size < 2:
+            raise MatlabError("The time span must have at least two "
+                              "elements.")
+        start = np.asarray(y0).reshape(-1)
+        start = start.astype(complex if np.iscomplexobj(start) else float)
+        n = start.size
+
+        def rhs(t, y):
+            state = _scalar(y[0]) if n == 1 else y.reshape(-1, 1).copy()
+            out = self.rt.call(f, (float(t), state), nargout=1)
+            return np.asarray(out, dtype=y.dtype).reshape(-1)
+
+        kwargs = {"rtol": float(_scalar_of(self._option(options, "RelTol",
+                                                          1e-3))),
+                  "atol": np.asarray(self._option(options, "AbsTol", 1e-6),
+                                     float).reshape(-1)}
+        if kwargs["atol"].size == 1:
+            kwargs["atol"] = float(kwargs["atol"][0])
+        for name, key in (("MaxStep", "max_step"),
+                          ("InitialStep", "first_step")):
+            value = self._option(options, name, None)
+            if value is not None:
+                kwargs[key] = float(_scalar_of(value))
+        sol = solve_ivp(rhs, (ts[0], ts[-1]), start, method=method,
+                        dense_output=True, **kwargs)
+        if sol.status < 0:
+            print(f"Warning: {solver}: {sol.message}")
+        if ts.size > 2:
+            t = ts
+        else:
+            steps = sol.t
+            fractions = np.arange(1, refine + 1) / refine
+            t = np.concatenate([steps[:1], (steps[:-1, None] + np.diff(
+                steps)[:, None] * fractions).reshape(-1)])
+        Y = sol.sol(t) if t.size else np.zeros((n, 0))
+        if ts.size == 2:
+            Y[:, ::refine] = sol.y          # the steps themselves, exactly
+        Y = np.real_if_close(Y)
+        if nargout == 0:
+            spec = FigureSpec("xy", "", "t", "y")
+            for row in Y:
+                spec.add(t, np.real(row))
+            self.rt.figures.collect(spec)
+            return None
+        if nargout == 1:
+            return Struct(solver=solver, x=sol.t,
+                          y=_normalise(np.asarray(sol.y)))
+        return t.reshape(-1, 1), Y.T
+
+    @_nargout
+    def f_ode45(self, f, tspan, y0, options=None, *_, nargout=1):
+        return self._ode("ode45", "RK45", 4, f, tspan, y0, options, nargout)
+
+    @_nargout
+    def f_ode23(self, f, tspan, y0, options=None, *_, nargout=1):
+        return self._ode("ode23", "RK23", 1, f, tspan, y0, options, nargout)
+
+    @_nargout
+    def f_ode15s(self, f, tspan, y0, options=None, *_, nargout=1):
+        return self._ode("ode15s", "BDF", 1, f, tspan, y0, options, nargout)
+
+    @_nargout
+    def f_ode23s(self, f, tspan, y0, options=None, *_, nargout=1):
+        return self._ode("ode23s", "Radau", 1, f, tspan, y0, options,
+                         nargout)
+
+    def _scalar_fn(self, f):
+        def g(x):
+            out = self.rt.call(f, (_scalar(x),), nargout=1)
+            return float(np.real(_scalar_of(out)))
+        return g
+
+    @_nargout
+    def f_fzero(self, f, x0, options=None, nargout=1):
+        """
+        A root of ``f``: in the bracket ``[a b]``, or near ``x0`` — found
+        by widening an interval around it by √2 each step until the sign
+        changes, as MATLAB does, then Brent's method.
+        """
+        from scipy.optimize import brentq
+        g = self._scalar_fn(f)
+        start = np.asarray(x0, float).reshape(-1)
+        if start.size >= 2:
+            a, b = float(start[0]), float(start[1])
+            fa, fb = g(a), g(b)
+            if np.sign(fa) * np.sign(fb) > 0:
+                raise MatlabError("The function values at the interval "
+                                  "endpoints must differ in sign.")
+        else:
+            x = float(start[0])
+            fx = g(x)
+            a = b = x
+            fa = fb = fx
+            if fx != 0:
+                dx = x / 50 if x else 1 / 50
+                for _ in range(4000):
+                    dx *= math.sqrt(2)
+                    a, b = x - dx, x + dx
+                    fa, fb = g(a), g(b)
+                    if not (math.isfinite(fa) and math.isfinite(fb)):
+                        raise MatlabError(
+                            "Exiting fzero: aborting search for an interval "
+                            "containing a sign change because NaN or Inf "
+                            "function value encountered during search.")
+                    if np.sign(fa) * np.sign(fb) <= 0:
+                        break
+                else:
+                    raise MatlabError("Exiting fzero: aborting search for "
+                                      "an interval containing a sign "
+                                      "change.")
+        if fa == 0:
+            root = a
+        elif fb == 0:
+            root = b
+        else:
+            root = brentq(g, a, b, xtol=1e-300, rtol=4 * np.finfo(float).eps,
+                          maxiter=500)
+        out = (_scalar(root), g(root), 1,
+               Struct(algorithm="bisection, interpolation"))
+        return out[:nargout] if nargout >= 2 else out[0]
+
+    @_nargout
+    def f_fminsearch(self, f, x0, options=None, *_, nargout=1):
+        """
+        Nelder–Mead from ``x0``: scipy's, which starts from the same
+        simplex MATLAB's does (5% steps, 0.00025 for zero components) and
+        stops on the same TolX / TolFun tests.
+        """
+        from scipy.optimize import minimize
+        start = np.asarray(x0, float)
+        shape = start.shape
+
+        def g(v):
+            arg = _scalar(v[0]) if v.size == 1 else v.reshape(shape).copy()
+            return float(np.real(_scalar_of(self.rt.call(f, (arg,),
+                                                         nargout=1))))
+
+        n = start.size
+        limit = 200 * n
+        res = minimize(g, start.reshape(-1), method="Nelder-Mead", options={
+            "xatol": float(self._option(options, "TolX", 1e-4)),
+            "fatol": float(self._option(options, "TolFun", 1e-4)),
+            "maxiter": int(self._option(options, "MaxIter", limit)),
+            "maxfev": int(self._option(options, "MaxFunEvals", limit))})
+        x = res.x.reshape(shape) if n > 1 else _scalar(res.x[0])
+        out = (x, float(res.fun), 1 if res.success else 0,
+               Struct(iterations=int(res.nit), funcCount=int(res.nfev),
+                      algorithm="Nelder-Mead simplex direct search"))
+        return out[:nargout] if nargout >= 2 else out[0]
+
+    @_nargout
+    def f_fminbnd(self, f, a, b, options=None, nargout=1):
+        from scipy.optimize import minimize_scalar
+        res = minimize_scalar(self._scalar_fn(f), method="bounded",
+                              bounds=(float(a), float(b)), options={
+                                  "xatol": float(self._option(
+                                      options, "TolX", 1e-4))})
+        out = (_scalar(res.x), float(res.fun), 1 if res.success else 0)
+        return out[:nargout] if nargout >= 2 else out[0]
+
+    # ── audio ───────────────────────────────────────────────────
+
+    def _audio_path(self, filename) -> str:
+        path = self.rt.resolve(filename)
+        if not os.path.isfile(path):
+            raise MatlabError(f"The filename specified was not found in the "
+                              f"MATLAB path: {_as_text(filename)}")
+        return path
+
+    @_nargout
+    def f_audioread(self, filename, *args, nargout=1):
+        """``[y, fs] = audioread(file[, [start stop]][, 'native'])``."""
+        path = self._audio_path(filename)
+        native = any(isinstance(a, str) and a.lower() == "native"
+                     for a in args)
+        y, fs, info = _read_audio(path, native)
+        span = next((a for a in args if not isinstance(a, str)), None)
+        if span is not None and _numel(span):
+            lo, hi = np.asarray(span, float).reshape(-1)[:2]
+            hi = y.shape[0] if math.isinf(hi) else int(hi)
+            y = y[int(lo) - 1:hi]
+        return (y, fs)[:nargout] if nargout >= 2 else y
+
+    def f_audiowrite(self, filename, y, fs, *options):
+        path = self.rt.resolve(filename)
+        opts = {str(options[k]).lower(): options[k + 1]
+                for k in range(0, len(options) - 1, 2)}
+        bits = int(_scalar_of(opts.get("bitspersample", 16)))
+        data = np.real(np.asarray(y))
+        data = data.reshape(-1, 1) if data.ndim <= 1 else data
+        folder = os.path.dirname(path)
+        if folder:
+            os.makedirs(folder, exist_ok=True)
+        _write_audio(path, data, int(round(float(_scalar_of(fs)))), bits)
+
+    def f_audioinfo(self, filename):
+        path = self._audio_path(filename)
+        info = _audio_info(path)
+        frames, rate = info["frames"], info["rate"]
+        out = Struct(Filename=path, CompressionMethod="Uncompressed",
+                     NumChannels=info["channels"], SampleRate=rate,
+                     TotalSamples=frames, Duration=frames / rate,
+                     Title=np.zeros((0, 0)), Comment=np.zeros((0, 0)),
+                     Artist=np.zeros((0, 0)),
+                     BitsPerSample=info["bits"])
+        return out
+
+    def _play(self, y, fs) -> None:
+        data = np.real(np.asarray(y, dtype=complex if np.iscomplexobj(y)
+                                  else float))
+        data = data.reshape(-1, 1) if data.ndim <= 1 else data
+        if data.shape[1] > 2 and data.shape[0] <= 2:
+            data = data.T                     # one row per channel
+        data = np.clip(np.nan_to_num(data), -1.0, 1.0)
+        if not _play(data, float(_scalar_of(fs))) and not self.rt._quiet:
+            self.rt._quiet = True
+            print("Warning: No audio output is available; sound() and "
+                  "soundsc() will be silent.")
+
+    def f_sound(self, y, fs=8192, *_):
+        self._play(y, fs)
+
+    def f_soundsc(self, y, fs=8192, *_):
+        a = np.real(np.asarray(y, dtype=complex if np.iscomplexobj(y)
+                               else float))
+        peak = float(np.max(np.abs(a))) if a.size else 0.0
+        self._play(a / peak if peak else a, fs)
+
+    # ── workspace files ─────────────────────────────────────────
+
+    def f_save(self, *args):
+        import fnmatch
+
+        import scipy.io
+        words = [_as_text(a) for a in args]
+        flags = {w.lower() for w in words if w.startswith("-")}
+        names = [w for w in words if not w.startswith("-")]
+        path = self.rt.resolve(names[0] if names else "matlab.mat")
+        ascii_ = "-ascii" in flags
+        if not os.path.splitext(path)[1] and not ascii_:
+            path += ".mat"
+        workspace = self.rt.workspace()
+        chosen: dict[str, Any] = {}
+        for pattern in names[1:] or ["*"]:
+            hits = [k for k in workspace if fnmatch.fnmatchcase(k, pattern)]
+            if not hits and not any(c in pattern for c in "*?["):
+                raise MatlabError(f"Variable '{pattern}' not found.")
+            chosen.update((k, workspace[k]) for k in hits)
+        if ascii_:
+            rows = [np.atleast_2d(np.asarray(v, float)) for v in
+                    chosen.values()]
+            np.savetxt(path, np.vstack(rows) if rows else np.zeros((0, 0)),
+                       fmt="%.7e", delimiter="   ")
+            return None
+        data = {k: _to_mat(v) for k, v in chosen.items()}
+        if "-append" in flags and os.path.isfile(path):
+            old = scipy.io.loadmat(path)
+            data = {**{k: v for k, v in old.items()
+                       if not k.startswith("__")}, **data}
+        scipy.io.savemat(path, data, oned_as="row", long_field_names=True)
+        return None
+
+    @_nargout
+    def f_load(self, filename="matlab.mat", *names, nargout=0):
+        import fnmatch
+
+        import scipy.io
+        path = self.rt.resolve(filename)
+        if not os.path.isfile(path) and os.path.isfile(path + ".mat"):
+            path += ".mat"
+        if not os.path.isfile(path):
+            raise MatlabError(f"Unable to find file or directory "
+                              f"'{_as_text(filename)}'.")
+        if path.lower().endswith(".mat"):
+            raw = scipy.io.loadmat(path, squeeze_me=False,
+                                   struct_as_record=False,
+                                   chars_as_strings=True)
+            values = {k: _from_mat(v) for k, v in raw.items()
+                      if not k.startswith("__")}
+        else:                                  # a text file of numbers
+            matrix = _normalise(np.loadtxt(path, ndmin=2))
+            if nargout:
+                return matrix
+            stem = re.sub(r"\W", "_", os.path.splitext(
+                os.path.basename(path))[0])
+            values = {stem: matrix}
+        patterns = [n for n in map(_as_text, names) if not n.startswith("-")]
+        if patterns:
+            values = {k: v for k, v in values.items()
+                      if any(fnmatch.fnmatchcase(k, p) for p in patterns)}
+        if nargout:
+            return Struct(values)
+        self.rt.ns.update(values)
+        return None
 
     # ── systems ─────────────────────────────────────────────────
 
@@ -1923,6 +2880,9 @@ class _Library:
     def f_tfdata(self, sys, form=None, nargout=1):
         G = ctl.tf(sys)
         num, den = G.num[0][0], G.den[0][0]
+        # MATLAB pads the numerator with leading zeros to the denominator's
+        # length: the coefficients of a common power of s (or z).
+        num = np.concatenate([np.zeros(max(len(den) - len(num), 0)), num])
         if form == "v":
             out = (np.asarray(num, float), np.asarray(den, float))
         else:
@@ -1933,7 +2893,7 @@ class _Library:
     @_nargout
     def f_zpkdata(self, sys, form=None, nargout=1):
         z, p = api.zero(sys), api.pole(sys)
-        k = float(api.dcgain(sys)) if False else _zpk_gain(sys)
+        k = _zpk_gain(sys)
         out = (z.reshape(-1, 1), p.reshape(-1, 1), k)
         if form != "v":
             out = (Cell([out[0]]), Cell([out[1]]), k)
@@ -2220,7 +3180,8 @@ class _Library:
 
     # ── generic plots ───────────────────────────────────────────
 
-    def _xy(self, args, kind_extra: dict | None = None):
+    def _xy(self, args, kind_extra: dict | None = None,
+            style: str | None = None):
         spec = FigureSpec("xy", "", "", "")
         spec.extra.update(kind_extra or {})
         values = list(args)
@@ -2249,19 +3210,154 @@ class _Library:
                         else y.size
                     series.append([np.arange(1, n + 1), y, ""])
                 k += 1
-        for x, y, style in series:
+        warned = False
+        for x, y, linespec in series:
+            x, y = np.asarray(x), np.asarray(y)
+            if np.iscomplexobj(x) or np.iscomplexobj(y):
+                if not warned:
+                    print("Warning: Imaginary parts of complex X and/or Y "
+                          "arguments ignored.")
+                    warned = True
+                x, y = x.real, y.real
             x = np.asarray(x, float)
             y = np.asarray(y, float)
             columns = [y] if y.ndim == 1 or 1 in y.shape else (
                 [y[:, c] for c in range(y.shape[1])]
                 if y.shape[0] == x.size else [y[r] for r in range(y.shape[0])])
             for col in columns:
-                spec.add(x.reshape(-1), np.asarray(col).reshape(-1), "",
-                         style=_style(style))
+                xs, ys = x.reshape(-1), np.asarray(col).reshape(-1)
+                kind = style or _style(linespec)
+                if kind == "stairs":           # hold each value to the next x
+                    xs, ys = np.repeat(xs, 2)[1:], np.repeat(ys, 2)[:-1]
+                    kind = "line"
+                spec.add(xs, ys, "", style=kind)
         self.rt.figures.collect(spec)
 
     def f_plot(self, *args):
         self._xy(args)
+
+    def f_stem(self, *args):
+        self._xy(args, style="stem")
+
+    def f_stairs(self, *args):
+        self._xy(args, style="stairs")
+
+    def f_bar(self, *args):
+        """
+        Bars, ``bar(y)`` or ``bar(x, y[, width])``; a matrix's columns are
+        drawn as groups of bars side by side.
+        """
+        numbers = [a for a in args if not isinstance(a, str)]
+        if len(numbers) == 1:
+            y = _as2d(numbers[0])
+            x = None
+        else:
+            x, y = numbers[0], _as2d(numbers[1])
+        y = y.T if y.shape[0] == 1 else y
+        x = np.arange(1.0, y.shape[0] + 1) if x is None else \
+            np.asarray(x, float).reshape(-1)
+        width = float(_scalar_of(numbers[2])) if len(numbers) > 2 else 0.8
+        step = float(np.min(np.diff(np.sort(x)))) if x.size > 1 else 1.0
+        groups = y.shape[1]
+        spec = FigureSpec("xy")
+        spec.extra["bar_width"] = width * step / groups
+        for k in range(groups):
+            offset = (k - (groups - 1) / 2) * width * step / groups
+            spec.add(x + offset, np.real(y[:, k]), style="bar")
+        self.rt.figures.collect(spec)
+
+    f_barh = f_bar
+
+    @_nargout
+    def f_histogram(self, x, bins=None, *_, nargout=1):
+        """Counts in bins drawn as bars; returns Values and BinEdges."""
+        data = np.asarray(x, float).reshape(-1)
+        data = data[np.isfinite(data)]
+        edges = _bin_edges(data, bins)
+        counts, _edges = np.histogram(data, bins=edges)
+        centres = (edges[:-1] + edges[1:]) / 2
+        spec = FigureSpec("xy")
+        spec.extra["bar_width"] = float(np.min(np.diff(edges))) if \
+            edges.size > 1 else 1.0
+        spec.add(centres, counts, style="bar")
+        self.rt.figures.collect(spec)
+        return Struct(Values=counts.astype(float), BinEdges=edges,
+                      NumBins=int(counts.size),
+                      BinWidth=float(spec.extra["bar_width"]),
+                      Data=data) if nargout else None
+
+    @_nargout
+    def f_histcounts(self, x, bins=None, *_, nargout=1):
+        data = np.asarray(x, float).reshape(-1)
+        data = data[np.isfinite(data)]
+        edges = _bin_edges(data, bins)
+        counts = np.histogram(data, bins=edges)[0].astype(float)
+        return (counts, edges)[:nargout] if nargout >= 2 else counts
+
+    @_nargout
+    def f_hist(self, y, bins=10, *_, nargout=1):
+        """The old ``hist``: equal bins over the data's range, by centre."""
+        data = np.asarray(y, float).reshape(-1)
+        if _numel(bins) > 1:
+            centres = np.asarray(bins, float).reshape(-1)
+            mids = (centres[:-1] + centres[1:]) / 2
+            edges = np.concatenate([[-np.inf], mids, [np.inf]])
+        else:
+            lo, hi = (float(np.min(data)), float(np.max(data))) \
+                if data.size else (0.0, 1.0)
+            if lo == hi:
+                lo, hi = lo - 0.5, hi + 0.5
+            edges = np.linspace(lo, hi, int(_scalar_of(bins)) + 1)
+            centres = (edges[:-1] + edges[1:]) / 2
+            edges[0], edges[-1] = -np.inf, np.inf
+        counts = np.histogram(data, bins=edges)[0].astype(float)
+        if nargout == 0:
+            self._xy((centres, counts), style="bar")
+            self.rt.figures.current.extra["bar_width"] = float(
+                np.min(np.diff(centres))) if centres.size > 1 else 1.0
+            return None
+        return (counts, centres)[:nargout] if nargout >= 2 else counts
+
+    # ── saving figures ──────────────────────────────────────────
+
+    def _figure_for(self, handle) -> FigureSpec:
+        figs = self.rt.figures
+        spec = None
+        if _is_number(handle) and 1 <= int(handle) <= len(figs.specs):
+            spec = figs.specs[int(handle) - 1]
+        spec = spec or figs.figure()
+        if spec is None or spec not in figs.drawable():
+            raise MatlabError("There is no figure to save.")
+        return spec
+
+    def f_saveas(self, fig, filename, fmt=None):
+        path = self.rt.resolve(filename)
+        if not os.path.splitext(path)[1]:
+            ext = str(fmt or "png").lower().lstrip(".")
+            path += "." + ("png" if ext == "fig" else ext)
+        _export_figure(self._figure_for(fig), path)
+
+    f_exportgraphics = f_saveas
+
+    def f_print(self, *args):
+        fmt, filename, handle = "png", None, None
+        for a in args:
+            if isinstance(a, str) and a.startswith("-d"):
+                fmt = a[2:].lower()
+            elif isinstance(a, str) and a.startswith("-"):
+                continue                       # -r300, -painters, …
+            elif isinstance(a, str):
+                filename = a
+            else:
+                handle = a
+        if filename is None:
+            raise MatlabError("Printing to a printer is not supported; give "
+                              "print a file name.")
+        path = self.rt.resolve(filename)
+        if not os.path.splitext(path)[1]:
+            path += {"jpeg": ".jpg", "tiff": ".tif", "tiffn": ".tif",
+                     "epsc": ".eps", "meta": ".emf"}.get(fmt, "." + fmt)
+        _export_figure(self._figure_for(handle), path)
 
     def f_semilogx(self, *args):
         self._xy(args, {"logx": True})
@@ -2271,8 +3367,6 @@ class _Library:
 
     def f_loglog(self, *args):
         self._xy(args, {"logx": True, "logy": True})
-
-    f_stem = f_stairs = f_plot
 
     # ── annotation ──────────────────────────────────────────────
 
@@ -2338,6 +3432,302 @@ class _Library:
 # ──────────────────────────────────────────────────────────────
 #  Helpers for the library
 # ──────────────────────────────────────────────────────────────
+
+def _pause_for(seconds: float) -> None:
+    """What ``pause(t)`` waits with — a seam the tests replace."""
+    time.sleep(seconds)
+
+
+def _bin_edges(data: np.ndarray, bins) -> np.ndarray:
+    """
+    ``histogram``'s bin edges: the edges given; ``n`` equal bins over the
+    data; or, by default, Scott's rule rounded to a 1-2-3-5 width with
+    edges on multiples of it — MATLAB's ``binpicker``.
+    """
+    if bins is not None and _numel(bins) > 1:
+        return np.asarray(bins, float).reshape(-1)
+    lo, hi = (float(np.min(data)), float(np.max(data))) if data.size \
+        else (0.0, 1.0)
+    if bins is not None:
+        if lo == hi:
+            lo, hi = lo - 0.5, hi + 0.5
+        return np.linspace(lo, hi, int(_scalar_of(bins)) + 1)
+    spread = float(np.std(data)) if data.size > 1 else 0.0
+    raw = 3.5 * spread / max(data.size, 1) ** (1 / 3) if spread else 1.0
+    if hi > lo:
+        raw = max(raw, (hi - lo) / 1e6)
+    power = 10.0 ** math.floor(math.log10(raw))
+    rel = raw / power
+    width = power * (1 if rel < 1.5 else 2 if rel < 2.5 else 3 if rel < 4
+                     else 5 if rel < 7.5 else 10)
+    left = min(width * math.floor(lo / width), lo)
+    count = max(1, math.ceil((hi - left) / width))
+    edges = left + width * np.arange(count + 1)
+    edges[-1] = max(edges[-1], hi)
+    return edges
+
+
+# ── audio files ──────────────────────────────────────────────────
+
+_SUBTYPE_BITS = {"PCM_U8": 8, "PCM_S8": 8, "PCM_16": 16, "PCM_24": 24,
+                 "PCM_32": 32, "FLOAT": 32, "DOUBLE": 64}
+
+
+def _soundfile():
+    try:
+        import soundfile
+    except Exception:                                    # noqa: BLE001
+        return None
+    return soundfile
+
+
+def _wav_header(path: str) -> dict:
+    """The ``fmt `` and ``data`` chunks of a RIFF WAVE file."""
+    info: dict = {}
+    with open(path, "rb") as fh:
+        riff = fh.read(12)
+        if len(riff) < 12 or riff[:4] != b"RIFF" or riff[8:] != b"WAVE":
+            raise MatlabError(f"{os.path.basename(path)} is not a WAVE "
+                              f"file this reader understands.")
+        while True:
+            head = fh.read(8)
+            if len(head) < 8:
+                break
+            chunk, size = head[:4], struct.unpack("<I", head[4:])[0]
+            if chunk == b"fmt ":
+                body = fh.read(size)
+                tag, channels, rate, _, align, bits = struct.unpack(
+                    "<HHIIHH", body[:16])
+                if tag == 0xFFFE and len(body) >= 26:     # extensible
+                    tag = struct.unpack("<H", body[24:26])[0]
+                info.update(tag=tag, channels=channels, rate=rate,
+                            align=align, bits=bits)
+                fh.seek(size & 1, 1)
+            elif chunk == b"data":
+                info.update(offset=fh.tell(), size=size)
+                fh.seek(size + (size & 1), 1)
+            else:
+                fh.seek(size + (size & 1), 1)
+    if "tag" not in info or "offset" not in info:
+        raise MatlabError(f"{os.path.basename(path)} has no audio data.")
+    info["frames"] = info["size"] // max(info["align"], 1)
+    return info
+
+
+def _audio_info(path: str) -> dict:
+    sf = _soundfile()
+    if sf is not None:
+        try:
+            i = sf.info(path)
+            return {"channels": i.channels, "rate": int(i.samplerate),
+                    "frames": int(i.frames),
+                    "bits": _SUBTYPE_BITS.get(i.subtype, 16)}
+        except Exception:                                # noqa: BLE001
+            pass
+    h = _wav_header(path)
+    return {k: h[k] for k in ("channels", "rate", "frames", "bits")}
+
+
+def _read_audio(path: str, native: bool = False):
+    """Samples as a frames × channels array (doubles in [-1, 1])."""
+    sf = _soundfile()
+    if sf is not None and not native:
+        try:
+            y, rate = sf.read(path, dtype="float64", always_2d=True)
+            return y, int(rate), _audio_info(path)
+        except Exception:                                # noqa: BLE001
+            pass
+    h = _wav_header(path)
+    with open(path, "rb") as fh:
+        fh.seek(h["offset"])
+        raw = fh.read(h["frames"] * h["align"])
+    bits, tag = h["bits"], h["tag"]
+    if tag == 3:
+        y = np.frombuffer(raw, "<f4" if bits == 32 else "<f8").astype(float)
+        ints = None
+    elif tag == 1 and bits in (8, 16, 24, 32):
+        if bits == 24:
+            b = np.frombuffer(raw, np.uint8).reshape(-1, 3).astype(np.int32)
+            ints = b[:, 0] | (b[:, 1] << 8) | (b[:, 2] << 16)
+            ints = np.where(ints >= 1 << 23, ints - (1 << 24), ints)
+        else:
+            ints = np.frombuffer(raw, {8: np.uint8, 16: "<i2",
+                                       32: "<i4"}[bits])
+        y = (ints.astype(float) - 128) / 128 if bits == 8 else \
+            ints.astype(float) / 2.0 ** (bits - 1)
+    else:
+        raise MatlabError(f"{os.path.basename(path)}: {bits}-bit audio "
+                          f"(format {tag}) is not supported.")
+    shape = (-1, h["channels"])
+    if native and ints is not None:
+        y = ints                       # uint8, int16 or int32, as MATLAB's
+    return y.reshape(shape), int(h["rate"]), {
+        k: h[k] for k in ("channels", "rate", "frames", "bits")}
+
+
+def _write_audio(path: str, data: np.ndarray, rate: int, bits: int) -> None:
+    """
+    Write frames × channels samples. Integer depths clip to [-1, 1) and
+    scale by 2^(bits-1), as MATLAB does; 32 and 64 bits write floats.
+    """
+    if bits not in (8, 16, 24, 32, 64):
+        raise MatlabError("BitsPerSample must be 8, 16, 24, 32 or 64.")
+    data = np.asarray(data, float)
+    if not path.lower().endswith(".wav"):
+        sf = _soundfile()
+        if sf is None:
+            raise MatlabError("Only .wav files can be written here "
+                              "(install the soundfile package for others).")
+        subtype = {8: "PCM_U8", 16: "PCM_16", 24: "PCM_24", 32: "FLOAT",
+                   64: "DOUBLE"}[bits]
+        sf.write(path, data, rate, subtype=subtype)
+        return
+    channels = data.shape[1]
+    if bits >= 32:
+        payload = data.astype("<f4" if bits == 32 else "<f8").tobytes()
+        tag = 3
+    else:
+        scale = 2.0 ** (bits - 1)
+        ints = np.clip(np.round(data * scale), -scale, scale - 1)
+        if bits == 8:
+            payload = (ints + 128).astype(np.uint8).tobytes()
+        elif bits == 16:
+            payload = ints.astype("<i2").tobytes()
+        else:
+            payload = ints.astype("<i4").view(np.uint8).reshape(
+                -1, 4)[:, :3].tobytes()
+        tag = 1
+    align = channels * bits // 8
+    fmt = struct.pack("<HHIIHH", tag, channels, rate, rate * align, align,
+                      bits)
+    chunks = [b"fmt ", struct.pack("<I", len(fmt)), fmt]
+    if tag == 3:                     # float files carry a sample count
+        chunks += [b"fact", struct.pack("<II", 4, data.shape[0])]
+    chunks += [b"data", struct.pack("<I", len(payload)), payload]
+    if len(payload) & 1:
+        chunks.append(b"\0")
+    body = b"".join(chunks)
+    with open(path, "wb") as fh:
+        fh.write(b"RIFF" + struct.pack("<I", 4 + len(body)) + b"WAVE" + body)
+
+
+_PLAYERS: list = []
+
+
+def _play(data: np.ndarray, rate: float) -> bool:
+    """
+    Start playing frames × channels samples in [-1, 1] and return at once;
+    False when there is nothing to play them on. sounddevice if it is
+    installed, else Qt Multimedia (which ships with PySide6).
+    """
+    try:
+        import sounddevice
+        sounddevice.play(data, int(round(rate)))
+        return True
+    except Exception:                                    # noqa: BLE001
+        pass
+    try:
+        from PySide6.QtCore import QBuffer, QByteArray, QCoreApplication, QIODevice
+        from PySide6.QtMultimedia import QAudio, QAudioFormat, QAudioSink, QMediaDevices
+        if QCoreApplication.instance() is None:
+            return False
+        device = QMediaDevices.defaultAudioOutput()
+        fmt = QAudioFormat()
+        fmt.setSampleRate(int(round(rate)))
+        fmt.setChannelCount(int(data.shape[1]))
+        fmt.setSampleFormat(QAudioFormat.SampleFormat.Int16)
+        if device.isNull() or not device.isFormatSupported(fmt):
+            return False
+        buffer = QBuffer()
+        buffer.setData(QByteArray((data * 32767).astype("<i2").tobytes()))
+        buffer.open(QIODevice.OpenModeFlag.ReadOnly)
+        sink = QAudioSink(device, fmt)
+        sink.start(buffer)
+        # Keep each player alive until it has finished.
+        _PLAYERS[:] = [p for p in _PLAYERS
+                       if p[0].state() == QAudio.State.ActiveState]
+        _PLAYERS.append((sink, buffer))
+        return True
+    except Exception:                                    # noqa: BLE001
+        return False
+
+
+# ── .mat files ───────────────────────────────────────────────────
+
+def _to_mat(value):
+    """A workspace value in the form ``scipy.io.savemat`` writes."""
+    if isinstance(value, Struct):
+        return {k: _to_mat(v) for k, v in value.items()}
+    if isinstance(value, (Cell, StructArray)):
+        out = np.empty((1, len(value)), dtype=object)
+        for k, v in enumerate(value):
+            out[0, k] = _to_mat(v)
+        return out
+    if value is None:
+        return np.zeros((0, 0))
+    return value
+
+
+def _from_mat(value):
+    """What ``scipy.io.loadmat`` read, as the runtime represents it."""
+    from scipy.io.matlab import mat_struct
+    if isinstance(value, mat_struct):
+        return Struct({f: _from_mat(getattr(value, f))
+                       for f in value._fieldnames})
+    if isinstance(value, str):
+        return value
+    a = np.asarray(value)
+    if a.dtype.kind == "U":
+        texts = [str(s) for s in a.reshape(-1)]
+        return texts[0] if len(texts) == 1 else ("" if not texts
+                                                 else Cell(texts))
+    if a.dtype == object:
+        items = [_from_mat(v) for v in a.reshape(-1, order="F")]
+        if items and all(isinstance(v, Struct) for v in items):
+            return items[0] if len(items) == 1 else StructArray(items)
+        return Cell(items)
+    if a.size == 0:
+        return np.zeros((0, 0))
+    if a.dtype.kind in "iu":
+        a = a.astype(float)
+    return _normalise(a)
+
+
+# ── saving figures ───────────────────────────────────────────────
+
+def _export_figure(spec: FigureSpec, path: str) -> None:
+    """
+    Draw a figure off-screen and write it to ``path``.
+
+    The figure UI's own ``export_figure(view, path)`` does the writing when
+    it has one (it knows the vector formats); otherwise the drawn widget is
+    grabbed as an image, the way the figure dock's Save does.
+    """
+    os.environ.setdefault("PYQTGRAPH_QT_LIB", "PySide6")
+    try:
+        from PySide6.QtWidgets import QApplication
+
+        from ..ui.console import figure_view
+    except ImportError as exc:
+        raise MatlabError(f"Saving a figure needs the Qt interface "
+                          f"({exc}).") from None
+    _app = QApplication.instance() or QApplication(sys.argv[:1])  # noqa: F841
+    folder = os.path.dirname(path)
+    if folder:
+        os.makedirs(folder, exist_ok=True)
+    view = figure_view.FigureView(spec)
+    view.resize(800, 600)
+    try:
+        export = getattr(figure_view, "export_figure", None)
+        if export is not None:
+            export(view, path)
+        elif not view.grab().save(path):
+            raise MatlabError(f"Could not write the figure to {path} (is "
+                              f"'{os.path.splitext(path)[1]}' an image "
+                              f"format?).")
+    finally:
+        view.deleteLater()
+
 
 def _matlab_stepinfo(info: Struct, t: np.ndarray, y: np.ndarray) -> Struct:
     """

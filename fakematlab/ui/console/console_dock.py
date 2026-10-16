@@ -637,6 +637,8 @@ class ConsolePanel(QWidget):
                 f"from the last run to {saved[0].parent}: "
                 + ", ".join(p.name for p in saved))
         self.figures.begin_script_run()
+        path = self.editor.path
+        self.interpreter.script_folder = str(path.parent) if path else None
         try:
             self.console.run_script(source, language)
         finally:
