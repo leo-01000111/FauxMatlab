@@ -81,7 +81,13 @@ struct arrays, `hold on`/`grid on`/`close all`, and `[y, t] = step(G)` returning
 outputs in MATLAB's order without plotting. `legend`, `title`, `axis`, `bodeoptions` with
 phase matching, `fprintf`, `num2str` and `struct2table` behave as in MATLAB. An error names
 the MATLAB line, not the generated Python. *Auto* picks the language from the text; the
-selector beside Run overrides it.
+selector beside Run overrides it. Run starts from a clean slate: the transcript and the
+previous run's figures are cleared first, and figures that were never saved are offered
+for saving as `figure_1.png`, `figure_2.png`, … — lines typed at the prompt still append.
+
+**Figures** sit under the command window. *Split* shows two side by side, *Undock* moves
+one into a window of its own (still live — pan, zoom, readouts) and *Dock* or closing that
+window brings it back; *Save…* writes a PNG.
 
 **A working Simulink.** Fifty block types, hierarchical subsystems, a drag-and-drop canvas
 with undo, RK4/RK45/Euler solvers, scopes, a properties inspector that leaves the diagram
@@ -170,7 +176,7 @@ rather than merely inaccurate.
 pytest
 ```
 
-858 tests, plus `ruff check .`. They are mostly *golden* tests: analytic values computed by
+870 tests, plus `ruff check .`. They are mostly *golden* tests: analytic values computed by
 hand or by an independent route, not snapshots of whatever the code printed first. The
 numeric signal solver and the symbolic one check each other; `python-control` acts as a
 third opinion.

@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPlainTextEdit,
     QPushButton,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -96,10 +97,13 @@ class ConsoleWidget(QWidget):
         self._input.history_move.connect(self._recall)
         self._input.complete.connect(self._complete)
         row.addWidget(self._input, stretch=1)
+        # Sized by its label, like the workspace's "Clear all": a pixel cap
+        # does not know the button font is the wide uppercase sign face.
         clear = QPushButton("Clear")
-        clear.setMaximumWidth(64)
+        clear.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         clear.clicked.connect(self.clear_transcript)
         row.addWidget(clear)
+        self._clear_button = clear
         layout.addLayout(row)
 
         self._log: list[tuple[str, str]] = []
@@ -211,6 +215,10 @@ class ConsoleWidget(QWidget):
         self._transcript.clear()
         self._log.clear()
         self._banner()
+
+    def note(self, text: str) -> None:
+        """A muted line from the app itself, not from anything that ran."""
+        self._echo(text, "note")
 
     def _banner(self) -> None:
         self._echo(

@@ -189,3 +189,165 @@ def test_simulink_model_is_in_the_workspace(app, win):
     _settle(app)
     assert result.ok
     assert len(win._console.interpreter.namespace["r"].t) > 10
+
+
+# ──────────────────────────────────────────────────────────────
+#  Running a whole script starts from a clean slate
+# ──────────────────────────────────────────────────────────────
+
+@pytest.fixture
+def answers(win, monkeypatch, tmp_path):
+    """Stand in for the save prompt and the folder picker, and record them."""
+    record = {"asked": [], "answer": "discard", "folder": tmp_path}
+    panel = win._console
+
+    def ask(count):
+        record["asked"].append(count)
+        return record["answer"]
+
+    monkeypatch.setattr(panel, "_ask_to_save_figures", ask)
+    monkeypatch.setattr(panel, "_choose_figure_folder",
+                        lambda: record["folder"])
+    yield record
+    win._figures.set_split(False)
+
+
+def _transcript(win) -> str:
+    return win._console.console._transcript.toPlainText()
+
+
+def test_running_a_script_twice_does_not_append(app, win, answers):
+    win._console.editor.set_text("alpha = 7\nprint(alpha * 6)")
+    win._console._run_script(win._console.editor.text())
+    win._console._run_script(win._console.editor.text())
+    _settle(app)
+    assert _transcript(win).count("alpha = 7") == 1
+    assert _transcript(win).count("42") == 1
+
+
+def test_commands_at_the_prompt_still_append(app, win):
+    win._console.execute("x = 1")
+    win._console.execute("x = 1")
+    _settle(app)
+    assert _transcript(win).count(">> x = 1") == 2
+
+
+def test_a_run_replaces_the_last_runs_figures_but_not_the_prompts(
+        app, win, answers):
+    win._console.execute("bode(G)")                 # typed: not a script's
+    script = "s = tf('s');\nH = 1/(s+1);\nstep(H)\nnyquist(H)"
+    win._console._run_script(script, "matlab")
+    _settle(app)
+    assert win._figures.figure_count == 3
+    win._console._run_script(script, "matlab")
+    _settle(app)
+    kinds = sorted(v.spec.kind for v in win._figures.figures)
+    assert win._figures.figure_count == 3, kinds
+    assert answers["asked"] == [2]
+    assert not any(v.from_script for v in win._figures.figures
+                   if v.spec.kind == "bode")
+
+
+def test_unsaved_figures_are_saved_under_placeholder_names(
+        app, win, answers, tmp_path):
+    answers["answer"] = "save"
+    win._console._run_script("step(G)\nbode(G)", "python")
+    win._console._run_script("step(G)", "python")
+    _settle(app)
+    assert sorted(p.name for p in tmp_path.iterdir()) == [
+        "figure_1.png", "figure_2.png"]
+    assert "Saved 2 figures" in _transcript(win)
+
+    # A third run saves beside them rather than over them.
+    win._console._run_script("step(G)", "python")
+    _settle(app)
+    assert "figure_3.png" in {p.name for p in tmp_path.iterdir()}
+
+
+def test_figures_already_saved_are_not_asked_about(app, win, answers,
+                                                   tmp_path):
+    win._console._run_script("step(G)", "python")
+    _settle(app)
+    (view,) = win._figures.script_figures()
+    assert win._figures.save_figure(view, tmp_path / "mine.png")
+    win._console._run_script("step(G)", "python")
+    _settle(app)
+    assert answers["asked"] == []
+    assert win._figures.figure_count == 1
+
+
+def test_cancelling_the_prompt_leaves_everything_as_it_was(app, win, answers):
+    win._console._run_script("first_run = 1\nstep(G)", "python")
+    _settle(app)
+    before = _transcript(win)
+    answers["answer"] = "cancel"
+    assert win._console._run_script("second_run = 2", "python") is False
+    _settle(app)
+    assert _transcript(win) == before
+    assert "second_run" not in win._console.interpreter.namespace
+    assert win._figures.figure_count == 1
+
+
+def test_placeholder_names_skip_files_already_there(tmp_path):
+    from fakematlab.ui.console.console_dock import placeholder_names
+
+    (tmp_path / "figure_2.png").write_bytes(b"")
+    names = [p.name for p in placeholder_names(tmp_path, 3)]
+    assert names == ["figure_1.png", "figure_3.png", "figure_4.png"]
+
+
+# ──────────────────────────────────────────────────────────────
+#  Undocking and side-by-side figures
+# ──────────────────────────────────────────────────────────────
+
+def test_a_figure_undocks_into_its_own_window_and_back(app, win):
+    win._console.execute("step(G)")
+    _settle(app)
+    figures = win._figures
+    view = figures.current_figure()
+    window = figures.undock()
+    _settle(app)
+    assert window is not None and window.isWindow() and window.isVisible()
+    assert view.window() is window             # the live widget, reparented
+    assert figures._tabs.count() == 0
+    assert figures.figure_count == 1           # still open, just elsewhere
+
+    window.close()                             # closing docks it back
+    _settle(app)
+    assert figures.window_for(view) is None
+    assert figures._tabs.indexOf(view) >= 0
+
+
+def test_closing_all_figures_closes_undocked_windows(app, win):
+    win._console.execute("step(G)")
+    _settle(app)
+    window = win._figures.undock()
+    win._figures.close_all()
+    _settle(app)
+    assert win._figures.figure_count == 0
+    assert not window.isVisible()
+
+
+def test_two_figures_side_by_side(app, win, answers):
+    figures = win._figures
+    win._console.execute("step(G)")
+    assert not figures._split_button.isEnabled()   # nothing to compare yet
+    win._console.execute("bode(G)")
+    _settle(app)
+    newest = figures.current_figure()
+
+    figures.set_split(True)
+    _settle(app)
+    assert figures.split
+    assert figures._tabs.count() == 1 and figures._side.count() == 1
+    assert figures._side.currentWidget() is newest
+    assert figures._tabs.isVisible() and figures._side.isVisible()
+
+    figures.move_to_other_side(newest)          # emptying a side unsplits
+    _settle(app)
+    assert not figures.split
+    assert figures._tabs.count() == 2
+
+    figures.set_split(True)
+    figures.set_split(False)
+    assert figures._tabs.count() == 2 and figures._side.count() == 0

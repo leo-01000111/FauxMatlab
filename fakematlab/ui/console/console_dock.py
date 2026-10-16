@@ -9,6 +9,7 @@ of the **Console workspace**, reachable with Ctrl+3.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
@@ -17,10 +18,12 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
     QLabel,
+    QMessageBox,
     QPlainTextEdit,
     QPushButton,
     QSplitter,
     QTabWidget,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -29,7 +32,7 @@ from ...console.figures import FigureSpec, set_figure_sink
 from ...console.interpreter import Interpreter
 from ...console.matlab import looks_like_matlab
 from .. import theme
-from ..design import EmptyState
+from ..design import TIGHT, EmptyState
 from .console_widget import ConsoleWidget
 from .figure_view import FigureView
 from .workspace_widget import WorkspaceWidget
@@ -38,9 +41,89 @@ from .workspace_widget import WorkspaceWidget
 #: figure numbers — an unbounded pile of tabs is not a feature.
 MAX_FIGURES = 12
 
+#: What a figure saved without a name is called: ``figure_1.png``, and so on.
+PLACEHOLDER_STEM = "figure"
+
+
+def placeholder_names(folder: Path, count: int,
+                      stem: str = PLACEHOLDER_STEM) -> list[Path]:
+    """
+    ``count`` free file names in ``folder``: figure_1.png, figure_2.png, …
+
+    Numbers already taken on disk are skipped rather than overwritten, so
+    saving a second run's figures beside the first run's keeps both.
+    """
+    names: list[Path] = []
+    n = 1
+    while len(names) < count:
+        path = folder / f"{stem}_{n}.png"
+        if not path.exists():
+            names.append(path)
+        n += 1
+    return names
+
+
+class FigureWindow(QWidget):
+    """
+    A figure undocked into a window of its own.
+
+    The figure is the same live widget, reparented — not a picture of it — so
+    it still pans, zooms and reads out under the mouse, and still follows the
+    theme. Closing the window docks the figure back rather than deleting it:
+    undocking is a change of place, and losing a plot to a window's close box
+    would be a surprise. Closing its tab is how a figure is got rid of.
+    """
+
+    #: The figure wants to go back into the figure area.
+    dock_requested = Signal(object)            # FigureView
+    #: The figure wants saving, through the figure area's own dialog.
+    save_requested = Signal(object)            # FigureView
+
+    def __init__(self, view: FigureView, title: str, parent=None) -> None:
+        super().__init__(parent, Qt.Window)
+        self.setWindowTitle(f"{title} — FauxMatlab")
+        self.view: FigureView | None = view
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(TIGHT, TIGHT, TIGHT, TIGHT)
+        layout.setSpacing(TIGHT)
+        row = QHBoxLayout()
+        row.addStretch()
+        save = QToolButton()
+        save.setText("Save…")
+        save.setToolTip("Save this figure as a PNG image")
+        save.clicked.connect(lambda: self.save_requested.emit(self.view))
+        row.addWidget(save)
+        dock = QToolButton()
+        dock.setText("Dock")
+        dock.setToolTip("Put this figure back in the Console's figure area")
+        dock.clicked.connect(self.close)
+        row.addWidget(dock)
+        layout.addLayout(row)
+        layout.addWidget(view, stretch=1)
+        view.show()
+        self.resize(760, 520)
+
+    def release(self) -> FigureView | None:
+        """Let go of the figure, so closing the window no longer re-docks it."""
+        view, self.view = self.view, None
+        return view
+
+    def closeEvent(self, event) -> None:          # noqa: N802 (Qt API)
+        if self.view is not None:
+            self.dock_requested.emit(self.view)
+        super().closeEvent(event)
+
 
 class FigureArea(QWidget):
-    """Where ``step(G)`` and ``bode(L)`` draw."""
+    """
+    Where ``step(G)`` and ``bode(L)`` draw.
+
+    One tab strip, or two side by side (*Split*); and any figure can leave for
+    a window of its own (*Undock*) and come back. The small controls above the
+    tabs act on the *current* figure: the selected tab on whichever side was
+    used last.
+    """
 
     #: A figure arrived — the workspace uses it to reveal itself.
     figure_added = Signal()
@@ -49,51 +132,308 @@ class FigureArea(QWidget):
         super().__init__(parent)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        self._tabs = QTabWidget()
-        self._tabs.setTabsClosable(True)
-        self._tabs.setDocumentMode(True)
-        self._tabs.tabCloseRequested.connect(self._close_tab)
-        layout.addWidget(self._tabs)
+        layout.setSpacing(0)
+
+        self._header = self._build_header()
+        layout.addWidget(self._header)
+
+        # Two tab strips in a splitter. The right one always exists and is
+        # only shown in split view, so a figure crosses over by reparenting —
+        # its zoom and cursor intact — rather than by being drawn again.
+        self._splitter = QSplitter(Qt.Horizontal)
+        self._splitter.setChildrenCollapsible(False)
+        self._tabs = self._make_pane()
+        self._side = self._make_pane()
+        self._splitter.addWidget(self._tabs)
+        self._splitter.addWidget(self._side)
+        self._side.hide()
+        layout.addWidget(self._splitter, stretch=1)
+        self._active = self._tabs
+
         self._count = 0
+        self._views: list[FigureView] = []
+        self._windows: dict[FigureView, FigureWindow] = {}
+        self._script_running = False
         self._placeholder = EmptyState(
             "No figures yet",
             "Plot commands draw here — try step(G) or bode(L) at the prompt.")
         layout.addWidget(self._placeholder)
         self._sync_placeholder()
 
+    def _make_pane(self) -> QTabWidget:
+        pane = QTabWidget()
+        pane.setTabsClosable(True)
+        pane.setDocumentMode(True)
+        pane.tabCloseRequested.connect(
+            lambda index, p=pane: self._close_tab(p, index))
+        pane.tabBarClicked.connect(lambda _index, p=pane: self._activate(p))
+        pane.currentChanged.connect(lambda _index, p=pane: self._activate(p))
+        return pane
+
+    def _build_header(self) -> QWidget:
+        """
+        The figure controls, small and to the right above the tabs.
+
+        Tool buttons rather than push buttons: the stylesheet draws them
+        borderless until hovered, so they read as part of the tab strip's
+        edge and not as a second toolbar competing with the console's.
+        """
+        header = QWidget()
+        row = QHBoxLayout(header)
+        row.setContentsMargins(TIGHT, 0, TIGHT, 0)
+        row.setSpacing(TIGHT)
+        row.addStretch()
+
+        def tool(text: str, tip: str, slot) -> QToolButton:
+            button = QToolButton()
+            button.setText(text)
+            button.setToolTip(tip)
+            button.clicked.connect(slot)
+            row.addWidget(button)
+            return button
+
+        self._split_button = tool(
+            "Split", "Show two figures side by side",
+            lambda checked: self.set_split(checked))
+        self._split_button.setCheckable(True)
+        self._move_button = tool(
+            "Move ↔", "Move the current figure to the other side",
+            lambda: self.move_to_other_side())
+        self._undock_button = tool(
+            "Undock", "Open the current figure in a window of its own",
+            lambda: self.undock())
+        self._save_button = tool(
+            "Save…", "Save the current figure as a PNG image",
+            lambda: self.save_current())
+        return header
+
+    # ── adding and removing ─────────────────────────────────────
+
     def show_figure(self, spec: FigureSpec) -> FigureView:
         """Render a figure spec as a new tab, and bring it to the front."""
         view = FigureView(spec)
         self._count += 1
-        title = spec.title or spec.kind
-        index = self._tabs.addTab(view, f"{self._count}: {title}")
-        self._tabs.setCurrentIndex(index)
-        while self._tabs.count() > MAX_FIGURES:
-            self._close_tab(0)
+        view.number = self._count
+        view.from_script = self._script_running
+        self._views.append(view)
+        self._place(view, self._tabs)
+        while len(self._views) > MAX_FIGURES:
+            self.close_figure(self._views[0])
         self._sync_placeholder()
         self.figure_added.emit()
         return view
 
-    def _close_tab(self, index: int) -> None:
-        widget = self._tabs.widget(index)
-        self._tabs.removeTab(index)
+    @staticmethod
+    def _label(view: FigureView) -> str:
+        return f"{view.number}: {view.spec.title or view.spec.kind}"
+
+    def _place(self, view: FigureView, pane: QTabWidget) -> None:
+        index = pane.addTab(view, self._label(view))
+        pane.setCurrentIndex(index)
+        self._active = pane
+
+    def _close_tab(self, pane: QTabWidget, index: int) -> None:
+        widget = pane.widget(index)
         if widget is not None:
-            widget.deleteLater()
+            self.close_figure(widget)
+
+    def close_figure(self, view: FigureView) -> None:
+        """Close one figure, wherever it is: either side, or its own window."""
+        window = self._windows.pop(view, None)
+        if window is not None:
+            window.release()
+            window.close()
+            window.deleteLater()
+        for pane in (self._tabs, self._side):
+            index = pane.indexOf(view)
+            if index >= 0:
+                pane.removeTab(index)
+        if view in self._views:
+            self._views.remove(view)
+        view.deleteLater()
         self._sync_placeholder()
 
     def close_all(self) -> None:
-        while self._tabs.count():
-            self._close_tab(0)
+        for view in list(self._views):
+            self.close_figure(view)
 
     def _sync_placeholder(self) -> None:
         """An empty tab strip is indistinguishable from a broken panel."""
-        empty = self._tabs.count() == 0
-        self._tabs.setVisible(not empty)
-        self._placeholder.setVisible(empty)
+        # A split with one side emptied — its figures closed, undocked or
+        # moved across — folds back to a single strip.
+        if self.split and not (self._tabs.count() and self._side.count()):
+            self.set_split(False)
+        docked = self._tabs.count() + self._side.count()
+        self._splitter.setVisible(docked > 0)
+        self._header.setVisible(docked > 0)
+        self._placeholder.setVisible(docked == 0)
+        self._sync_controls()
+
+    def _sync_controls(self) -> None:
+        current = self.current_figure() is not None
+        self._undock_button.setEnabled(current)
+        self._save_button.setEnabled(current)
+        self._split_button.setEnabled(self.split or self._tabs.count() >= 2)
+        self._move_button.setVisible(self.split)
 
     @property
     def figure_count(self) -> int:
-        return self._tabs.count()
+        """Every open figure: docked on either side or in a window."""
+        return len(self._views)
+
+    @property
+    def figures(self) -> list[FigureView]:
+        """The open figures, oldest first."""
+        return list(self._views)
+
+    # ── the current figure ──────────────────────────────────────
+
+    def _activate(self, pane: QTabWidget) -> None:
+        if pane.count():
+            self._active = pane
+        self._sync_controls()
+
+    def current_figure(self) -> FigureView | None:
+        """The selected tab on the side used last, else on the other side."""
+        for pane in (self._active, self._tabs, self._side):
+            if pane.count() and (pane is self._tabs or self.split):
+                return pane.currentWidget()
+        return None
+
+    # ── split view ──────────────────────────────────────────────
+
+    @property
+    def split(self) -> bool:
+        return not self._side.isHidden()
+
+    def set_split(self, on: bool) -> None:
+        """
+        Two figures side by side, or one strip again.
+
+        Splitting moves the current figure to the right and leaves the one
+        before it on the left — usually the comparison wanted: the plot just
+        drawn beside the one it is meant to be compared with. New figures
+        still arrive on the left. Unsplitting brings the right side's figures
+        back to the left strip.
+        """
+        if on and not self.split:
+            if self._tabs.count() < 2:
+                self._split_button.setChecked(False)
+                return
+            self._side.show()
+            self.move_to_other_side(self._tabs.currentWidget())
+            half = max(self._splitter.width() // 2, 1)
+            self._splitter.setSizes([half, half])
+        elif not on and self.split:
+            while self._side.count():
+                view = self._side.widget(0)
+                self._side.removeTab(0)
+                self._place(view, self._tabs)
+            self._side.hide()
+            self._active = self._tabs
+        self._split_button.setChecked(self.split)
+        self._sync_controls()
+
+    def move_to_other_side(self, view: FigureView | None = None) -> None:
+        """Move a docked figure across the split."""
+        view = view or self.current_figure()
+        if view is None or not self.split:
+            return
+        source = self._tabs if self._tabs.indexOf(view) >= 0 else self._side
+        index = source.indexOf(view)
+        if index < 0:
+            return
+        source.removeTab(index)
+        self._place(view, self._side if source is self._tabs else self._tabs)
+        self._sync_placeholder()
+
+    # ── undocking ───────────────────────────────────────────────
+
+    def undock(self, view: FigureView | None = None) -> FigureWindow | None:
+        """Move a docked figure into a window of its own."""
+        view = view or self.current_figure()
+        if view is None or view in self._windows:
+            return None
+        for pane in (self._tabs, self._side):
+            index = pane.indexOf(view)
+            if index >= 0:
+                pane.removeTab(index)
+        # Parented to the area, so it closes with the application and is
+        # never orphaned; Qt.Window makes it a top-level window regardless.
+        window = FigureWindow(view, self._label(view), self)
+        window.dock_requested.connect(self.dock)
+        window.save_requested.connect(self.save_current)
+        self._windows[view] = window
+        window.show()
+        self._sync_placeholder()
+        return window
+
+    def dock(self, view: FigureView) -> None:
+        """Bring an undocked figure back as a tab, on the side used last."""
+        window = self._windows.pop(view, None)
+        if window is None:
+            return
+        window.release()
+        window.hide()
+        window.deleteLater()
+        self._place(view, self._active if self.split else self._tabs)
+        self._sync_placeholder()
+
+    def window_for(self, view: FigureView) -> FigureWindow | None:
+        """The window an undocked figure is in, or None if it is docked."""
+        return self._windows.get(view)
+
+    # ── saving ──────────────────────────────────────────────────
+
+    @staticmethod
+    def save_figure(view: FigureView, path: str | Path) -> bool:
+        """Write a figure as a PNG — the way Export writes the analysis grid."""
+        if view.grab().save(str(path)):
+            view.saved = True
+            return True
+        return False
+
+    def save_figures(self, views: Iterable[FigureView],
+                     folder: str | Path) -> list[Path]:
+        """Save figures under placeholder names; returns the files written."""
+        views = list(views)
+        names = placeholder_names(Path(folder), len(views))
+        return [path for view, path in zip(views, names)
+                if self.save_figure(view, path)]
+
+    def save_current(self, view: FigureView | None = None) -> None:
+        """Save a figure (the current one by default) where the user says."""
+        view = view or self.current_figure()
+        if view is None:
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save figure", f"{PLACEHOLDER_STEM}_{view.number}.png",
+            "PNG images (*.png)")
+        if path and not self.save_figure(view, path):
+            QMessageBox.warning(self, "Save failed",
+                                f"Qt could not write {path}")
+
+    # ── script runs ─────────────────────────────────────────────
+
+    def script_figures(self, *, unsaved: bool = False) -> list[FigureView]:
+        """The figures the last script run drew — optionally only unsaved."""
+        return [v for v in self._views
+                if v.from_script and not (unsaved and v.saved)]
+
+    def begin_script_run(self) -> None:
+        """
+        Clear the previous run's figures away, and tag the ones that follow.
+
+        A script's figures are its output: running it again should replace
+        them, as it replaces its printed output, not pile a second copy beside
+        the first. Figures typed at the prompt belong to no run and stay.
+        """
+        for view in self.script_figures():
+            self.close_figure(view)
+        self._script_running = True
+
+    def end_script_run(self) -> None:
+        self._script_running = False
 
 
 class ScriptEditor(QWidget):
@@ -120,6 +460,10 @@ class ScriptEditor(QWidget):
         row = QHBoxLayout()
         run = QPushButton("▶ Run (F5)")
         run.setShortcut("F5")
+        run.setToolTip(
+            "Run the whole script (F5). The console and the last run's "
+            "figures are cleared first; unsaved figures are offered for "
+            "saving.")
         run.clicked.connect(self._run)
         row.addWidget(run)
         for label, slot in (("Open…", self._open), ("Save…", self._save)):
@@ -213,6 +557,11 @@ class ScriptEditor(QWidget):
         self._path.write_text(self._editor.toPlainText(), encoding="utf-8")
         self._path_label.setText(self._path.name)
 
+    @property
+    def path(self) -> Path | None:
+        """The file the script was opened from or saved to, if any."""
+        return self._path
+
     def set_text(self, text: str) -> None:
         self._editor.setPlainText(text)
 
@@ -265,10 +614,82 @@ class ConsolePanel(QWidget):
         # `close all` in a MATLAB script closes the figures drawn so far.
         self.interpreter.close_figures = self.figures.close_all
 
-    def _run_script(self, source: str, language: str = "auto") -> None:
+    def _run_script(self, source: str, language: str = "auto") -> bool:
+        """
+        Run the whole script from a clean slate.
+
+        The transcript and the previous run's figures are cleared first, so
+        running a script twice shows one run's output, not two. Before the
+        figures go, any that were never saved are offered for saving. Lines
+        typed at the prompt are not affected: they still append.
+
+        Returns False if the user cancelled, in which case nothing ran and
+        nothing was cleared.
+        """
+        saved = self._offer_to_save_figures()
+        if saved is None:
+            return False
         self._tabs.setCurrentIndex(0)
-        self.console.run_script(source, language)
+        self.console.clear_transcript()
+        if saved:
+            self.console.note(
+                f"Saved {len(saved)} figure{'s' if len(saved) != 1 else ''} "
+                f"from the last run to {saved[0].parent}: "
+                + ", ".join(p.name for p in saved))
+        self.figures.begin_script_run()
+        try:
+            self.console.run_script(source, language)
+        finally:
+            self.figures.end_script_run()
         self.workspace.refresh()
+        return True
+
+    def _offer_to_save_figures(self) -> list[Path] | None:
+        """
+        Ask whether the last run's unsaved figures should be kept.
+
+        Returns the files written (empty when there was nothing to save or
+        the user chose to discard), or None if the user cancelled the run.
+        """
+        unsaved = self.figures.script_figures(unsaved=True)
+        if not unsaved:
+            return []
+        choice = self._ask_to_save_figures(len(unsaved))
+        if choice == "cancel":
+            return None
+        if choice == "discard":
+            return []
+        folder = self._choose_figure_folder()
+        if folder is None:
+            return None
+        return self.figures.save_figures(unsaved, folder)
+
+    def _ask_to_save_figures(self, count: int) -> str:
+        """'save', 'discard' or 'cancel'. A method so tests can answer it."""
+        plural = "s" if count != 1 else ""
+        box = QMessageBox(
+            QMessageBox.Question, "Save figures?",
+            f"The last run drew {count} figure{plural} that "
+            f"{'have' if count != 1 else 'has'} not been saved. Running the "
+            f"script again replaces {'them' if count != 1 else 'it'}.",
+            QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel, self)
+        names = f"{PLACEHOLDER_STEM}_1.png" + (
+            f", {PLACEHOLDER_STEM}_2.png{' …' if count > 2 else ''}"
+            if count > 1 else "")
+        box.setInformativeText(
+            f"Save keeps {'them' if count != 1 else 'it'} as {names} in a "
+            f"folder you choose; names already taken there are skipped.")
+        box.setDefaultButton(QMessageBox.Save)
+        answer = box.exec()
+        return {QMessageBox.Save: "save",
+                QMessageBox.Discard: "discard"}.get(answer, "cancel")
+
+    def _choose_figure_folder(self) -> Path | None:
+        """Where unsaved figures go: the script's own folder, by default."""
+        start = self.editor.path.parent if self.editor.path else Path.home()
+        folder = QFileDialog.getExistingDirectory(
+            self, "Save figures to", str(start))
+        return Path(folder) if folder else None
 
     # ── outside access ──────────────────────────────────────────
 

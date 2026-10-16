@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QPushButton,
+    QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -50,10 +51,15 @@ class WorkspaceWidget(QWidget):
         row = QHBoxLayout()
         row.addWidget(QLabel("Workspace"))
         row.addStretch()
+        # Sized by its own label, not a pixel cap. Buttons wear the sign
+        # font (condensed, uppercase, bold) plus 12 px padding and a 2 px
+        # border, so an 80 px cap cut "CLEAR ALL" off; a fixed policy keeps
+        # it at its hint and lets the stretch give way when the pane narrows.
         clear = QPushButton("Clear all")
-        clear.setMaximumWidth(80)
+        clear.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         clear.clicked.connect(self._clear)
         row.addWidget(clear)
+        self._clear_button = clear
         layout.addLayout(row)
 
         self._table = QTableWidget(0, 3)

@@ -34,6 +34,13 @@ class FigureView(QWidget):
     def __init__(self, spec: FigureSpec, parent=None) -> None:
         super().__init__(parent)
         self.spec = spec
+        #: Kept by the figure area: the number on the figure's tab, whether it
+        #: has been written to disk, and whether a script run (rather than
+        #: the prompt) drew it — a script's figures are its output, replaced
+        #: by the next run, while a figure typed at the prompt is kept.
+        self.number = 0
+        self.saved = False
+        self.from_script = False
         layout = QVBoxLayout(self)
         layout.setContentsMargins(2, 2, 2, 2)
 

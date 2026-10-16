@@ -551,3 +551,19 @@ block, `balred`/Hankel, PRBS and chirp sources, and the script editor — keep t
 
 **What I would not cut:** Phase 1. Every hour spent on features before the 6 wrong transfer
 functions and the truncated Bode plots are fixed is an hour spent making a confident liar.
+
+## Part 6 — Backlog: large features, not scheduled
+
+Written down 2026-10-16 from a survey of Octave, Scilab/Xcos, OpenModelica, Simulink, Pluto and bdsim.
+None of these is in the current round.
+
+| Feature | What it means | Who does it |
+|---|---|---|
+| Symbolic maths | `syms s`, `laplace`, `ilaplace`, `simplify`, `subs` on formulas instead of numbers, via SymPy (already a dependency for block algebra). Today `syms` is refused. | MATLAB Symbolic Toolbox, Octave `symbolic` |
+| Code-first models | Build a Model-tab diagram from a script (`m = Model(); m.add(Gain(2)); m.connect(...)`), round-tripping with the canvas; export diagrams to SVG/Graphviz. | bdsim |
+| Stiff solvers + events | BDF/Radau via `solve_ivp` for stiff models, zero-crossing detection for relay/saturation/switch blocks, progress + abort on long runs. | Simulink `ode15s`, OpenModelica DASSL |
+| Browser build | Run the Qt-free core (numpy/scipy, FigureSpec sinks) in a web page via Pyodide — nothing to install. | mat2py, Octave Online |
+
+Deferred medium features (wanted, not crucial): variable editor, compare simulation runs,
+model workspace + parameter sweep, log a signal from a wire, `sim('model.fmdl')`/`set_param`
+from scripts, live parameter sliders.

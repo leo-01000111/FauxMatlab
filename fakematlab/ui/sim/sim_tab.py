@@ -570,18 +570,21 @@ def course_loop() -> SimModel:
 
     Opening on a working loop rather than an empty canvas means the first
     thing anyone does is press Run and see a step response.
+
+    No Scope block. Every signal a run produces is logged and can be picked
+    in the scope pane below the canvas, so a Scope block here only duplicated
+    that pane — and wired to ``K2``, it drew the controller effort that the
+    pane's own default (``r`` and ``G``) deliberately leaves out. The block
+    type stays in the palette for models that want a named view.
     """
     m = SimModel("course loop")
     m.add("Step", "r", x=-320, y=0, step_time=0.0)
     m.add("Sum", "e", x=-180, y=0, signs="+-")
     m.add("PID", "K2", x=-40, y=0, Kp=2.0, Ki=1.0)
     m.add("TransferFcn", "G", x=120, y=0, num="1", den="1, 1, 0")
-    m.add("Scope", "scope", x=280, y=0, n_inputs=2, title="Loop")
 
     m.connect("r", "e.in1")
     m.connect("e", "K2")
     m.connect("K2", "G")
     m.connect("G", "e.in2")
-    m.connect("G", "scope.in1")
-    m.connect("K2", "scope.in2")
     return m

@@ -170,6 +170,28 @@ def test_buttons_get_the_sign_face_when_polished(app):
     button.close()
 
 
+def test_the_console_clear_buttons_fit_their_labels(app):
+    """
+    The sign face is wide: uppercase, bold, padded 12 px a side. A pixel cap
+    of 80 px cut "CLEAR ALL" off, so the buttons are sized by their labels —
+    and still are when the pane they sit in is narrowed.
+    """
+    from fakematlab.console.interpreter import Interpreter
+    from fakematlab.ui.console.console_widget import ConsoleWidget
+    from fakematlab.ui.console.workspace_widget import WorkspaceWidget
+
+    interpreter = Interpreter()
+    for widget in (WorkspaceWidget(interpreter), ConsoleWidget(interpreter)):
+        widget.resize(160, 300)
+        widget.show()
+        app.processEvents()
+        button = widget._clear_button
+        assert button.font().family() == theme.SANS
+        assert button.width() >= button.sizeHint().width(), button.text()
+        widget.close()
+        widget.deleteLater()
+
+
 def test_the_main_window_offers_a_theme_menu(app, recorded):
     from fakematlab.core.architecture import CourseArchitecture
     from fakematlab.core.tf_utils import second_order, unity

@@ -52,6 +52,18 @@ def test_default_model_is_valid(canvas):
     assert canvas.validate() == ""
 
 
+def test_default_model_has_no_scope_block(canvas):
+    """
+    The scope pane already shows any logged signal, so the starter loop does
+    not carry a Scope block — and leaves no wire pointing at one.
+    """
+    types = {b.type_name for b in canvas.model}
+    assert "Scope" not in types
+    ids = set(canvas.model.blocks)
+    assert all(c.src.block in ids and c.dst.block in ids
+               for c in canvas.model.connections)
+
+
 def test_adding_a_block_updates_model_and_scene(canvas):
     before = len(canvas.model)
     canvas.add_block("Gain")
@@ -103,9 +115,6 @@ def test_moving_a_block_is_undoable(canvas):
 def test_wiring_two_ports_connects_them(canvas):
     canvas.add_block("Gain")
     gain_id = [b for b in canvas.model.blocks if b.startswith("Gain")][0]
-    canvas.model.remove("scope")
-    canvas.rebuild()
-
     before = len(canvas.model.connections)
     canvas._start_wire(canvas._blocks["K2"].ports[("out", False)])
     canvas._finish_wire(canvas._blocks[gain_id].ports[("in", True)])
@@ -304,7 +313,8 @@ def test_scope_shows_the_channels_a_run_logged(app):
 
     assert set(scope._checks) == set(result.signals)
     # The reference and the plant output are what a loop is judged on, so they
-    # are the default even though the Scope block itself is wired to G and K2.
+    # are the default. The starter loop has no Scope block: every signal is
+    # logged, so the pane can show any of them without one.
     shown = {n for n, c in scope._checks.items() if c.isChecked()}
     assert shown == {"r.out", "G.out"}
     scope.deleteLater()
