@@ -170,10 +170,10 @@ class ConsoleWidget(QWidget):
         self.executed.emit(result)
         return result
 
-    def run_script(self, source: str) -> list[Result]:
+    def run_script(self, source: str, language: str = "auto") -> list[Result]:
         """Run a whole script, echoing each statement as it goes."""
         results = []
-        for result in self.interpreter.run_script(source):
+        for result in self.interpreter.run_script(source, language):
             self._echo(PROMPT + result.source.splitlines()[0]
                        + (" …" if "\n" in result.source else ""), "prompt")
             shown = result.display()

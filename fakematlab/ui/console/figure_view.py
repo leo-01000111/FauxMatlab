@@ -52,10 +52,29 @@ class FigureView(QWidget):
                            self.spec.ylabel)
         plot = widget.getPlotItem()
         plot.addLegend(offset=(-10, 10))
+        logx = bool(self.spec.extra.get("logx"))
+        logy = bool(self.spec.extra.get("logy"))
         for i, trace in enumerate(self.spec.traces):
-            plot.plot(trace.x, trace.y, pen=_pen(i, trace.style),
-                      name=trace.label or None)
-        add_hline(plot, 0.0, role_colour("muted"), width=0.6)
+            x, y = trace.x, trace.y
+            if logx or logy:       # a log axis cannot show zero or negatives
+                keep = np.ones(len(x), bool)
+                if logx:
+                    keep &= x > 0
+                if logy:
+                    keep &= y > 0
+                x, y = x[keep], y[keep]
+            if trace.style == "scatter":
+                plot.plot(x, y, pen=None, symbol="o", symbolSize=6,
+                          symbolPen=curve_pen(i, 1.4),
+                          name=trace.label or None)
+            else:
+                plot.plot(x, y, pen=_pen(i, trace.style),
+                          name=trace.label or None)
+        if logx or logy:
+            plot.setLogMode(x=logx, y=logy)
+        else:
+            add_hline(plot, 0.0, role_colour("muted"), width=0.6)
+        _limits(plot, self.spec)
         layout.addWidget(widget)
 
     def _bode(self, layout) -> None:
@@ -138,6 +157,7 @@ class FigureView(QWidget):
         add_hline(plot, 0.0, role_colour("muted"), width=0.6)
         add_vline(plot, 0.0, role_colour("muted"), width=0.6)
         _frame(plot, self.spec)
+        _limits(plot, self.spec)
         layout.addWidget(widget)
 
     def _rlocus(self, layout) -> None:
@@ -157,6 +177,16 @@ class FigureView(QWidget):
                 f"{self.spec.extra.get('omega_marginal', float('nan')):.4g}")
         _frame(plot, self.spec)
         layout.addWidget(widget)
+
+
+def _limits(plot, spec: FigureSpec) -> None:
+    """Axis limits a script set with ``axis``, ``xlim`` or ``ylim``."""
+    xlim = spec.extra.get("xlim")
+    ylim = spec.extra.get("ylim")
+    if xlim is not None:
+        plot.setXRange(float(xlim[0]), float(xlim[1]), padding=0)
+    if ylim is not None:
+        plot.setYRange(float(ylim[0]), float(ylim[1]), padding=0)
 
 
 def _frame(plot, spec: FigureSpec) -> None:

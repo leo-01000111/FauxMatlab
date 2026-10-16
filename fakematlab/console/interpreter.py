@@ -31,6 +31,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .api import build_namespace, command_names
+from .figures import set_figure_sink
 
 
 @dataclass
@@ -66,8 +67,13 @@ class Interpreter:
 
     def __init__(self, extra: dict[str, Any] | None = None) -> None:
         self.namespace = build_namespace(extra)
+        #: The presets, by identity — a MATLAB script may reuse their names.
+        self._presets = dict(self.namespace)
         self._commands = command_names()
         self.history: list[str] = []
+        #: Set by the UI: what ``close all`` in a MATLAB script calls.
+        self.close_figures = None
+        self._matlab = None
 
     # ── execution ───────────────────────────────────────────────
 
@@ -120,14 +126,21 @@ class Interpreter:
         result.output = buffer.getvalue()
         return result
 
-    def run_script(self, source: str) -> list[Result]:
+    def run_script(self, source: str, language: str = "auto") -> list[Result]:
         """
         Run a whole script, one top-level statement at a time.
+
+        ``language`` is ``"matlab"``, ``"python"`` or ``"auto"`` — which
+        guesses from the text, so a pasted ``.m`` file just runs.
 
         Statement by statement rather than in one block so that output appears
         in order and a failure reports *which* line stopped it — running the
         file as a single exec gives one traceback and no partial results.
         """
+        from .matlab import looks_like_matlab
+        if language == "matlab" or (language == "auto"
+                                    and looks_like_matlab(source)):
+            return self.run_matlab(source)
         try:
             tree = ast.parse(source)
         except SyntaxError as exc:
@@ -146,6 +159,88 @@ class Interpreter:
                 break
         return results
 
+    def run_matlab(self, source: str) -> list[Result]:
+        """
+        Translate a MATLAB script and run it, statement by statement.
+
+        Figures are collected while it runs — so ``hold on``, ``title`` and
+        ``legend`` can amend a plot already made — and drawn at the end, even
+        if a statement fails part-way. Errors name the MATLAB line.
+        """
+        from .matlab import MatlabSyntaxError, translate
+        from .matlab_runtime import ScriptReturn
+
+        try:
+            chunks = translate(source)
+        except MatlabSyntaxError as exc:
+            lines = source.splitlines()
+            text = lines[exc.line - 1].strip() if 0 < exc.line <= len(
+                lines) else ""
+            return [Result(text or source,
+                           error=f"Error: {exc.message} (line {exc.line})",
+                           hint=f"  → line {exc.line}:  {text}" if text
+                           else "")]
+
+        runtime = self._matlab_runtime()
+        runtime.begin()
+        previous = set_figure_sink(lambda spec: runtime.figures.collect(spec))
+        line_maps: dict[str, list[int]] = {}
+        results: list[Result] = []
+        try:
+            for k, chunk in enumerate(chunks):
+                filename = f"<matlab:{k}>"
+                line_maps[filename] = chunk.lines
+                result = Result(chunk.matlab)
+                if not chunk.function:
+                    self.history.append(chunk.matlab)
+                buffer = io.StringIO()
+                try:
+                    code = compile(chunk.python, filename, "exec")
+                    with redirect_stdout(buffer), redirect_stderr(buffer):
+                        exec(code, self.namespace)
+                except ScriptReturn:
+                    result.output = buffer.getvalue()
+                    results.append(result)
+                    break
+                except SystemExit:
+                    raise
+                except SyntaxError as exc:              # our bug, not theirs
+                    result.output = buffer.getvalue()
+                    result.error = (f"Error: this line could not be "
+                                    f"translated ({exc.msg}).")
+                    results.append(result)
+                    break
+                except BaseException as exc:            # noqa: BLE001
+                    result.output = buffer.getvalue()
+                    line = _matlab_line(exc, line_maps) or chunk.first
+                    result.error = (f"Error in line {line}: "
+                                    f"{_matlab_message(exc)}")
+                    if not _is_matlab_error(exc):
+                        result.hint = _runtime_hint(exc, self.namespace)
+                    results.append(result)
+                    break
+                result.output = buffer.getvalue()
+                if not chunk.function:
+                    results.append(result)
+        finally:
+            set_figure_sink(previous)
+            figures = runtime.figures
+            if figures.close_requested and self.close_figures is not None:
+                self.close_figures()
+            for spec in figures.specs:
+                if spec.traces:
+                    previous(spec)
+        return results
+
+    def _matlab_runtime(self):
+        from .matlab_runtime import Runtime
+        if self._matlab is None or \
+                self.namespace.get("__ml__") is not self._matlab:
+            self._matlab = Runtime(self.namespace, base=self._presets,
+                                   clear=self.clear)
+            self.namespace["__ml__"] = self._matlab
+        return self._matlab
+
     # ── namespace ───────────────────────────────────────────────
 
     def variables(self) -> dict[str, Any]:
@@ -155,6 +250,7 @@ class Interpreter:
             if not name.startswith("_")
             and name not in self._commands
             and not _is_module(value)
+            and not getattr(value, "_ml_function", False)
         }
 
     def clear(self, *names: str) -> None:
@@ -291,6 +387,32 @@ def _runtime_hint(exc: BaseException, namespace: dict[str, Any]) -> str:
             # time, not parse time, and the syntax hints never see it.
             return "  → Python uses ** for powers: s**2, not s^2."
     return ""
+
+
+def _matlab_line(exc: BaseException,
+                 line_maps: dict[str, list[int]]) -> int | None:
+    """The MATLAB line behind the deepest translated frame of a traceback."""
+    found = None
+    tb = exc.__traceback__
+    while tb is not None:
+        name = tb.tb_frame.f_code.co_filename
+        if name in line_maps:
+            lines = line_maps[name]
+            if 0 < tb.tb_lineno <= len(lines):
+                found = lines[tb.tb_lineno - 1]
+        tb = tb.tb_next
+    return found
+
+
+def _is_matlab_error(exc: BaseException) -> bool:
+    from .matlab_runtime import MatlabError
+    return isinstance(exc, MatlabError)
+
+
+def _matlab_message(exc: BaseException) -> str:
+    if _is_matlab_error(exc):
+        return str(exc)
+    return _format_exception(exc)
 
 
 def _is_module(value: Any) -> bool:

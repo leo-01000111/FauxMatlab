@@ -74,6 +74,15 @@ workspace browser, history, tab completion and a script editor. `s` is the Lapla
 variable, so `G = 1/(s**2 + 2*s + 1)` works. The console shares live references with the
 GUI: setting a block at the prompt changes what every pane analyses.
 
+**MATLAB scripts run as written.** The prompt is Python, but the Script tab takes a pasted
+`.m` file and translates it: `[1 -2 3]` matrices, `^` and `'`, 1-based indexing with
+`end`, `a:b:c`, `if`/`for`/`while`/`switch`/`try` blocks, local functions, cells, structs and
+struct arrays, `hold on`/`grid on`/`close all`, and `[y, t] = step(G)` returning MATLAB's
+outputs in MATLAB's order without plotting. `legend`, `title`, `axis`, `bodeoptions` with
+phase matching, `fprintf`, `num2str` and `struct2table` behave as in MATLAB. An error names
+the MATLAB line, not the generated Python. *Auto* picks the language from the text; the
+selector beside Run overrides it.
+
 **A working Simulink.** Fifty block types, hierarchical subsystems, a drag-and-drop canvas
 with undo, RK4/RK45/Euler solvers, scopes, a properties inspector that leaves the diagram
 visible, and `linearize()` to pull a state-space model out of a nonlinear diagram. Wire two
@@ -161,7 +170,7 @@ rather than merely inaccurate.
 pytest
 ```
 
-817 tests, plus `ruff check .`. They are mostly *golden* tests: analytic values computed by
+858 tests, plus `ruff check .`. They are mostly *golden* tests: analytic values computed by
 hand or by an independent route, not snapshots of whatever the code printed first. The
 numeric signal solver and the symbolic one check each other; `python-control` acts as a
 third opinion.

@@ -13,6 +13,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
+    QComboBox,
     QFileDialog,
     QHBoxLayout,
     QLabel,
@@ -26,6 +27,7 @@ from PySide6.QtWidgets import (
 
 from ...console.figures import FigureSpec, set_figure_sink
 from ...console.interpreter import Interpreter
+from ...console.matlab import looks_like_matlab
 from .. import theme
 from ..design import EmptyState
 from .console_widget import ConsoleWidget
@@ -101,9 +103,14 @@ class ScriptEditor(QWidget):
     Deliberately minimal — no syntax highlighting, no project model. Its job
     is to let a sequence of commands be kept, edited and re-run without
     retyping, which is what a script is for.
+
+    It takes MATLAB or Python. *Auto* decides from the text, so a pasted
+    ``.m`` file runs as MATLAB; the selector is there for the rare script
+    that reads as both.
     """
 
-    run_requested = Signal(str)
+    #: (source, language) — language is "matlab" or "python".
+    run_requested = Signal(str, str)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -119,6 +126,17 @@ class ScriptEditor(QWidget):
             button = QPushButton(label)
             button.clicked.connect(slot)
             row.addWidget(button)
+        row.addSpacing(12)
+        row.addWidget(QLabel("Language"))
+        self._language = QComboBox()
+        for label, key in (("Auto", "auto"), ("MATLAB", "matlab"),
+                           ("Python", "python")):
+            self._language.addItem(label, key)
+        self._language.currentIndexChanged.connect(self._update_detected)
+        row.addWidget(self._language)
+        self._detected = QLabel("")
+        self._detected.setStyleSheet("color: palette(mid);")
+        row.addWidget(self._detected)
         row.addStretch()
         self._path_label = QLabel("untitled")
         self._path_label.setStyleSheet("color: palette(mid);")
@@ -128,11 +146,13 @@ class ScriptEditor(QWidget):
         self._editor = QPlainTextEdit()
         self._editor.setFont(theme.data_font(10))
         self._editor.setPlaceholderText(
-            "# Runs against the same workspace as the console.\n"
-            "G = tf([1], [1, 2, 1])\n"
-            "T = feedback(pid(Kp=2, Ki=1) * G, 1)\n"
-            "step(T)\n"
+            "% MATLAB or Python — paste a .m script and press Run.\n"
+            "s = tf('s');\n"
+            "G = 1/((s+1)*(0.5*s+1));\n"
+            "T = feedback(pid(2, 1)*G, 1);\n"
+            "step(G, T); legend('open loop', 'closed loop')\n"
             "stepinfo(T)")
+        self._editor.textChanged.connect(self._update_detected)
         layout.addWidget(self._editor, stretch=1)
         self._restyle()
         theme.notifier().changed.connect(self._restyle)
@@ -145,22 +165,48 @@ class ScriptEditor(QWidget):
             f"QPlainTextEdit {{ background: {t.surface}; color: {t.ink};"
             f" border: 2px solid {t.ink_muted}; }}")
 
+    def language(self) -> str:
+        """The language the next run will use: 'matlab' or 'python'."""
+        chosen = self._language.currentData()
+        if chosen != "auto":
+            return chosen
+        text = self._editor.toPlainText()
+        return "matlab" if text.strip() and looks_like_matlab(text) \
+            else "python"
+
+    def set_language(self, key: str) -> None:
+        index = self._language.findData(key)
+        if index >= 0:
+            self._language.setCurrentIndex(index)
+
+    def _update_detected(self, *_args) -> None:
+        auto = self._language.currentData() == "auto"
+        text = self._editor.toPlainText().strip()
+        name = "MATLAB" if self.language() == "matlab" else "Python"
+        self._detected.setText(f"(reads as {name})" if auto and text else "")
+
     def _run(self) -> None:
-        self.run_requested.emit(self._editor.toPlainText())
+        self.run_requested.emit(self._editor.toPlainText(), self.language())
 
     def _open(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self, "Open script", "", "Python scripts (*.py);;All files (*)")
+            self, "Open script", "",
+            "Scripts (*.m *.py);;MATLAB scripts (*.m);;Python scripts (*.py);;"
+            "All files (*)")
         if not path:
             return
         self._path = Path(path)
         self._editor.setPlainText(self._path.read_text(encoding="utf-8"))
         self._path_label.setText(self._path.name)
+        self.set_language({".m": "matlab", ".py": "python"}.get(
+            self._path.suffix.lower(), "auto"))
 
     def _save(self) -> None:
+        default = self._path or Path(
+            "script.m" if self.language() == "matlab" else "script.py")
         path, _ = QFileDialog.getSaveFileName(
-            self, "Save script", str(self._path or "script.py"),
-            "Python scripts (*.py)")
+            self, "Save script", str(default),
+            "MATLAB scripts (*.m);;Python scripts (*.py);;All files (*)")
         if not path:
             return
         self._path = Path(path)
@@ -216,10 +262,12 @@ class ConsolePanel(QWidget):
 
         # Plot commands draw into the figure dock from here on.
         set_figure_sink(self.figures.show_figure)
+        # `close all` in a MATLAB script closes the figures drawn so far.
+        self.interpreter.close_figures = self.figures.close_all
 
-    def _run_script(self, source: str) -> None:
+    def _run_script(self, source: str, language: str = "auto") -> None:
         self._tabs.setCurrentIndex(0)
-        self.console.run_script(source)
+        self.console.run_script(source, language)
         self.workspace.refresh()
 
     # ── outside access ──────────────────────────────────────────
