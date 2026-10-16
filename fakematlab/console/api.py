@@ -336,8 +336,37 @@ class _PlotPair(tuple):
         return f"<{self._what}: {len(self[1])} gains  —  unpack with a, b = ...>"
 
 
+def _split_trailing(systems, given, keyword: str):
+    """
+    Separate MATLAB's positional grid from the systems.
+
+    MATLAB writes ``step(G, t)``, ``step(G, Tfinal)`` and ``bode(G, w)`` with
+    the time or frequency grid as the last positional argument. Everything
+    after the systems that is not a system is taken as that grid; line-style
+    strings such as ``'r--'`` are accepted and ignored.
+    """
+    systems = list(systems)
+    while systems and isinstance(systems[-1], str):
+        systems.pop()
+    if systems and not isinstance(systems[-1], ctl.LTI):
+        if given is not None:
+            raise TypeError(f"the grid was given twice — positionally and "
+                            f"as {keyword}=")
+        given = systems.pop()
+    if not systems:
+        raise TypeError("no system given")
+    for sys in systems:
+        if not isinstance(sys, ctl.LTI):
+            raise TypeError(f"expected a system (tf or ss), got "
+                            f"{type(sys).__name__}")
+    if given is not None and not np.isscalar(given):
+        given = np.asarray(given, dtype=float).ravel()
+    return systems, given
+
+
 def step(*systems, t=None, plot: bool = True):
-    """Step response. Plots by default; returns ``(t, y)``."""
+    """Step response: ``step(G)``, ``step(G, t)`` or ``step(G, Tfinal)``."""
+    systems, t = _split_trailing(systems, t, "t")
     spec = FigureSpec("time", "Step Response", "Time (s)", "Amplitude")
     out = []
     for i, sys in enumerate(systems):
@@ -351,7 +380,8 @@ def step(*systems, t=None, plot: bool = True):
 
 
 def impulse(*systems, t=None, plot: bool = True):
-    """Impulse response."""
+    """Impulse response: ``impulse(G)``, ``impulse(G, t)`` or ``impulse(G, Tfinal)``."""
+    systems, t = _split_trailing(systems, t, "t")
     spec = FigureSpec("time", "Impulse Response", "Time (s)", "Amplitude")
     out = []
     for i, sys in enumerate(systems):
@@ -411,6 +441,7 @@ def ramp(sys, t=None, slope: float = 1.0, plot: bool = True):
 
 def bode(*systems, w=None, plot: bool = True):
     """Bode magnitude and phase. Returns ``(mag, phase_deg, omega)``."""
+    systems, w = _split_trailing(systems, w, "w")
     spec = FigureSpec("bode", "Bode Diagram", "ω (rad/s)", "")
     out = []
     for i, sys in enumerate(systems):
@@ -429,6 +460,7 @@ def bode(*systems, w=None, plot: bool = True):
 
 def nyquist(*systems, w=None, plot: bool = True):
     """Nyquist diagram, with the −1 point and the encirclement count."""
+    systems, w = _split_trailing(systems, w, "w")
     spec = FigureSpec("nyquist", "Nyquist Diagram", "Re", "Im")
     out = []
     for i, sys in enumerate(systems):
@@ -445,6 +477,7 @@ def nyquist(*systems, w=None, plot: bool = True):
 
 def nichols(*systems, w=None, plot: bool = True):
     """Nichols chart."""
+    systems, w = _split_trailing(systems, w, "w")
     spec = FigureSpec("xy", "Nichols Chart", "Phase (°)", "|L| (dB)")
     out = []
     for i, sys in enumerate(systems):
