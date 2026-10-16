@@ -1233,7 +1233,7 @@ class _Emitter:
         body_indent = i + 1
         if params:
             count = " + ".join(f"({_py_name(p)} is not None)" for p in params)
-            self._put(body_indent, f"nargin = {count}", f.line)
+            self._put(body_indent, f"nargin = int({count})", f.line)
         if "varargin" in f.params:
             self._put(body_indent, "varargin = list(varargin)", f.line)
             if params:

@@ -85,9 +85,30 @@ selector beside Run overrides it. Run starts from a clean slate: the transcript 
 previous run's figures are cleared first, and figures that were never saved are offered
 for saving as `figure_1.png`, `figure_2.png`, … — lines typed at the prompt still append.
 
+The editor highlights MATLAB, numbers its lines and completes names on Tab (variables,
+builtins, `.m` files in the folder). `%%` splits it into sections: Ctrl+Enter runs the one
+under the cursor, Ctrl+Shift+Enter runs it and moves on. Click the gutter for a breakpoint;
+F5 runs or continues, F10 steps, F11 steps into your functions, and while paused the prompt
+(`K>>`) and the workspace see the paused scope. Stop, Shift+F5 or Ctrl+C interrupts anything,
+`while true` included.
+
+**Beyond control.** Function files in the script's folder are called like MATLAB's (`cd`,
+`pwd`, `addpath`), and the signal-processing basics are there: `fft`/`ifft`, `filter`,
+`conv`, `butter`/`cheby1`/`ellip`, `freqz`, `findpeaks`, `audioread`/`audiowrite`/`sound`,
+`ode45`, `fzero`, `fminsearch`, `interp1`, `trapz`, `meshgrid`, `save`/`load` of `.mat`
+files, and real `subplot`, `stem`, `stairs`, `bar` and `histogram`.
+
+**Live scripts.** The Live tab holds code cells and text cells; output and figures stay
+under the cell that made them. Text takes `$…$` and `$$…$$` LaTeX, drawn in place, and
+`{{Kp}}` shows a workspace value. It opens MATLAB's `.mlx` files and plain-text live `.m`
+files, saves the latter, and *Export report* writes a `.tex` with its figures and builds the
+PDF if a TeX engine (tectonic, MiKTeX, TeX Live) is installed, or an HTML page if not.
+
 **Figures** sit under the command window. *Split* shows two side by side, *Undock* moves
 one into a window of its own (still live — pan, zoom, readouts) and *Dock* or closing that
-window brings it back; *Save…* writes a PNG.
+window brings it back; *Save…* or a right-click writes PNG, SVG or the data as CSV. The
+History tab beside the workspace keeps commands between sessions, and File ▸ Open recent
+lists the last scripts and models.
 
 **A working Simulink.** Fifty block types, hierarchical subsystems, a drag-and-drop canvas
 with undo, RK4/RK45/Euler solvers, scopes, a properties inspector that leaves the diagram
@@ -176,7 +197,7 @@ rather than merely inaccurate.
 pytest
 ```
 
-870 tests, plus `ruff check .`. They are mostly *golden* tests: analytic values computed by
+1049 tests, plus `ruff check .`. They are mostly *golden* tests: analytic values computed by
 hand or by an independent route, not snapshots of whatever the code printed first. The
 numeric signal solver and the symbolic one check each other; `python-control` acts as a
 third opinion.

@@ -12,15 +12,17 @@ from __future__ import annotations
 from collections.abc import Iterable
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QEventLoop, Qt, Signal
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
+    QApplication,
     QComboBox,
     QFileDialog,
     QHBoxLayout,
     QLabel,
     QMessageBox,
-    QPlainTextEdit,
     QPushButton,
+    QSizePolicy,
     QSplitter,
     QTabWidget,
     QToolButton,
@@ -28,15 +30,21 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ...console import tracer as dbg
 from ...console.figures import FigureSpec, set_figure_sink
-from ...console.interpreter import Interpreter
+from ...console.interpreter import Interpreter, Result
 from ...console.matlab import looks_like_matlab
-from .. import theme
+from ..code import (
+    CodeEditor,
+    MatlabHighlighter,
+    completion_candidates,
+    section_source,
+)
 from ..design import TIGHT, EmptyState
 from .console_widget import ConsoleWidget
 from .figure_view import FigureView, export_figure
 from .history_widget import HistoryWidget
-from .live_editor import LiveScriptEditor
+from .live_editor import LiveScriptEditor, set_code_highlighter
 from .workspace_widget import WorkspaceWidget
 
 #: Beyond this many open figures the oldest is closed, the way MATLAB reuses
@@ -435,11 +443,14 @@ class FigureArea(QWidget):
 
 class ScriptEditor(QWidget):
     """
-    A plain editor that runs its contents against the console's namespace.
+    An editor that runs its contents against the console's namespace.
 
-    Deliberately minimal — no syntax highlighting, no project model. Its job
-    is to let a sequence of commands be kept, edited and re-run without
-    retyping, which is what a script is for.
+    Its job is to let a sequence of commands be kept, edited and re-run
+    without retyping, which is what a script is for — with what that needs
+    in practice: highlighting, line numbers, ``%%`` sections run on their
+    own (Ctrl+Enter), Tab completion, and a debugger (click the gutter for a
+    breakpoint; F5 continues, F10 steps, F11 steps in, Shift+F5 stops).
+    Still no project model.
 
     It takes MATLAB or Python. *Auto* decides from the text, so a pasted
     ``.m`` file runs as MATLAB; the selector is there for the rare script
@@ -450,6 +461,10 @@ class ScriptEditor(QWidget):
     run_requested = Signal(str, str)
     #: A file was opened or saved — the recent-files list listens.
     file_used = Signal(object)                 # Path
+    #: (source padded to its lines, language, move on afterwards).
+    section_requested = Signal(str, str, bool)
+    #: Stop, Continue / Step / Step in: "stop", "continue", "step", "step_in".
+    debug_requested = Signal(str)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -458,13 +473,51 @@ class ScriptEditor(QWidget):
 
         row = QHBoxLayout()
         run = QPushButton("▶ Run (F5)")
-        run.setShortcut("F5")
         run.setToolTip(
-            "Run the whole script (F5). The console and the last run's "
-            "figures are cleared first; unsaved figures are offered for "
-            "saving.")
+            "Run the whole script (F5), or continue when paused. The console "
+            "and the last run's figures are cleared first; unsaved figures "
+            "are offered for saving.")
         run.clicked.connect(self._run)
         row.addWidget(run)
+        self._run_button = run
+        section = QPushButton("Run section")
+        section.setToolTip(
+            "Run the %% section the cursor is in (Ctrl+Enter); "
+            "Ctrl+Shift+Enter runs it and moves to the next. Appends to the "
+            "console, like typed commands.")
+        section.clicked.connect(lambda: self.run_section(False))
+        row.addWidget(section)
+        self._section_button = section
+
+        def debug(label: str, action: str, tip: str) -> QToolButton:
+            button = QToolButton()
+            button.setText(label)
+            button.setToolTip(tip)
+            button.setEnabled(False)
+            button.clicked.connect(
+                lambda: self.debug_requested.emit(action))
+            row.addWidget(button)
+            return button
+
+        self._stop_button = debug("Stop", "stop",
+                                  "Stop the run (Shift+F5)")
+        self._step_button = debug("Step", "step",
+                                  "Run the paused line (F10)")
+        self._step_in_button = debug(
+            "Step in", "step_in",
+            "Run the paused line, stopping inside a function it calls (F11)")
+        # What a run said, beside the controls that started it. Ignored
+        # width: a long message must not widen the window.
+        self._status = QLabel("")
+        self._status.setStyleSheet("color: palette(mid);")
+        self._status.setSizePolicy(QSizePolicy.Ignored,
+                                   QSizePolicy.Preferred)
+        row.addWidget(self._status, stretch=1)
+        layout.addLayout(row)
+
+        # A second row for the file and the language, so the run and debug
+        # controls do not set the window's minimum width.
+        row = QHBoxLayout()
         for label, slot in (("Open…", self._open), ("Save…", self._save)):
             button = QPushButton(label)
             button.clicked.connect(slot)
@@ -486,8 +539,8 @@ class ScriptEditor(QWidget):
         row.addWidget(self._path_label)
         layout.addLayout(row)
 
-        self._editor = QPlainTextEdit()
-        self._editor.setFont(theme.data_font(10))
+        self._editor = CodeEditor()
+        self._editor.run_section_requested.connect(self.run_section)
         self._editor.setPlaceholderText(
             "% MATLAB or Python — paste a .m script and press Run.\n"
             "s = tf('s');\n"
@@ -497,16 +550,16 @@ class ScriptEditor(QWidget):
             "stepinfo(T)")
         self._editor.textChanged.connect(self._update_detected)
         layout.addWidget(self._editor, stretch=1)
-        self._restyle()
-        theme.notifier().changed.connect(self._restyle)
 
         self._path: Path | None = None
 
-    def _restyle(self, *_args) -> None:
-        t = theme.tokens()
-        self._editor.setStyleSheet(
-            f"QPlainTextEdit {{ background: {t.surface}; color: {t.ink};"
-            f" border: 2px solid {t.ink_muted}; }}")
+    @property
+    def code(self) -> CodeEditor:
+        """The text area: breakpoints, highlights, sections."""
+        return self._editor
+
+    def set_completion_source(self, source) -> None:
+        self._editor.set_completion_source(source)
 
     def language(self) -> str:
         """The language the next run will use: 'matlab' or 'python'."""
@@ -525,11 +578,41 @@ class ScriptEditor(QWidget):
     def _update_detected(self, *_args) -> None:
         auto = self._language.currentData() == "auto"
         text = self._editor.toPlainText().strip()
-        name = "MATLAB" if self.language() == "matlab" else "Python"
+        language = self.language()
+        name = "MATLAB" if language == "matlab" else "Python"
         self._detected.setText(f"(reads as {name})" if auto and text else "")
+        self._editor.set_language(language)
 
     def _run(self) -> None:
         self.run_requested.emit(self._editor.toPlainText(), self.language())
+
+    def run_section(self, advance: bool = False) -> None:
+        """Ask for the section under the cursor to run (then move on)."""
+        text = self._editor.toPlainText()
+        section = self._editor.current_section()
+        self.section_requested.emit(section_source(text, section),
+                                    self.language(), advance)
+
+    def next_section(self) -> None:
+        """Put the cursor at the start of the section after the current."""
+        sections = self._editor.sections()
+        current = self._editor.current_section()
+        later = [s for s in sections if s.start > current.start]
+        if later:
+            self._editor.goto_line(later[0].start)
+
+    def set_status(self, text: str) -> None:
+        self._status.setText(text)
+
+    def set_run_state(self, running: bool, paused: bool) -> None:
+        """Which buttons apply: Run is Continue while paused."""
+        self._run_button.setText("▶ Continue (F5)" if paused
+                                 else "▶ Run (F5)")
+        self._run_button.setEnabled(paused or not running)
+        self._section_button.setEnabled(not running)
+        self._stop_button.setEnabled(running)
+        self._step_button.setEnabled(paused)
+        self._step_in_button.setEnabled(paused)
 
     def _open(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -543,6 +626,7 @@ class ScriptEditor(QWidget):
         """Open a script into the editor, choosing its language by suffix."""
         self._path = Path(path)
         self._editor.setPlainText(self._path.read_text(encoding="utf-8"))
+        self._editor.set_breakpoints(())
         self._path_label.setText(self._path.name)
         self.set_language({".m": "matlab", ".py": "python"}.get(
             self._path.suffix.lower(), "auto"))
@@ -615,12 +699,20 @@ class ConsolePanel(QWidget):
 
         self.editor = ScriptEditor()
         self.editor.run_requested.connect(self._run_script)
+        self.editor.section_requested.connect(self._run_section)
+        self.editor.debug_requested.connect(self._debug)
+        self.editor.set_completion_source(
+            lambda prefix: completion_candidates(
+                prefix, self.interpreter, folder=self._folder(),
+                language=self.editor.language()))
+        self.editor.code.breakpoints_changed.connect(self._set_breakpoints)
         self._tabs.addTab(self.editor, "Script")
 
         # Live scripts: cells of code and formatted text, run in this same
         # workspace. `live.folder` is its current folder, as `editor.path`
         # is the plain script's file.
         self.live = LiveScriptEditor(self.interpreter)
+        set_code_highlighter(MatlabHighlighter)  # its cells read as MATLAB
         self.live.ran.connect(self.workspace.refresh)
         self.live.figure_requested.connect(self.figures.show_figure)
         self._tabs.addTab(self.live, "Live")
@@ -635,6 +727,8 @@ class ConsolePanel(QWidget):
         # Last session's commands are on ↑ as well as in the panel.
         self.interpreter.history[:0] = self.history.commands()
         self.console._history_index = len(self.interpreter.history)
+        self.console.stop_requested.connect(self.stop)
+        self.console.running_changed.connect(self._sync_run_state)
         self.workspace.open_system.connect(self.open_system)
         self.workspace.open_model.connect(self.open_model)
 
@@ -642,6 +736,35 @@ class ConsolePanel(QWidget):
         set_figure_sink(self.figures.show_figure)
         # `close all` in a MATLAB script closes the figures drawn so far.
         self.interpreter.close_figures = self.figures.close_all
+
+        # Stopping and debugging: user code runs on this (the GUI) thread,
+        # and the tracer gives the event loop a turn while it does — see
+        # fakematlab.console.tracer for why not a worker thread.
+        tracer = self.interpreter.tracer
+        tracer.poll = QApplication.processEvents
+        tracer.on_pause = self._on_pause
+        self._pause_loop: QEventLoop | None = None
+        self._pause_action = dbg.CONTINUE
+        app = QApplication.instance()
+        if app is not None:
+            # Quitting mid-run must unwind the script, or it would keep the
+            # process alive after the last window closed.
+            app.lastWindowClosed.connect(self.stop)
+        for keys, slot in (("F5", self._run_or_continue),
+                           ("Shift+F5", self.stop),
+                           ("F10", lambda: self._debug(dbg.STEP)),
+                           ("F11", lambda: self._debug(dbg.STEP_IN))):
+            shortcut = QShortcut(QKeySequence(keys), self)
+            shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+            shortcut.activated.connect(slot)
+
+    def _folder(self) -> Path:
+        """The current folder: the script's, or where the app started."""
+        return self.editor.path.parent if self.editor.path else Path.cwd()
+
+    @property
+    def running(self) -> bool:
+        return self.interpreter.tracer.running
 
     def _run_script(self, source: str, language: str = "auto") -> bool:
         """
@@ -653,8 +776,13 @@ class ConsolePanel(QWidget):
         typed at the prompt are not affected: they still append.
 
         Returns False if the user cancelled, in which case nothing ran and
-        nothing was cleared.
+        nothing was cleared — or if something is already running (Run while
+        paused continues it instead).
         """
+        if self.running:
+            if self.interpreter.tracer.paused is not None:
+                self._debug(dbg.CONTINUE)
+            return False
         saved = self._offer_to_save_figures()
         if saved is None:
             return False
@@ -665,17 +793,117 @@ class ConsolePanel(QWidget):
                 f"Saved {len(saved)} figure{'s' if len(saved) != 1 else ''} "
                 f"from the last run to {saved[0].parent}: "
                 + ", ".join(p.name for p in saved))
+        self.console.folder = self._folder()
+        self.editor.code.set_error_line(None)
         self.figures.begin_script_run()
         self._running_script = True
         path = self.editor.path
         self.interpreter.script_folder = str(path.parent) if path else None
         try:
-            self.console.run_script(source, language)
+            results = self.console.run_script(source, language,
+                                              debuggable=True)
         finally:
             self._running_script = False
             self.figures.end_script_run()
+        self._show_outcome(results)
         self.workspace.refresh()
         return True
+
+    def _run_section(self, source: str, language: str = "auto",
+                     advance: bool = False) -> bool:
+        """
+        Run one ``%%`` section, appending to the console as typed commands
+        do: no clearing, no save prompt, and its figures are not a run's.
+        ``source`` is padded to the section's lines, so errors and
+        breakpoints use the editor's line numbers.
+        """
+        if self.running:
+            return False
+        self.console.folder = self._folder()
+        self.editor.code.set_error_line(None)
+        self._running_script = True            # not a typed command
+        try:
+            results = self.console.run_script(source, language,
+                                              debuggable=True)
+        finally:
+            self._running_script = False
+        self._show_outcome(results, section=True)
+        self.workspace.refresh()
+        if advance:
+            self.editor.next_section()
+        return True
+
+    def _show_outcome(self, results: list[Result],
+                      section: bool = False) -> None:
+        """Tint the line a run failed or was stopped on, and say so."""
+        failed = next((r for r in results if r.error), None)
+        what = "Section" if section else "Run"
+        if failed is None:
+            self.editor.set_status(f"{what} finished.")
+            return
+        if failed.line:
+            self.editor.code.set_error_line(failed.line)
+        where = f" at line {failed.line}" if failed.line else ""
+        stopped = failed.error.startswith(str(dbg.Interrupted(None)))
+        self.editor.set_status(f"{what} {'stopped' if stopped else 'failed'}"
+                               f"{where} — see the Console tab.")
+
+    # ── stopping and debugging ──────────────────────────────────
+
+    def stop(self) -> None:
+        """Interrupt whatever runs: a script, a section, a command."""
+        self.interpreter.tracer.request_stop()
+        self._debug(dbg.STOP)
+
+    def _run_or_continue(self) -> None:
+        if self.interpreter.tracer.paused is not None:
+            self._debug(dbg.CONTINUE)
+        elif not self.running:
+            self.editor._run()
+
+    def _debug(self, action: str) -> None:
+        """Leave the pause with Continue, Step, Step in or Stop."""
+        if action == dbg.STOP and self._pause_loop is None:
+            self.interpreter.tracer.request_stop()
+            return
+        if self._pause_loop is not None:
+            self._pause_action = action
+            self._pause_loop.quit()
+
+    def _set_breakpoints(self, lines: set[int]) -> None:
+        self.interpreter.tracer.breakpoints = set(lines)
+
+    def _on_pause(self, pause: dbg.Pause) -> str:
+        """
+        The tracer reached a breakpoint (or a step): show where, then wait
+        in a nested event loop — the prompt evaluates in the paused scope
+        meanwhile — until Continue, Step, Step in or Stop.
+        """
+        self.console.show_output(self.interpreter.drain_output())
+        self.console.note(
+            f"Paused at line {pause.line} — F5 continue, F10 step, "
+            f"F11 step in, Shift+F5 stop. The prompt sees this scope.")
+        if pause.debuggable:
+            self.editor.code.set_current_line(pause.line)
+        self.console.set_debugging(True)
+        self.workspace.refresh()
+        self._sync_run_state()
+        self._pause_action = dbg.CONTINUE
+        if not self.interpreter.tracer.stop_requested:
+            self._pause_loop = QEventLoop()
+            self._pause_loop.exec()
+            self._pause_loop = None
+        self.editor.code.set_current_line(None)
+        self.console.set_debugging(False)
+        self.editor.set_run_state(True, False)
+        return self._pause_action
+
+    def _sync_run_state(self, running: bool | None = None) -> None:
+        tracer = self.interpreter.tracer
+        if running is None:
+            running = tracer.running
+        self.editor.set_run_state(running, self._pause_loop is not None
+                                  or tracer.paused is not None)
 
     def _offer_to_save_figures(self) -> list[Path] | None:
         """
@@ -734,8 +962,7 @@ class ConsolePanel(QWidget):
     def recall(self, command: str) -> None:
         """Put a command back at the prompt, ready to edit."""
         self._tabs.setCurrentIndex(0)
-        # The input line is the console widget's own; there is no setter.
-        self.console._input.setText(command)
+        self.console.set_input(command)
         self.console.focus_input()
 
     def show_history(self) -> None:
