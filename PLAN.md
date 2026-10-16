@@ -579,3 +579,11 @@ from scripts, live parameter sliders.
    missing MiKTeX's install folder, the background build failing silently, or the .tex not
    compiling. Make the failure visible and the success path work with MiKTeX and tectonic.
 3. **Model canvas: middle-mouse-button drag pans the canvas**, as in Simulink.
+4. **Script re-run figure bugs** (the clear-and-rerun from round one):
+   - Figure numbers keep counting up across runs (3, 4 instead of 1, 2). A full Run that
+     clears the previous run's figures should restart numbering, as MATLAB's `close all`
+     does.
+   - Split puts them in the wrong order after several runs: run 1 gives 1 left / 2 right, run
+     3 gives 6 left / 5 right. The older figure should stay left, the newer one right.
+   - *Move ↔* does nothing different from pressing Split again when already split. It should
+     swap the shown figure to the other side (or be removed if Split already covers it).
