@@ -39,6 +39,31 @@ def _run_check(argv: list[str]) -> int:
     return len(report.failures)
 
 
+#: The taskbar identity Windows groups this program's windows under.
+APP_USER_MODEL_ID = "LeonGorecki.Evans"
+
+
+def _claim_taskbar_identity() -> None:
+    """
+    Give the taskbar button Evans' own icon on Windows.
+
+    Without an explicit AppUserModelID, Windows groups the window under the
+    executable that started it. From a checkout that is python.exe, so the
+    taskbar showed Python's icon whatever icon the window set. Must run
+    before the first window is created.
+    """
+    if sys.platform != "win32":
+        return
+    import ctypes
+
+    try:
+        set_id = ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID
+        set_id.argtypes = [ctypes.c_wchar_p]
+        set_id(APP_USER_MODEL_ID)
+    except (AttributeError, OSError):       # very old Windows: keep default
+        pass
+
+
 def main() -> None:
     argv = sys.argv[1:]
 
@@ -60,6 +85,7 @@ def main() -> None:
     from evans.core.tf_utils import second_order, unity
     from evans.ui.mainwindow import MainWindow
 
+    _claim_taskbar_identity()
     app = QApplication.instance() or QApplication(sys.argv)
 
     # Enable high-DPI
