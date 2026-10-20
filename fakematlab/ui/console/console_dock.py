@@ -34,6 +34,7 @@ from ...console import tracer as dbg
 from ...console.figures import FigureSpec, set_figure_sink
 from ...console.interpreter import Interpreter, Result
 from ...console.matlab import looks_like_matlab
+from .. import iconset
 from ..code import (
     CodeEditor,
     MatlabHighlighter,
@@ -204,6 +205,7 @@ class FigureArea(QWidget):
         self._split_button = tool(
             "Split", "Show two figures side by side",
             lambda checked: self.set_split(checked))
+        iconset.bind(self._split_button, "grid-1x2")
         self._split_button.setCheckable(True)
         self._move_button = tool(
             "Move ↔", "Move the current figure to the other side — "
@@ -212,9 +214,14 @@ class FigureArea(QWidget):
         self._undock_button = tool(
             "Undock", "Open the current figure in a window of its own",
             lambda: self.undock())
+        iconset.bind(self._undock_button, "restore")
         self._save_button = tool(
             "Save…", "Save the current figure as PNG, SVG or CSV data",
             lambda: self.save_current())
+        iconset.bind(self._save_button, "save")
+        for button in (self._split_button, self._move_button,
+                       self._undock_button, self._save_button):
+            button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         return header
 
     # ── adding and removing ─────────────────────────────────────
@@ -496,7 +503,8 @@ class ScriptEditor(QWidget):
         layout.setContentsMargins(2, 2, 2, 2)
 
         row = QHBoxLayout()
-        run = QPushButton("▶ Run (F5)")
+        run = QPushButton("Run (F5)")
+        iconset.bind(run, "run")
         run.setToolTip(
             "Run the whole script (F5), or continue when paused. The console "
             "and the last run's figures are cleared first; unsaved figures "
@@ -525,6 +533,8 @@ class ScriptEditor(QWidget):
 
         self._stop_button = debug("Stop", "stop",
                                   "Stop the run (Shift+F5)")
+        iconset.bind(self._stop_button, "stop", "hold_ink")
+        self._stop_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self._step_button = debug("Step", "step",
                                   "Run the paused line (F10)")
         self._step_in_button = debug(
@@ -542,8 +552,10 @@ class ScriptEditor(QWidget):
         # A second row for the file and the language, so the run and debug
         # controls do not set the window's minimum width.
         row = QHBoxLayout()
-        for label, slot in (("Open…", self._open), ("Save…", self._save)):
+        for label, icon, slot in (("Open…", "open", self._open),
+                                  ("Save…", "save", self._save)):
             button = QPushButton(label)
+            iconset.bind(button, icon)
             button.clicked.connect(slot)
             row.addWidget(button)
         row.addSpacing(12)
@@ -630,8 +642,8 @@ class ScriptEditor(QWidget):
 
     def set_run_state(self, running: bool, paused: bool) -> None:
         """Which buttons apply: Run is Continue while paused."""
-        self._run_button.setText("▶ Continue (F5)" if paused
-                                 else "▶ Run (F5)")
+        self._run_button.setText("Continue (F5)" if paused
+                                 else "Run (F5)")
         self._run_button.setEnabled(paused or not running)
         self._section_button.setEnabled(not running)
         self._stop_button.setEnabled(running)

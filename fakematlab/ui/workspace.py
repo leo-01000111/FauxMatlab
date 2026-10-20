@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from . import iconset
 from .design import NORMAL, TIGHT
 
 
@@ -93,6 +94,8 @@ class NavigationRail(QFrame):
             button.setAutoRaise(True)
             button.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
             button.setText(workspace.value)
+            iconset.bind(button, f"workspace-{workspace.name.lower()}")
+            button.setIconSize(iconset.size(24))
             button.setToolTip(
                 f"{workspace.description}  ({workspace.shortcut})")
             button.setAccessibleName(workspace.value)

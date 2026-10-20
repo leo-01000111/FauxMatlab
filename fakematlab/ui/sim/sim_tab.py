@@ -30,6 +30,7 @@ from ...sim.compile import CompileError
 from ...sim.linearize import LinearizationError, linearize, steady_state
 from ...sim.model import ModelError, PortRef, SimModel
 from ...sim.solver import FIXED_STEP, SimulationError, simulate
+from .. import iconset
 from ..design import NORMAL, TIGHT
 from ..guard import GuardedPanel, guard
 from .canvas import SimCanvas
@@ -185,13 +186,14 @@ class SimTab(QWidget, GuardedPanel):
         bar.setMovable(False)
         bar.setFloatable(False)
         bar.setIconSize(QSize(16, 16))
-        bar.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        bar.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         bar.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
 
         # ── the block palette ──
         # First, and checkable, so the state it shows is the state of the
         # palette: unchecked means folded away, and one click brings it back.
         self._palette_action = bar.addAction("Blocks")
+        iconset.bind(self._palette_action, "blocks")
         self._palette_action.setCheckable(True)
         self._palette_action.setChecked(True)
         self._palette_action.setShortcut("Ctrl+B")
@@ -202,13 +204,15 @@ class SimTab(QWidget, GuardedPanel):
         bar.addSeparator()
 
         # ── run ──
-        self._run_btn = QPushButton("▶ Run")
+        self._run_btn = QPushButton("Run")
+        iconset.bind(self._run_btn, "run")
         self._run_btn.setShortcut("Ctrl+R")
         self._run_btn.setToolTip("Run the simulation (Ctrl+R)")
         self._run_btn.clicked.connect(self.run_simulation)
         bar.addWidget(self._run_btn)
 
-        self._stop_btn = QPushButton("■ Stop")
+        self._stop_btn = QPushButton("Stop")
+        iconset.bind(self._stop_btn, "stop", "hold_ink")
         self._stop_btn.setEnabled(False)
         self._stop_btn.setToolTip("Cancel the running simulation")
         self._stop_btn.clicked.connect(self._cancel)
@@ -246,34 +250,40 @@ class SimTab(QWidget, GuardedPanel):
         bar.addSeparator()
 
         # ── history and canvas navigation ──
-        undo = bar.addAction("↶")
+        undo = bar.addAction("Undo")
+        iconset.bind(undo, "undo")
         undo.setToolTip("Undo (Ctrl+Z)")
         undo.setShortcut("Ctrl+Z")
         undo.triggered.connect(lambda: self._canvas.undo_stack.undo())
-        redo = bar.addAction("↷")
+        redo = bar.addAction("Redo")
+        iconset.bind(redo, "redo")
         redo.setToolTip("Redo (Ctrl+Y)")
         redo.setShortcut("Ctrl+Y")
         redo.triggered.connect(lambda: self._canvas.undo_stack.redo())
         fit = bar.addAction("Fit")
+        iconset.bind(fit, "fit")
         fit.setToolTip("Fit the whole diagram in view")
         fit.triggered.connect(lambda: self._canvas.fit_all())
         bar.addSeparator()
 
-        for label, tip, slot in (
-            ("Align ↔", "Align the selected blocks on one row",
+        for label, icon, tip, slot in (
+            ("Align row", "align-row", "Align the selected blocks on one row",
              lambda: self._align("y")),
-            ("Align ↕", "Align the selected blocks in one column",
+            ("Align column", "align-column",
+             "Align the selected blocks in one column",
              lambda: self._align("x")),
-            ("Space ↔", "Space the selected blocks evenly across",
+            ("Space", "distribute", "Space the selected blocks evenly across",
              lambda: self._distribute("x")),
         ):
             action = bar.addAction(label)
+            iconset.bind(action, icon)
             action.setToolTip(tip)
             action.triggered.connect(slot)
         bar.addSeparator()
 
         # ── subsystem navigation ──
-        self._up_action = bar.addAction("↑ Up")
+        self._up_action = bar.addAction("Up")
+        iconset.bind(self._up_action, "ascend")
         self._up_action.setToolTip("Leave this subsystem (Esc)")
         self._up_action.triggered.connect(lambda: self._canvas.ascend())
         self._up_action.setVisible(False)
@@ -284,16 +294,18 @@ class SimTab(QWidget, GuardedPanel):
         bar.addSeparator()
 
         # ── the bridge to the analysis tabs ──
-        lin = bar.addAction("Linearise →")
+        lin = bar.addAction("Linearise")
+        iconset.bind(lin, "linearise")
         lin.setToolTip("Linearise the model and send it to the analysis tabs")
         lin.triggered.connect(self.linearise)
         bar.addSeparator()
 
-        for label, slot, tip in (
-            ("Open…", self.open_model, "Open a .fmdl model"),
-            ("Save…", self.save_model, "Save this model as .fmdl"),
+        for label, icon, slot, tip in (
+            ("Open…", "open", self.open_model, "Open a .fmdl model"),
+            ("Save…", "save", self.save_model, "Save this model as .fmdl"),
         ):
             action = bar.addAction(label)
+            iconset.bind(action, icon)
             action.setToolTip(tip)
             action.triggered.connect(slot)
 

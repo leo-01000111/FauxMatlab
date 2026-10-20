@@ -79,6 +79,10 @@ def main() -> None:
     theme.set_mode(theme.saved_mode(), persist=False)
     theme_qt.apply(app)
 
+    from fakematlab.ui import iconset
+
+    app.setWindowIcon(iconset.app_icon())
+
     # Default architecture: textbook 2nd-order plant, unity feedback
     arch = CourseArchitecture(
         G  = second_order(K=1.0, zeta=0.5, wn=2.0),

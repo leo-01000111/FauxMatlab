@@ -74,7 +74,7 @@ from ...console.live.report import (
     write_html,
     write_tex,
 )
-from .. import theme
+from .. import iconset, theme
 from ..design import NORMAL, TIGHT
 from .figure_view import FigureView
 
@@ -317,7 +317,9 @@ class CodeCellWidget(CellWidget):
         tag.setFont(theme.label_font())
         self._header.addWidget(tag)
         run = QToolButton()
-        run.setText("▶ Run")
+        run.setText("Run")
+        iconset.bind(run, "run")
+        run.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         run.setToolTip("Run this cell (Ctrl+Enter)")
         run.clicked.connect(lambda: self.action.emit(self, "run"))
         self._header.addWidget(run)
@@ -568,15 +570,17 @@ class LiveScriptEditor(QWidget):
     def _build_toolbar(self) -> QHBoxLayout:
         row = QHBoxLayout()
 
-        def button(text: str, tip: str, slot) -> QPushButton:
+        def button(text: str, tip: str, slot, icon: str = "") -> QPushButton:
             b = QPushButton(text)
             b.setToolTip(tip)
+            if icon:
+                iconset.bind(b, icon)
             b.clicked.connect(slot)
             row.addWidget(b)
             return b
 
-        button("▶ Run all", "Run every code cell from the top "
-               "(Ctrl+Shift+Enter)", self.run_all)
+        button("Run all", "Run every code cell from the top "
+               "(Ctrl+Shift+Enter)", self.run_all, "run")
         button("Run to here", "Run every code cell down to the selected one",
                self.run_to_here)
         button("Run cell", "Run the selected code cell (Ctrl+Enter)",
@@ -587,9 +591,12 @@ class LiveScriptEditor(QWidget):
         button("+ Text", "Insert a text cell below the selected one",
                lambda: self.add_cell(CellKind.TEXT))
         row.addSpacing(12)
+        # Open and Save stay words: this row sets the Live tab's minimum
+        # width, and two more icons put the window over its 1280 px budget.
         button("Open…", "Open a live script (.mlx or .m)", self.open)
         button("Save…", "Save as a plain-text live script (.m)", self.save)
-        export = QPushButton("Export ▾")
+        export = QPushButton("Export")
+        iconset.bind(export, "export")
         menu = QMenu(export)
         menu.addAction("Save as MATLAB .mlx…", self.export_mlx)
         menu.addAction("Export report (LaTeX / PDF)…", self.export_report)

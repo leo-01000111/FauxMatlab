@@ -83,7 +83,11 @@ a = Analysis(
     # The Holding Point typefaces and their licences. Loaded by path at start-up,
     # so without this the frozen build silently falls back to a system font.
     datas=[(str(ROOT / "fakematlab" / "ui" / "fonts" / "*"),
-            "fakematlab/ui/fonts")],
+            "fakematlab/ui/fonts"),
+           # The icon set, read by path like the fonts: without it every
+           # button in the frozen build would show its text and no icon.
+           (str(ROOT / "fakematlab" / "ui" / "icons" / "*"),
+            "fakematlab/ui/icons")],
     hiddenimports=HIDDEN,
     hookspath=[],
     # Runs before any package is imported. A windowed build has no standard
@@ -113,6 +117,9 @@ def _exe(name: str, console: bool):
         target_arch=None,
         codesign_identity=None,
         entitlements_file=None,
+        # The plate in Explorer and on the taskbar before Qt has started;
+        # the running window sets the same picture from app.svg.
+        icon=str(ROOT / "fakematlab" / "ui" / "icons" / "app.ico"),
     )
 
 

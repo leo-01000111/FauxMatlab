@@ -40,6 +40,7 @@ from PySide6.QtWidgets import (
 from ..core.architecture import CourseArchitecture
 from ..core.collection import SystemCollection
 from ..core.viewer import ResponseKind
+from . import iconset, theme
 from .design import TIGHT, monospace
 from .guard import GuardedPanel, guard
 
@@ -182,6 +183,9 @@ class AnalysisPane(QFrame):
         self._picker = QComboBox()
         for entry in PANE_KINDS:
             self._picker.addItem(entry.label, entry.key)
+        self._picker_icons()
+        theme.notifier().changed.connect(
+            lambda *_: self._picker_icons())
         self._picker.setCurrentIndex(
             [k.key for k in PANE_KINDS].index(self._kind.key))
         self._picker.setAccessibleName("pane content")
@@ -250,6 +254,15 @@ class AnalysisPane(QFrame):
     def set_kind(self, key: str) -> None:
         index = [k.key for k in PANE_KINDS].index(key)
         self._picker.setCurrentIndex(index)
+
+    def _picker_icons(self) -> None:
+        """Each content kind's pictogram, in the current theme's ink."""
+        try:
+            for index, entry in enumerate(PANE_KINDS):
+                self._picker.setItemIcon(index,
+                                         iconset.icon(f"pane-{entry.key}"))
+        except RuntimeError:            # the pane is gone; Qt deleted it
+            pass
 
     def _on_kind_picked(self, index: int) -> None:
         """
