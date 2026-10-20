@@ -67,3 +67,48 @@ def test_n_label_emits_signal(app):
     view.signal_selected.connect(got.append)
     view._signals["n"].clicked.emit("n")
     assert got == ["n"]
+
+
+def test_the_model_panel_cannot_be_zoomed_panned_or_scrolled(app):
+    from PySide6.QtCore import QPoint, QPointF, Qt
+    from PySide6.QtGui import QWheelEvent
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QGraphicsView
+
+    from evans.core.architecture import CourseArchitecture
+    from evans.ui.diagram.fixed_diagram import FixedDiagramView
+
+    view = FixedDiagramView(CourseArchitecture())
+    view.resize(420, 260)
+    view.show()
+    for _ in range(5):
+        app.processEvents()
+    before = (view.transform(), view.horizontalScrollBar().value(),
+              view.verticalScrollBar().value())
+
+    assert view.dragMode() == QGraphicsView.NoDrag
+    assert view.horizontalScrollBarPolicy() == Qt.ScrollBarAlwaysOff
+    centre = QPointF(210, 130)
+    for delta in (480, -480):
+        view.wheelEvent(QWheelEvent(centre, view.mapToGlobal(centre),
+                                    QPoint(0, 0), QPoint(0, delta),
+                                    Qt.NoButton, Qt.NoModifier,
+                                    Qt.NoScrollPhase, False))
+    for key in (Qt.Key_Right, Qt.Key_Down, Qt.Key_PageDown):
+        QTest.keyClick(view, key)
+    QTest.mousePress(view.viewport(), Qt.LeftButton, Qt.NoModifier,
+                     QPoint(30, 30))
+    QTest.mouseMove(view.viewport(), QPoint(200, 160))
+    QTest.mouseRelease(view.viewport(), Qt.LeftButton, Qt.NoModifier,
+                       QPoint(200, 160))
+    app.processEvents()
+    after = (view.transform(), view.horizontalScrollBar().value(),
+             view.verticalScrollBar().value())
+    assert after == before
+
+    # It still fits the whole loop when the panel changes size.
+    view.resize(300, 400)
+    app.processEvents()
+    shown = view.mapToScene(view.viewport().rect()).boundingRect()
+    assert shown.contains(view.scene().itemsBoundingRect())
+    view.deleteLater()

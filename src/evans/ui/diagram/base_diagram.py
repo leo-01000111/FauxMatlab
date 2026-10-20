@@ -44,9 +44,14 @@ class BaseDiagramView(QGraphicsView):
             self.renderHints() |
             __import__('PySide6.QtGui', fromlist=['QPainter']).QPainter.Antialiasing
         )
-        self.setDragMode(QGraphicsView.ScrollHandDrag)
-        self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
-        self.setResizeAnchor(QGraphicsView.AnchorUnderMouse)
+        # A fixed picture: always the whole diagram, fitted to the panel.
+        # It is a map of the loop for picking blocks and taps, not a canvas,
+        # and zooming or panning it only lost the parts you came to click.
+        self.setDragMode(QGraphicsView.NoDrag)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setTransformationAnchor(QGraphicsView.AnchorViewCenter)
+        self.setResizeAnchor(QGraphicsView.AnchorViewCenter)
         # Canvas = ground. Items read the tokens at paint time; only this
         # brush is baked in, so restyle it when the theme changes.
         self._restyle()
@@ -75,21 +80,31 @@ class BaseDiagramView(QGraphicsView):
     def set_active_signal(self, signal_id: str) -> None:
         """Highlight the active analysis tap."""
 
-    # ── zoom helpers ────────────────────────────────────────────
+    # ── a fixed view: no zoom, no pan, no scroll ────────────────
 
     def wheelEvent(self, event) -> None:
-        factor = 1.15 if event.angleDelta().y() > 0 else 1.0 / 1.15
-        self.scale(factor, factor)
+        # Swallowed, so the wheel neither zooms the diagram nor scrolls
+        # whatever holds the panel.
+        event.accept()
+
+    def scrollContentsBy(self, dx: int, dy: int) -> None:     # noqa: N802
+        # Arrow keys and Page Up/Down scroll a QGraphicsView even with its
+        # scroll bars hidden. Only fit_view's own centring may scroll.
+        if getattr(self, "_fitting", False):
+            super().scrollContentsBy(dx, dy)
 
     def fit_view(self) -> None:
         """Scale the scene to fill the viewport, with a small margin."""
         rect = self._scene.itemsBoundingRect()
         if rect.isEmpty():
             return
-        self.resetTransform()
-        self.fitInView(rect.adjusted(-20, -20, 20, 20), Qt.KeepAspectRatio)
-
-    def mouseDoubleClickEvent(self, event) -> None:
-        """Double-click anywhere to re-fit after panning or zooming."""
-        self.fit_view()
-        super().mouseDoubleClickEvent(event)
+        rect = rect.adjusted(-20, -20, 20, 20)
+        self._fitting = True
+        try:
+            # The scene is exactly what is shown, so there is nothing to
+            # scroll to.
+            self._scene.setSceneRect(rect)
+            self.resetTransform()
+            self.fitInView(rect, Qt.KeepAspectRatio)
+        finally:
+            self._fitting = False
