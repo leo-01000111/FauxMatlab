@@ -7,6 +7,11 @@ math drawn by matplotlib's mathtext, and ``{{expr}}`` placeholders filled from
 the shared workspace). Double-click a rendered cell to edit it; *Done* or
 Ctrl+Enter renders it again.
 
+*Preview* splits the tab: the script on the left, its PDF on the right
+(:mod:`.live_preview`), rebuilt on Ctrl+Enter, on *Rebuild* and after a run —
+never on a keystroke. Each inline figure has a caption and a label for the
+report under it, saved with the script.
+
 The document model, the file formats, the runner and the report writers are
 all in :mod:`evans.console.live`; this module is only the widgets.
 
@@ -40,12 +45,14 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMenu,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
     QScrollArea,
     QSizePolicy,
+    QSplitter,
     QTextBrowser,
     QToolButton,
     QVBoxLayout,
@@ -67,16 +74,20 @@ from ...console.live.markup import inline_html, to_html
 from ...console.live.render import MathError, math_png, png_size
 from ...console.live.report import (
     INSTALL_HINT,
-    BuildResult,
+    build_with,
     compile_pdf,
     find_engines,
-    tex_error,
     write_html,
     write_tex,
 )
+from ...console.live.template import ReportTemplate, resolve_template
 from .. import iconset, theme
 from ..design import NORMAL, TIGHT
+from . import report_template
 from .figure_view import FigureView
+
+#: Shows and hides the PDF preview. (Ctrl+Shift+P exports a figure.)
+PREVIEW_SHORTCUT = "Ctrl+Alt+P"
 
 #: Height of a figure drawn inline under its cell.
 FIGURE_HEIGHT = 260
@@ -350,6 +361,8 @@ class CodeCellWidget(CellWidget):
         self.figures_box.setSpacing(TIGHT)
         self.body.addLayout(self.figures_box)
         self.figure_views: list[FigureView] = []
+        #: (caption, label) editors, one pair per figure shown.
+        self.figure_fields: list[tuple[QLineEdit, QLineEdit]] = []
         self.refresh()
 
     def _restyle(self, *_args) -> None:
@@ -388,6 +401,7 @@ class CodeCellWidget(CellWidget):
             view.setParent(None)
             view.deleteLater()
         self.figure_views = []
+        self.figure_fields = []
         while self.figures_box.count():
             item = self.figures_box.takeAt(0)
             if item.widget() is not None:
@@ -414,8 +428,38 @@ class CodeCellWidget(CellWidget):
             for child in [view, *view.findChildren(QWidget)]:
                 child.installEventFilter(wheel)
             column.addWidget(view)
+            column.addLayout(self._figure_fields(len(self.figure_views)))
             self.figures_box.addWidget(frame)
             self.figure_views.append(view)
+
+    def _figure_fields(self, index: int) -> QHBoxLayout:
+        """The figure's caption and label in the report, edited in place."""
+        meta = self.cell.figure_meta[index] \
+            if index < len(self.cell.figure_meta) else None
+        row = QHBoxLayout()
+        row.setSpacing(TIGHT)
+        caption = QLineEdit(meta.caption if meta else "")
+        caption.setPlaceholderText("Caption in the report (LaTeX)")
+        caption.setToolTip("The figure's caption in the PDF report")
+        caption.textEdited.connect(
+            lambda text, i=index: setattr(self.cell.meta(i), "caption", text))
+        label = QLineEdit(meta.label if meta else "")
+        label.setPlaceholderText(f"fig:{index + 1}")
+        label.setToolTip("\\label for \\ref{…} in text cells; empty: the "
+                         "automatic label shown in grey")
+        label.setFixedWidth(120)
+        label.textEdited.connect(
+            lambda text, i=index: setattr(self.cell.meta(i), "label",
+                                          text.strip()))
+        row.addWidget(caption, stretch=1)
+        row.addWidget(label)
+        self.figure_fields.append((caption, label))
+        return row
+
+    def set_auto_labels(self, labels: list[str]) -> None:
+        """Show the automatic label each figure gets when it has none."""
+        for (_caption, label), auto in zip(self.figure_fields, labels):
+            label.setPlaceholderText(auto)
 
 
 class TextCellWidget(CellWidget):
@@ -449,9 +493,10 @@ class TextCellWidget(CellWidget):
         self.editor = _GrowingEditor(code=False)
         self.editor.setPlainText(cell.source)
         self.editor.setPlaceholderText(
-            "Markdown: **bold**, *italic*, `code`, $x^2$ inline, $$\\frac{1}{s}$$ "
-            "on its own, {{G}} or {{max(y)}} for workspace values")
-        self.editor.run_requested.connect(lambda: self.set_editing(False))
+            "**bold**, *italic*, `code`, $x^2$ inline, $$\\frac{1}{s}$$ "
+            "on its own, {{G}} or {{max(y)}} for workspace values — and in "
+            "the PDF, any LaTeX: \\ref{fig:1}, \\cite{…}, environments")
+        self.editor.run_requested.connect(self._render_requested)
         self.editor.focused.connect(lambda: self.action.emit(self, "focus"))
         self.editor.textChanged.connect(self.sync_to_cell)
         # Both live in the body; only one is shown, and a hidden widget
@@ -476,6 +521,11 @@ class TextCellWidget(CellWidget):
 
     def _toggle(self) -> None:
         self.set_editing(not self.editing)
+
+    def _render_requested(self) -> None:
+        """Ctrl+Enter: render, and tell the editor (it rebuilds the PDF)."""
+        self.set_editing(False)
+        self.action.emit(self, "render")
 
     def _kind_changed(self) -> None:
         self.cell.kind = CellKind(self.kind_box.currentData())
@@ -541,6 +591,8 @@ class LiveScriptEditor(QWidget):
         self._widgets: list[CellWidget] = []
         self._current: Cell | None = None
         self._build_thread: threading.Thread | None = None
+        #: The PDF beside the script; made the first time it is shown.
+        self.preview = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(2, 2, 2, 2)
@@ -555,7 +607,10 @@ class LiveScriptEditor(QWidget):
         self._column.setSpacing(NORMAL)
         self._column.addStretch()
         self._scroll.setWidget(self._page)
-        layout.addWidget(self._scroll, stretch=1)
+        self._split = QSplitter(Qt.Horizontal)
+        self._split.setChildrenCollapsible(False)
+        self._split.addWidget(self._scroll)
+        layout.addWidget(self._split, stretch=1)
 
         self._status = QLabel("")
         layout.addWidget(self._status)
@@ -563,6 +618,9 @@ class LiveScriptEditor(QWidget):
         self.pdf_finished.connect(self._on_pdf_finished)
         QShortcut(QKeySequence("Ctrl+Shift+Return"), self,
                   activated=self.run_all)
+        preview = QShortcut(QKeySequence(PREVIEW_SHORTCUT), self)
+        preview.setContext(Qt.WidgetWithChildrenShortcut)
+        preview.activated.connect(self.preview_button.toggle)
         self._rebuild()
 
     # ── toolbar ─────────────────────────────────────────────────
@@ -600,13 +658,30 @@ class LiveScriptEditor(QWidget):
         menu = QMenu(export)
         menu.addAction("Save as MATLAB .mlx…", self.export_mlx)
         menu.addAction("Export report (LaTeX / PDF)…", self.export_report)
+        menu.addAction("Report template…", self.edit_template)
         export.setMenu(menu)
         row.addWidget(export)
-        row.addStretch()
+        self.preview_button = QPushButton("Preview")
+        self.preview_button.setCheckable(True)
+        self.preview_button.setToolTip(
+            f"Show the PDF beside the script ({PREVIEW_SHORTCUT}); "
+            "Ctrl+Enter rebuilds it")
+        self.preview_button.toggled.connect(self.set_preview)
+        row.addWidget(self.preview_button)
+        # The file name takes the room that is left and asks for none: it is
+        # what gave the Preview button its place in the 1280 px budget. The
+        # whole path is in its tooltip.
         self._path_label = QLabel("untitled")
         self._path_label.setStyleSheet("color: palette(mid);")
-        row.addWidget(self._path_label)
+        self._path_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self._path_label.setSizePolicy(QSizePolicy.Ignored,
+                                       QSizePolicy.Preferred)
+        row.addWidget(self._path_label, stretch=1)
         return row
+
+    def _show_path(self, path: Path | None) -> None:
+        self._path_label.setText(path.name if path else "untitled")
+        self._path_label.setToolTip(str(path) if path else "")
 
     # ── document ↔ widgets ──────────────────────────────────────
 
@@ -625,9 +700,9 @@ class LiveScriptEditor(QWidget):
         if not document.cells:
             document.append(Cell.code(""))
         self._current = document.cells[0]
-        self._path_label.setText(document.path.name if document.path
-                                 else "untitled")
+        self._show_path(document.path)
         self._rebuild()
+        self._update_auto_labels()
 
     def _make_widget(self, cell: Cell) -> CellWidget:
         if cell.is_code:
@@ -691,6 +766,10 @@ class LiveScriptEditor(QWidget):
         elif action == "run":
             self.select(cell)
             self.run_cell(cell)
+            self.rebuild_preview()
+        elif action == "render":
+            self.select(cell)
+            self.rebuild_preview()
         elif action in ("up", "down"):
             self.move_cell(cell, -1 if action == "up" else 1)
         elif action == "delete":
@@ -754,6 +833,7 @@ class LiveScriptEditor(QWidget):
             self.runner.on_cell_done = None
             QGuiApplication.restoreOverrideCursor()
         self._render_text()
+        self._update_auto_labels()
         failed = next((c for c in self.document.code_cells()
                        if c.output is not None and not c.output.ok), None)
         self._status.setText(
@@ -779,14 +859,85 @@ class LiveScriptEditor(QWidget):
         return self.run_cell(self._current)
 
     def run_all(self) -> bool:
-        return self._run(lambda: self.runner.run_all(self.document))
+        ok = self._run(lambda: self.runner.run_all(self.document))
+        self.rebuild_preview()
+        return ok
 
     def run_to_here(self) -> bool:
         cell = self._current or (self.document.cells[-1]
                                  if self.document.cells else None)
         if cell is None:
             return False
-        return self._run(lambda: self.runner.run_to(self.document, cell))
+        ok = self._run(lambda: self.runner.run_to(self.document, cell))
+        self.rebuild_preview()
+        return ok
+
+    def _update_auto_labels(self) -> None:
+        """Each figure's label field shows the label it gets by default."""
+        n = 0
+        for widget in self._widgets:
+            if isinstance(widget, CodeCellWidget):
+                count = len(widget.figure_fields)
+                widget.set_auto_labels([f"fig:{n + k + 1}"
+                                        for k in range(count)])
+                n += count
+
+    # ── the PDF preview and the template ────────────────────────
+
+    @property
+    def preview_on(self) -> bool:
+        return self.preview is not None and not self.preview.isHidden()
+
+    def set_preview(self, on: bool) -> None:
+        """Split the tab: the script, and its PDF beside it — or not."""
+        if self.preview_button.isChecked() != on:
+            self.preview_button.setChecked(on)     # comes back here
+            return
+        if on and self.preview is None:
+            from .live_preview import LivePreview
+            self.preview = LivePreview()
+            self.preview.rebuild_requested.connect(self.rebuild_preview)
+            self.preview.template_requested.connect(self.edit_template)
+            self._split.addWidget(self.preview)
+            self._split.setStretchFactor(0, 1)
+            self._split.setStretchFactor(1, 1)
+        if self.preview is None:
+            return
+        self.preview.setVisible(on)
+        if on:
+            width = max(self._split.width(), 2)
+            self._split.setSizes([width // 2, width - width // 2])
+            if self.preview.good_builds == 0 and not self.preview.building:
+                self.rebuild_preview()
+
+    def template(self) -> ReportTemplate:
+        """The template in force: this script's, the user's, or the default."""
+        return resolve_template(self.document.template,
+                                report_template.user_template())
+
+    def rebuild_preview(self) -> bool:
+        """Build the PDF preview, if it is showing. Returns whether it began."""
+        if not self.preview_on:
+            return False
+        self._sync()
+        return self.preview.build(self.document, self._evaluator(),
+                                  self.template())
+
+    def _exec_dialog(self, dialog) -> bool:
+        """Run a modal dialog. A method so tests can answer it."""
+        return bool(dialog.exec())
+
+    def edit_template(self) -> bool:
+        """Edit this script's report template or the user's default."""
+        dialog = report_template.ReportTemplateDialog(
+            self.document.template, report_template.user_template(), self)
+        if not self._exec_dialog(dialog):
+            return False
+        dialog.commit()
+        self.document.template = dialog.document_template
+        report_template.set_user_template(dialog.user_template)
+        self.rebuild_preview()
+        return True
 
     # ── files ───────────────────────────────────────────────────
 
@@ -834,7 +985,7 @@ class LiveScriptEditor(QWidget):
         if not path:
             return None
         written = save(self.document, Path(path))
-        self._path_label.setText(written.name)
+        self._show_path(written)
         return written
 
     def export_mlx(self, path: str | Path | None = None) -> Path | None:
@@ -845,7 +996,7 @@ class LiveScriptEditor(QWidget):
         if not path:
             return None
         written = save(self.document, Path(path))
-        self._path_label.setText(written.name)
+        self._show_path(written)
         return written
 
     def export_report(self, path: str | Path | None = None) -> Path | None:
@@ -862,11 +1013,13 @@ class LiveScriptEditor(QWidget):
         if not path:
             return None
         evaluate = self._evaluator()
-        report = write_tex(self.document, Path(path), evaluate=evaluate)
+        template = self.template()
+        report = write_tex(self.document, Path(path), evaluate=evaluate,
+                           template=template)
         engines = find_engines()
         if not engines:
             html = write_html(self.document, report.main.with_suffix(".html"),
-                              evaluate=evaluate)
+                              evaluate=evaluate, template=template)
             self._status.setText(f"Wrote {report.main.name} and "
                                  f"{html.main.name}.")
             self._inform("Report exported as HTML",
@@ -889,7 +1042,8 @@ class LiveScriptEditor(QWidget):
         main = self._report.main
         try:
             html = write_html(self.document, main.with_suffix(".html"),
-                              evaluate=self._evaluator()).main
+                              evaluate=self._evaluator(),
+                              template=self.template()).main
         except (OSError, ValueError):
             html = None
         also = f" and {html.name}" if html else ""
@@ -902,18 +1056,6 @@ class LiveScriptEditor(QWidget):
 
 
 def _build(report, engines) -> tuple[bool, object, str]:
-    """
-    Try each engine in turn until one makes the PDF. Runs on the build
-    thread, so nothing may escape it: an exception here would leave the
-    status saying "building…" for ever.
-    """
-    failures = []
-    for engine in engines:
-        try:
-            result = compile_pdf(report, engine)
-        except Exception as exc:                      # noqa: BLE001
-            result = BuildResult(False, None, f"{type(exc).__name__}: {exc}")
-        if result.ok:
-            return True, result.pdf, result.log
-        failures.append(f"{engine[0]}:\n{tex_error(result.log)}")
-    return False, None, "\n\n".join(failures)
+    """Every engine in turn, with this module's ``compile_pdf`` (tests stub
+    it); see :func:`~evans.console.live.report.build_with`."""
+    return build_with(report, engines, compile=compile_pdf)

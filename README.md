@@ -150,6 +150,13 @@ workspace value. It opens MATLAB's `.mlx` files and plain-text live `.m` files a
 the latter. *Export report* writes a `.tex` with its figures and builds the PDF if a TeX
 engine (tectonic, MiKTeX, TeX Live) is installed, or an HTML page if not.
 
+*Preview* (Ctrl+Alt+P) puts that PDF beside the script, Overleaf-style, and Ctrl+Enter
+rebuilds it in the background. A text cell is LaTeX in the PDF: `\ref`, `\cite` and
+environments pass through, next to the `**bold**` and `*italic*` marks. Every figure is
+a numbered `figure` with a caption and a label typed under it in the editor, saved with
+the script. The page, title, header and footer, section numbering, code and output come
+from a report template (Export ▸ Report template…), kept for every script or for this one.
+
 Figures sit under the command window. *Split* shows two side by side, older on the left.
 *Undock* moves one into a window of its own, where it keeps panning, zooming and reading
 out, and *Dock* or closing that window brings it back. *Save…* or a right-click writes
@@ -249,7 +256,7 @@ a crossover above the plant's phase budget is impossible for it.
 pytest
 ```
 
-1246 tests, plus `ruff check .`. Most are golden tests: analytic values worked out by hand
+1290 tests, plus `ruff check .`. Most are golden tests: analytic values worked out by hand
 or by an independent route, rather than snapshots of whatever the code printed first. The
 numeric signal solver and the symbolic one check each other, and `python-control` is a
 third opinion.

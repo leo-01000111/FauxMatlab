@@ -225,9 +225,43 @@ def _check_ui(report: Report, say) -> None:
                 f"{'clean' if not broken else broken[0][:44]}")
 
         window.hide()
+        _check_pdf_view(report, say)
     except Exception as exc:                                    # noqa: BLE001
         report.record(False, f"UI raised {type(exc).__name__}: {exc}")
         say(f"      FAILED: {exc}")
+
+
+def _check_pdf_view(report: Report, say) -> None:
+    """
+    QtPdf is bundled and works: the live preview loads a PDF Qt writes.
+    A frozen build missing the QtPdf libraries would build every other
+    widget fine and fail only when the preview is first opened.
+    """
+    import tempfile
+    from pathlib import Path
+
+    from PySide6.QtGui import QPageSize, QPainter, QPdfWriter
+    from PySide6.QtPdf import QPdfDocument
+
+    from .ui.console.live_preview import LivePreview
+
+    with tempfile.TemporaryDirectory(prefix="evans-check-") as tmp:
+        path = Path(tmp) / "check.pdf"
+        writer = QPdfWriter(str(path))
+        writer.setPageSize(QPageSize(QPageSize.A4))
+        painter = QPainter(writer)
+        painter.drawText(100, 100, "Evans")
+        writer.newPage()
+        painter.end()
+        preview = LivePreview()
+        preview._show_pdf(path)
+        ok = (preview.pdf.status() == QPdfDocument.Status.Ready
+              and preview.page_count == 2)
+        report.record(ok, f"PDF preview: status {preview.pdf.status()}, "
+                          f"{preview.page_count} pages")
+        say(f"      {'PDF preview':28s} {'clean' if ok else 'FAILED'}")
+        preview.pdf.close()
+        preview.deleteLater()
 
 
 def main(argv: list[str] | None = None) -> int:

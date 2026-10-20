@@ -16,14 +16,22 @@ from .document import (
     Cell,
     CellKind,
     CellOutput,
+    FigureMeta,
     InterpolationError,
     LiveDocument,
     format_value,
     workspace_evaluator,
 )
-from .livem import is_live_text, parse_live_m, to_live_m, write_live_m
+from .livem import (
+    is_live_text,
+    parse_live_document,
+    parse_live_m,
+    to_live_m,
+    write_live_m,
+)
 from .mlx import MlxError, read_mlx, write_mlx
 from .runner import LiveRunner, current_folder
+from .template import DEFAULT, ReportTemplate, resolve_template
 
 #: The native format is the plain-text live script — see :mod:`.livem`.
 NATIVE_SUFFIX = ".m"
@@ -35,7 +43,7 @@ def load(path: str | Path) -> LiveDocument:
     if path.suffix.lower() == ".mlx":
         return read_mlx(path)
     text = path.read_text(encoding="utf-8", errors="replace")
-    return LiveDocument(parse_live_m(text), path)
+    return parse_live_document(text, path)
 
 
 def save(document: LiveDocument, path: str | Path) -> Path:
@@ -50,9 +58,10 @@ def save(document: LiveDocument, path: str | Path) -> Path:
 
 
 __all__ = [
-    "NATIVE_SUFFIX", "TEXT_KINDS", "Cell", "CellKind", "CellOutput",
-    "InterpolationError", "LiveDocument", "LiveRunner", "MlxError",
-    "current_folder", "format_value", "is_live_text", "load",
-    "parse_live_m", "read_mlx", "save", "to_live_m", "workspace_evaluator",
+    "DEFAULT", "NATIVE_SUFFIX", "TEXT_KINDS", "Cell", "CellKind",
+    "CellOutput", "FigureMeta", "InterpolationError", "LiveDocument",
+    "LiveRunner", "MlxError", "ReportTemplate", "current_folder",
+    "format_value", "is_live_text", "load", "parse_live_document",
+    "parse_live_m", "resolve_template", "read_mlx", "save", "to_live_m", "workspace_evaluator",
     "write_live_m", "write_mlx",
 ]

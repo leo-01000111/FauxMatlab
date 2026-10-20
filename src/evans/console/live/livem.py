@@ -34,7 +34,8 @@ import json
 import re
 from pathlib import Path
 
-from .document import Cell, CellKind, LiveDocument
+from .document import Cell, CellKind, FigureMeta, LiveDocument
+from .template import ReportTemplate
 
 _TEXT = re.compile(r"^%\[text(?::([\w:-]+))?\]\s?(\{[^}]*\})?\s?(.*)$")
 _MARKER = re.compile(r"^%\[(output|control|task|appendix|metadata)\b")
@@ -64,7 +65,80 @@ def is_live_text(text: str) -> bool:
 
 def read_live_m(path: str | Path) -> LiveDocument:
     path = Path(path)
-    return LiveDocument(parse_live_m(path.read_text(encoding="utf-8")), path)
+    return parse_live_document(path.read_text(encoding="utf-8"), path)
+
+
+def parse_live_document(text: str, path: str | Path | None = None
+                        ) -> LiveDocument:
+    """The cells, plus what Evans keeps in the appendix (captions, template)."""
+    document = LiveDocument(parse_live_m(text), path)
+    apply_metadata(document, read_metadata(text))
+    return document
+
+
+# ── Evans's own appendix entry ──────────────────────────────────
+#
+# MATLAB's appendix holds named entries, each a ``%   data: {json}`` line.
+# Evans adds one, ``%[metadata:evans]``, for what the live script carries
+# beyond MATLAB's model: figure captions and labels (keyed by the code
+# cell's position among the non-empty code cells, which is what a file
+# round trip preserves) and the document's report template.
+
+EVANS_ENTRY = "%[metadata:evans]"
+
+
+def read_metadata(text: str) -> dict:
+    """The ``%[metadata:evans]`` entry's data, or {}."""
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        if line.strip() != EVANS_ENTRY:
+            continue
+        for data in lines[i + 1:i + 3]:
+            match = re.match(r"^%\s*data:\s*(.*)$", data)
+            if match:
+                try:
+                    value = json.loads(match.group(1))
+                except ValueError:
+                    return {}
+                return value if isinstance(value, dict) else {}
+    return {}
+
+
+def apply_metadata(document: LiveDocument, meta: dict) -> None:
+    figures = meta.get("figures")
+    if isinstance(figures, dict):
+        code = [c for c in document.cells if c.is_code and c.source.strip()]
+        for key, entries in figures.items():
+            try:
+                cell = code[int(key)]
+            except (ValueError, IndexError):
+                continue
+            if not isinstance(entries, list):
+                continue
+            cell.figure_meta = [
+                FigureMeta(str(e.get("caption", "")), str(e.get("label", "")))
+                if isinstance(e, dict) else FigureMeta() for e in entries]
+    if isinstance(meta.get("template"), dict):
+        document.template = ReportTemplate.from_dict(meta["template"])
+
+
+def metadata(document: LiveDocument) -> dict:
+    """What :func:`apply_metadata` reads back; {} when there is nothing."""
+    meta: dict = {}
+    figures = {}
+    code = [c for c in document.cells if c.is_code and c.source.strip()]
+    for n, cell in enumerate(code):
+        entries = list(cell.figure_meta)
+        while entries and entries[-1].empty:
+            entries.pop()
+        if entries:
+            figures[str(n)] = [{"caption": e.caption, "label": e.label}
+                               for e in entries]
+    if figures:
+        meta["figures"] = figures
+    if document.template is not None:
+        meta["template"] = document.template.to_dict()
+    return meta
 
 
 def parse_live_m(text: str) -> list[Cell]:
@@ -245,7 +319,12 @@ def to_live_m(document: LiveDocument) -> str:
         else:
             out.extend(_text_lines(cell.source))
         previous = cell
-    return "\n".join(out) + "\n\n" + APPENDIX
+    appendix = APPENDIX
+    meta = metadata(document)
+    if meta:
+        appendix += (f"{EVANS_ENTRY}\n%   data: "
+                     f"{json.dumps(meta, ensure_ascii=False)}\n%---\n")
+    return "\n".join(out) + "\n\n" + appendix
 
 
 def _code_lines(source: str) -> list[str]:

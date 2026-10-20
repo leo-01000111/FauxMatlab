@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from ..figures import FigureSpec
+from .template import ReportTemplate
 
 
 class CellKind(str, Enum):
@@ -66,6 +67,22 @@ class CellOutput:
         return not (self.text or self.error or self.figures)
 
 
+@dataclass
+class FigureMeta:
+    """
+    What the report says about one figure a code cell draws: its caption and
+    its ``\\label``. Kept with the cell, by position among its figures, and
+    saved with the live script — figures themselves come back by running it.
+    An empty label means the automatic one, ``fig:<n>``.
+    """
+    caption: str = ""
+    label:   str = ""
+
+    @property
+    def empty(self) -> bool:
+        return not (self.caption.strip() or self.label.strip())
+
+
 _ids = itertools.count(1)
 
 
@@ -80,6 +97,8 @@ class Cell:
     section_break: bool = False
     output:        CellOutput | None = None
     id:            int = field(default_factory=lambda: next(_ids))
+    #: Captions and labels of the figures this (code) cell draws, in order.
+    figure_meta:   list[FigureMeta] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         self.kind = CellKind(self.kind)
@@ -97,6 +116,12 @@ class Cell:
     def is_code(self) -> bool:
         return self.kind.is_code
 
+    def meta(self, index: int) -> FigureMeta:
+        """The caption and label of figure ``index``, created if missing."""
+        while len(self.figure_meta) <= index:
+            self.figure_meta.append(FigureMeta())
+        return self.figure_meta[index]
+
     def same_content(self, other: Cell) -> bool:
         """Equal kind, source and section break — what a file round trip keeps."""
         return (self.kind == other.kind
@@ -108,9 +133,12 @@ class LiveDocument:
     """An ordered list of cells, and the file it came from."""
 
     def __init__(self, cells: list[Cell] | None = None,
-                 path: str | Path | None = None) -> None:
+                 path: str | Path | None = None,
+                 template: ReportTemplate | None = None) -> None:
         self.cells: list[Cell] = list(cells or [])
         self.path: Path | None = Path(path) if path else None
+        #: This document's own report template; None follows the user's.
+        self.template: ReportTemplate | None = template
 
     # ── reading ─────────────────────────────────────────────────
 
@@ -177,6 +205,22 @@ class LiveDocument:
             del self.cells[index]
             self.cells.insert(target, cell)
         return target
+
+    def figure_labels(self) -> dict[tuple[int, int], str]:
+        """
+        (cell id, figure index) → the label each drawn figure gets in the
+        report: its own, or ``fig:<n>`` counting the document's figures.
+        """
+        labels = {}
+        n = 0
+        for cell in self.code_cells():
+            if cell.output is None:
+                continue
+            for i, _spec in enumerate(cell.output.figures):
+                n += 1
+                own = cell.figure_meta[i].label.strip()                     if i < len(cell.figure_meta) else ""
+                labels[cell.id, i] = own or f"fig:{n}"
+        return labels
 
     def clear_outputs(self) -> None:
         for cell in self.cells:

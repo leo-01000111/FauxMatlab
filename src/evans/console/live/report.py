@@ -7,11 +7,17 @@ tectonic, pdflatex, xelatex, latexmk — using only packages every TeX
 distribution ships: amsmath, graphicx, listings, xcolor, hyperref.
 
 * The first title is ``\\title`` + ``\\maketitle``; any later title and the
-  headings are ``\\section*`` / ``\\subsection*`` / ``\\subsubsection*``.
-* Prose is converted from the cell markup; math is passed through as-is.
-* Code is a ``lstlisting`` in MATLAB style; printed output is ``verbatim``.
-* Figures are PNGs beside the .tex, placed with ``\\includegraphics``.
+  headings are ``\\section`` / ``\\subsection`` / ``\\subsubsection``,
+  starred unless the template numbers sections.
+* Text cells are LaTeX (see :mod:`.latex_text`), or with the template's
+  ``latex_text`` off, the Markdown dialect with special characters escaped.
+* Code is a ``lstlisting`` in MATLAB style; printed output is ``verbatim``;
+  the template can leave either out.
+* Each figure is a PNG beside the .tex, in a ``figure`` environment with its
+  caption and ``\\label`` (``fig:<n>`` unless the cell gives one).
 
+The layout — preamble, title page, header and footer — comes from a
+:class:`~.template.ReportTemplate`, the same one the live preview uses.
 Placeholders (``{{expr}}``) are filled with the workspace's values at export.
 """
 
@@ -27,8 +33,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .document import CellKind, LiveDocument
+from .latex_text import inline_latex_text, latex_text
 from .markup import Evaluator, inline_html, inline_latex, to_html, to_latex
 from .render import MathError, figure_png, math_png
+from .template import DEFAULT, ReportTemplate
 
 #: In the order they are preferred. tectonic is a single self-contained
 #: binary that fetches packages on demand; the others come with a TeX
@@ -141,25 +149,8 @@ class Report:
 #  LaTeX
 # ──────────────────────────────────────────────────────────────
 
-_PREAMBLE = r"""\documentclass[11pt,a4paper]{article}
-\usepackage{iftex}
-\ifPDFTeX
-  \usepackage[utf8]{inputenc}
-  \usepackage[T1]{fontenc}
-\fi
-\usepackage[margin=2.5cm]{geometry}
-\usepackage{amsmath,amssymb}
-\usepackage{graphicx}
-\usepackage{xcolor}
-\usepackage{listings}
-\usepackage[hidelinks]{hyperref}
-\lstset{language=Matlab, basicstyle=\ttfamily\small, breaklines=true,
-  frame=single, rulecolor=\color{black!40}, columns=fullflexible,
-  keywordstyle=\color{blue!60!black}, commentstyle=\color{green!40!black},
-  stringstyle=\color{red!60!black}, upquote=true}
-\setlength{\parindent}{0pt}
-\setlength{\parskip}{0.6em}
-"""
+#: What every export wrote before templates: the default template's preamble.
+_PREAMBLE = DEFAULT.preamble()
 
 #: Verbatim and listings blocks are passed to the engine untouched, and
 #: pdflatex has no glyphs for these. ASCII spellings keep every engine happy.
@@ -182,66 +173,123 @@ def _verbatim(env: str, text: str, options: str = "") -> str:
     return f"\\begin{{{env}}}{options}\n{body}\n\\end{{{env}}}"
 
 
+def _label(text: str) -> str:
+    """A label as ``\\label`` accepts it: no braces, backslashes or spaces."""
+    return "".join(c for c in text.strip() if c not in "{}\\%#" and
+                   not c.isspace())
+
+
 def to_tex(document: LiveDocument, *, evaluate: Evaluator | None = None,
-           figure_names: dict[int, list[str]] | None = None) -> str:
+           figure_names: dict[int, list[str]] | None = None,
+           template: ReportTemplate | None = None) -> str:
     """
     The document as LaTeX source. ``figure_names`` maps a cell's id to the
-    PNG file names (relative to the .tex) of its figures.
+    PNG file names (relative to the .tex) of its figures. ``template`` is
+    the layout; the document's own, or the default, when not given.
     """
+    template = template or document.template or DEFAULT
     figure_names = figure_names or {}
+    labels = document.figure_labels()
+
+    def inline(text: str) -> str:
+        if template.latex_text:
+            return inline_latex_text(text, evaluate=evaluate)
+        return inline_latex(text, evaluate=evaluate)
+
     body: list[str] = []
     title_done = False
     for cell in document.cells:
         kind = cell.kind
         if kind is CellKind.TITLE and not title_done:
-            title = inline_latex(cell.source, evaluate=evaluate)
-            body.append(f"\\title{{{title}}}\n\\date{{}}\n\\maketitle")
+            title = inline(cell.source)
+            author = template.author.strip()
+            body.append(f"\\title{{{title}}}\n"
+                        + (f"\\author{{{author}}}\n" if author else "")
+                        + f"\\date{{{template.date.strip()}}}\n\\maketitle"
+                        + ("\n\\tableofcontents" if template.contents else ""))
             title_done = True
         elif kind.is_heading:
-            command = {CellKind.TITLE: "section", CellKind.HEADING: "section",
-                       CellKind.HEADING2: "subsection",
-                       CellKind.HEADING3: "subsubsection"}[kind]
-            body.append(f"\\{command}*{{"
-                        f"{inline_latex(cell.source, evaluate=evaluate)}}}")
+            command = template.section_command(max(kind.level, 1))
+            body.append(f"{command}{{{inline(cell.source)}}}")
         elif kind is CellKind.TEXT:
-            text = to_latex(cell.source, evaluate=evaluate)
+            text = (latex_text(cell.source, evaluate=evaluate)
+                    if template.latex_text
+                    else to_latex(cell.source, evaluate=evaluate))
             if text.strip():
                 body.append(text)
         else:
-            if cell.source.strip():
+            if template.show_code and cell.source.strip():
                 body.append(_verbatim("lstlisting", cell.source))
             output = cell.output
-            if output is not None:
-                printed = "\n".join(p for p in (output.text, output.error)
-                                    if p)
-                if printed.strip():
-                    body.append(_verbatim("verbatim", printed))
-                for name in figure_names.get(cell.id, []):
-                    body.append("\\begin{center}\n"
-                                f"\\includegraphics[width=0.8\\linewidth]"
-                                f"{{{name}}}\n\\end{{center}}")
-    return (_PREAMBLE + "\n\\begin{document}\n\n" + "\n\n".join(body)
-            + "\n\n\\end{document}\n")
+            if output is None:
+                continue
+            printed = "\n".join(p for p in (output.text, output.error) if p)
+            if template.show_output and printed.strip():
+                body.append(_verbatim("verbatim", printed))
+            for i, name in enumerate(figure_names.get(cell.id, [])):
+                meta = cell.figure_meta[i] if i < len(cell.figure_meta) \
+                    else None
+                caption = inline(meta.caption) if meta and \
+                    meta.caption.strip() else ""
+                if not caption and i < len(output.figures):
+                    caption = inline(output.figures[i].title or "")
+                label = _label(labels.get((cell.id, i), ""))
+                placement = template.figure_placement or "H"
+                body.append(
+                    f"\\begin{{figure}}[{placement}]\n\\centering\n"
+                    f"\\includegraphics[width={template.figure_width}]"
+                    f"{{{name}}}\n\\caption{{{caption}}}\n"
+                    + (f"\\label{{{label}}}\n" if label else "")
+                    + "\\end{figure}")
+    if template.contents and not title_done:
+        body.insert(0, "\\tableofcontents")
+    return (template.preamble() + "\n\\begin{document}\n\n"
+            + "\n\n".join(body) + "\n\n\\end{document}\n")
 
 
-def write_tex(document: LiveDocument, path: str | Path, *,
-              evaluate: Evaluator | None = None) -> Report:
-    """Write ``path`` (.tex) and its figures as ``<stem>_fig<n>.png`` beside it."""
-    path = Path(path)
+def figure_files(document: LiveDocument, path: Path,
+                 cache: dict | None = None) -> tuple[dict[int, list[str]],
+                                                     list[Path]]:
+    """
+    Draw every figure as ``<stem>_fig<n>.png`` beside ``path``. ``cache``
+    (spec id → (spec, png bytes)) spares redrawing figures that have not
+    changed since the last call — the live preview rebuilds often.
+    """
     names: dict[int, list[str]] = {}
     files: list[Path] = []
     n = 0
+    fresh = {}
     for cell in document.code_cells():
         if cell.output is None:
             continue
         for spec in cell.output.figures:
             n += 1
             file = path.with_name(f"{path.stem}_fig{n}.png")
-            figure_png(spec, file)
+            hit = cache.get(id(spec)) if cache is not None else None
+            if hit is not None and hit[0] is spec:
+                png = hit[1]
+                if not file.exists() or file.read_bytes() != png:
+                    file.write_bytes(png)
+            else:
+                png = figure_png(spec, file)
+            fresh[id(spec)] = (spec, png)
             files.append(file)
             names.setdefault(cell.id, []).append(file.name)
-    path.write_text(to_tex(document, evaluate=evaluate, figure_names=names),
-                    encoding="utf-8")
+    if cache is not None:
+        cache.clear()
+        cache.update(fresh)
+    return names, files
+
+
+def write_tex(document: LiveDocument, path: str | Path, *,
+              evaluate: Evaluator | None = None,
+              template: ReportTemplate | None = None,
+              cache: dict | None = None) -> Report:
+    """Write ``path`` (.tex) and its figures as ``<stem>_fig<n>.png`` beside it."""
+    path = Path(path)
+    names, files = figure_files(document, path, cache)
+    path.write_text(to_tex(document, evaluate=evaluate, figure_names=names,
+                           template=template), encoding="utf-8")
     return Report(path, files)
 
 
@@ -287,6 +335,27 @@ def compile_pdf(report: Report, engine: tuple[str, str],
         return BuildResult(True, target, log)
 
 
+def build_with(report: Report, engines, compile=None
+               ) -> tuple[bool, Path | None, str]:
+    """
+    Try each engine in turn until one makes the PDF: (ok, pdf, log), the log
+    on failure being each engine's error line. Runs on a build thread, so
+    nothing may escape it — an exception would leave the caller waiting for
+    ever. ``compile`` stands in for :func:`compile_pdf` (tests stub it).
+    """
+    compile = compile or compile_pdf
+    failures = []
+    for engine in engines:
+        try:
+            result = compile(report, engine)
+        except Exception as exc:                      # noqa: BLE001
+            result = BuildResult(False, None, f"{type(exc).__name__}: {exc}")
+        if result.ok:
+            return True, result.pdf, result.log
+        failures.append(f"{engine[0]}:\n{tex_error(result.log)}")
+    return False, None, "\n\n".join(failures)
+
+
 # ──────────────────────────────────────────────────────────────
 #  HTML
 # ──────────────────────────────────────────────────────────────
@@ -305,6 +374,7 @@ pre.output { background: #ffffff; border: 1px solid #c4c7bf; }
 pre.error { background: #fff; border: 1px solid #c1122e; color: #b0102a; }
 img.math { vertical-align: middle; }
 img.figure { max-width: 100%; display: block; margin: 0.5rem auto; }
+p.caption { text-align: center; font-size: 0.9rem; margin-top: 0; }
 """
 
 
@@ -326,8 +396,10 @@ def html_math_image(latex: str, display: bool) -> str | None:
 
 
 def to_html_report(document: LiveDocument, *,
-                   evaluate: Evaluator | None = None) -> str:
+                   evaluate: Evaluator | None = None,
+                   template: ReportTemplate | None = None) -> str:
     """A single self-contained HTML file: math and figures embedded."""
+    template = template or document.template or DEFAULT
     parts: list[str] = []
     for cell in document.cells:
         kind = cell.kind
@@ -338,21 +410,26 @@ def to_html_report(document: LiveDocument, *,
             parts.append(to_html(cell.source, evaluate=evaluate,
                                  math_image=html_math_image))
         else:
-            if cell.source.strip():
+            if template.show_code and cell.source.strip():
                 parts.append(f'<pre class="code">{html.escape(cell.source)}'
                              "</pre>")
             output = cell.output
             if output is None:
                 continue
-            if output.text.strip():
+            if template.show_output and output.text.strip():
                 parts.append(f'<pre class="output">'
                              f"{html.escape(output.text)}</pre>")
             if output.error:
                 parts.append(f'<pre class="error">{html.escape(output.error)}'
                              "</pre>")
-            for spec in output.figures:
+            for i, spec in enumerate(output.figures):
                 parts.append(f'<img class="figure" alt="figure" '
                              f'src="{_data_uri(figure_png(spec))}">')
+                caption = cell.figure_meta[i].caption.strip() \
+                    if i < len(cell.figure_meta) else ""
+                if caption:
+                    parts.append(f'<p class="caption">'
+                                 f"{html.escape(caption)}</p>")
     title = html.escape(document.title)
     return ("<!doctype html>\n<html><head><meta charset=\"utf-8\">"
             f"<title>{title}</title><style>{_CSS}</style></head><body>\n"
@@ -360,8 +437,9 @@ def to_html_report(document: LiveDocument, *,
 
 
 def write_html(document: LiveDocument, path: str | Path, *,
-               evaluate: Evaluator | None = None) -> Report:
+               evaluate: Evaluator | None = None,
+               template: ReportTemplate | None = None) -> Report:
     path = Path(path)
-    path.write_text(to_html_report(document, evaluate=evaluate),
-                    encoding="utf-8")
+    path.write_text(to_html_report(document, evaluate=evaluate,
+                                   template=template), encoding="utf-8")
     return Report(path)

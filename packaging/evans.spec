@@ -44,6 +44,8 @@ EXCLUDES = [
     "PySide6.QtDataVisualization", "PySide6.QtBluetooth", "PySide6.QtNfc",
     "PySide6.QtPositioning", "PySide6.QtLocation", "PySide6.QtSerialPort",
     "PySide6.QtDesigner", "PySide6.QtHelp",
+    # Not QtPdf / QtPdfWidgets: the live script's PDF preview shows its PDF
+    # with them (evans.ui.console.live_preview), and the self-test opens one.
     # Not QtTest: pyqtgraph imports it for its input-simulation helpers, so
     # excluding it breaks the frozen build where the source tree works.
     # The other Qt bindings. All three are installed in the dev environment
