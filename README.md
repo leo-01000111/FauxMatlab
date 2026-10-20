@@ -27,6 +27,10 @@ your PC" the first time you run it. Click **More info**, then **Run anyway**.
 run `Evans.exe`. Nothing gets installed and nothing is registered with Windows. To remove
 it, delete the folder.
 
+The documentation, with a tour and a reference for every console command, simulator block
+and lesson, is at [www.leongorecki.eu/evans](https://www.leongorecki.eu/evans/). Its source
+is in [`site/`](site/README.md).
+
 ## Quick start
 
 From source, on Windows, macOS or Linux, with Python 3.12 or newer:

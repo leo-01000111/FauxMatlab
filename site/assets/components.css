@@ -1,0 +1,180 @@
+/* Copied from leo-01000111.github.io (assets/components.css), the Holding Point design system
+   behind leongorecki.eu. Keep in step with that repo rather than editing here. */
+/* Holding Point — components.css. Load after tokens.css. Every class is prefixed hp-.
+   Markup for each component: see components.md. */
+body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--font-sans); font-size: 16px; line-height: 26px; -webkit-font-smoothing: antialiased; }
+/* In-text links (not buttons, signs, cards or tags — those set their own
+   color and text-decoration: none): ink text with a solid signal-yellow
+   underline bar, like a painted taxiway marking, instead of the old --edge
+   blue. Yellow never appears as text on the Day ground, but a fill or an
+   underline bar is fine (BRAND.md "Colour"). The focus ring stays --focus
+   (= --edge) for accessibility; --edge itself is otherwise retired from
+   link colour. */
+a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--signal); text-decoration-thickness: 3px; text-underline-offset: 3px; }
+a:hover, a:focus-visible { text-decoration-thickness: 5px; }
+:focus-visible { outline: var(--stroke-bold) solid var(--focus); outline-offset: 2px; }
+
+/* ——— Sign ——— */
+.hp-sign { display: inline-flex; align-items: center; gap: var(--space-2); box-sizing: border-box; min-height: 44px; padding: 0 var(--space-4);
+  font-family: var(--font-display); font-weight: 760; font-size: 20px; line-height: 1; letter-spacing: .02em; font-stretch: var(--stretch-sign); text-transform: uppercase;
+  border-radius: var(--radius-plate); text-decoration: none; white-space: nowrap; position: relative; }
+.hp-sign svg { width: 20px; height: 20px; flex: none; }
+.hp-sign--location { background: var(--plate); color: var(--on-plate); box-shadow: inset 0 0 0 4px var(--plate), inset 0 0 0 7px var(--on-plate); padding: 0 calc(var(--space-4) + 4px); }
+.hp-sign--direction { background: var(--signal); color: var(--on-signal); }
+.hp-sign--info { background: var(--signal); color: var(--on-signal); }
+.hp-sign--mandatory { background: var(--hold); color: var(--on-hold); box-shadow: 0 0 0 2px var(--ink); }
+.hp-sign--sm { min-height: 32px; font-size: 15px; padding: 0 var(--space-3); }
+.hp-sign--sm svg { width: 15px; height: 15px; }
+.hp-sign--sm.hp-sign--location { box-shadow: inset 0 0 0 3px var(--plate), inset 0 0 0 5px var(--on-plate); padding: 0 calc(var(--space-3) + 3px); }
+a.hp-sign--direction:hover svg { transform: translateX(var(--hp-nudge, 3px)); }
+a.hp-sign svg { transition: transform var(--t-step) var(--ease-step); }
+
+/* ——— SignArray (navigation) ——— */
+.hp-signarray { display: inline-flex; flex-wrap: wrap; gap: 3px; padding: 3px; background: var(--signarray-frame); border-radius: var(--radius-plate); }
+.hp-signarray .hp-sign { border-radius: 0; }
+.hp-signarray > :first-child { border-radius: var(--radius-plate) 0 0 var(--radius-plate); }
+.hp-signarray > :last-child { border-radius: 0 var(--radius-plate) var(--radius-plate) 0; }
+
+/* ——— Button ——— */
+.hp-btn { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); box-sizing: border-box; min-height: 48px; padding: 0 var(--space-4);
+  font-family: var(--font-display); font-weight: 760; font-size: 17px; line-height: 1; letter-spacing: .03em; font-stretch: var(--stretch-sign); text-transform: uppercase;
+  border: 0; border-radius: var(--radius-plate); cursor: pointer; text-decoration: none; background: none; color: var(--ink);
+  transition: transform var(--t-step) var(--ease-step), box-shadow var(--t-fast) var(--ease-out); }
+.hp-btn svg { width: 18px; height: 18px; flex: none; transition: transform var(--t-step) var(--ease-step); }
+.hp-btn--primary { background: var(--plate); color: var(--on-plate); box-shadow: inset 0 0 0 4px var(--plate), inset 0 0 0 6px var(--on-plate); padding: 0 calc(var(--space-4) + 6px); }
+.hp-btn--primary:hover { transform: translate(-2px, -2px); box-shadow: inset 0 0 0 4px var(--plate), inset 0 0 0 6px var(--on-plate), var(--shadow-lift); }
+.hp-btn--secondary { background: var(--signal); color: var(--on-signal); }
+.hp-btn--secondary:hover { transform: translate(-2px, -2px); box-shadow: var(--shadow-lift); }
+.hp-btn--ghost { box-shadow: inset 0 0 0 var(--stroke-bold) var(--ink-muted); }
+.hp-btn--ghost:hover { box-shadow: inset 0 0 0 var(--stroke-bold) var(--ink); }
+.hp-btn--hold { background: var(--hold); color: var(--on-hold); }
+.hp-btn:hover svg { transform: translateX(3px); }
+.hp-btn--sm { min-height: 36px; font-size: 14px; padding: 0 var(--space-3); }
+.hp-btn--sm.hp-btn--primary { padding: 0 calc(var(--space-3) + 5px); box-shadow: inset 0 0 0 3px var(--plate), inset 0 0 0 5px var(--on-plate); }
+.hp-btn[disabled] { opacity: .45; cursor: not-allowed; transform: none; }
+
+/* ——— Tag ——— */
+.hp-tags { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+.hp-tag { display: inline-flex; align-items: center; gap: var(--space-1); padding: 3px var(--space-2); font-family: var(--font-mono); font-size: 11px; line-height: 16px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink-muted); border-radius: var(--radius-0); background: transparent; }
+.hp-tag b { font-weight: 600; color: var(--ink-muted); }
+.hp-tag--solid { background: var(--ink); color: var(--ground); box-shadow: none; }
+.hp-tag--solid b { color: inherit; opacity: .8; }
+
+/* ——— Lamp ——— */
+.hp-lamp { display: inline-flex; align-items: flex-start; gap: var(--space-2); font-family: var(--font-mono); font-size: 13px; line-height: 20px; color: var(--ink); }
+.hp-lamp i { width: 10px; height: 10px; margin-top: 5px; border-radius: var(--radius-lamp); flex: none; }
+.hp-lamp--go i { background: var(--lamp-go); box-shadow: 0 0 0 3px color-mix(in srgb, var(--lamp-go) 22%, transparent); }
+.hp-lamp--caution i { background: var(--lamp-caution); box-shadow: 0 0 0 1.5px var(--ink); }
+.hp-lamp--hold i { background: var(--hold); box-shadow: 0 0 0 1.5px var(--ink); }
+.hp-lamp--off i { background: transparent; box-shadow: inset 0 0 0 1.5px var(--ink-muted); }
+.hp-lamp--go.is-live i { animation: hp-pulse 2.4s var(--ease-out) infinite; }
+@keyframes hp-pulse { 0%, 100% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--lamp-go) 22%, transparent); } 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--lamp-go) 0%, transparent); } }
+
+/* ——— DataPlate ——— */
+.hp-plate { background: var(--surface); box-shadow: inset 0 0 0 var(--stroke-bold) var(--ink); padding: var(--space-4) var(--space-4) var(--space-3); max-width: 480px; box-sizing: border-box; }
+.hp-plate__head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-3); padding-bottom: var(--space-3); border-bottom: var(--stroke-bold) solid var(--ink); }
+.hp-plate__title { font-family: var(--font-display); font-weight: 760; font-stretch: var(--stretch-sign); text-transform: uppercase; font-size: 15px; letter-spacing: .04em; }
+.hp-plate__ref { font-family: var(--font-mono); font-size: 11px; color: var(--ink-muted); letter-spacing: .08em; }
+.hp-plate dl { margin: 0; display: grid; grid-template-columns: minmax(84px, 38.5%) 1fr; }
+.hp-plate dt, .hp-plate dd { margin: 0; padding: var(--space-3) 0; border-bottom: var(--stroke-hair) solid var(--rule); }
+.hp-plate dt { font-family: var(--font-mono); font-size: 11px; line-height: 20px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-muted); padding-right: var(--space-3); }
+.hp-plate dd { font-family: var(--font-mono); font-size: 13px; line-height: 20px; font-variant-numeric: tabular-nums; }
+.hp-plate dl > :nth-last-child(-n+2) { border-bottom: 0; }
+
+/* ——— ProjectCard ——— */
+.hp-card { position: relative; display: grid; grid-template-columns: 5fr 8fr; min-height: 220px; background: var(--surface); color: var(--ink); text-decoration: none;
+  box-shadow: inset 0 0 0 var(--stroke-bold) var(--ink); overflow: hidden; transition: transform var(--t-step) var(--ease-step), box-shadow var(--t-fast) var(--ease-out); }
+a.hp-card:hover, a.hp-card:focus-visible { transform: translate(-2px, -2px); box-shadow: inset 0 0 0 var(--stroke-bold) var(--ink), var(--shadow-lift); }
+.hp-card__index { position: relative; background: var(--signal); color: var(--on-signal); overflow: hidden; }
+.hp-card__index span { position: absolute; left: -6px; bottom: -26px; font-family: var(--font-display); font-weight: 860; font-stretch: 118%; font-size: 172px; line-height: 1; letter-spacing: -.06em; }
+.hp-card__index em { position: absolute; top: var(--space-3); left: var(--space-3); font: 600 11px/16px var(--font-mono); letter-spacing: .1em; font-style: normal; text-transform: uppercase; }
+.hp-card__body { padding: var(--space-5) var(--space-5) var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); }
+.hp-card__kicker { font: 600 11px/16px var(--font-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-muted); display: flex; gap: var(--space-3); flex-wrap: wrap; }
+.hp-card__title { margin: 0; font-family: var(--font-display); font-weight: 680; font-size: 26px; line-height: 1.15; letter-spacing: -.01em; }
+.hp-card__summary { margin: 0; font-size: 16px; line-height: 26px; color: var(--ink); max-width: 52ch; }
+.hp-card__foot { margin-top: auto; display: flex; justify-content: space-between; align-items: end; gap: var(--space-3); flex-wrap: wrap; }
+.hp-card__go { display: inline-flex; width: 36px; height: 36px; align-items: center; justify-content: center; background: var(--plate); color: var(--on-plate); border-radius: var(--radius-plate); flex: none; }
+.hp-card__go svg { width: 18px; height: 18px; transition: transform var(--t-step) var(--ease-step); }
+a.hp-card:hover .hp-card__go svg { transform: translateX(3px); }
+.hp-card--hold .hp-card__index { background: var(--hold); color: var(--on-hold); }
+.hp-card--plain .hp-card__index { background: var(--plate); color: var(--on-plate); }
+@media (max-width: 620px) { .hp-card { grid-template-columns: 1fr; } .hp-card__index { min-height: 96px; } .hp-card__index span { font-size: 120px; bottom: -20px; } }
+
+/* ——— LangSwitch ——— */
+.hp-lang { display: inline-flex; gap: 2px; padding: 2px; box-shadow: inset 0 0 0 var(--stroke-bold) var(--ink); border-radius: var(--radius-plate); }
+.hp-lang a, .hp-lang span { display: inline-flex; align-items: center; justify-content: center; min-width: 40px; min-height: 32px; padding: 0 var(--space-2);
+  font-family: var(--font-display); font-weight: 760; font-size: 14px; letter-spacing: .06em; font-stretch: var(--stretch-sign); color: var(--ink); text-decoration: none; }
+.hp-lang a:hover { background: var(--rule); }
+.hp-lang [aria-current] { background: var(--plate); color: var(--on-plate); border-radius: 1px; }
+/* Theme toggle: the LangSwitch plate with buttons instead of links (extension) */
+.hp-lang button { display: inline-flex; align-items: center; justify-content: center; min-width: 40px; min-height: 32px; padding: 0 var(--space-2); margin: 0; border: 0; background: none; cursor: pointer;
+  font-family: var(--font-display); font-weight: 760; font-size: 14px; letter-spacing: .06em; font-stretch: var(--stretch-sign); text-transform: uppercase; color: var(--ink); }
+.hp-lang button:hover { background: var(--rule); }
+.hp-lang button[aria-pressed="true"] { background: var(--plate); color: var(--on-plate); border-radius: 1px; }
+.hp-lang[hidden] { display: none; }
+
+/* ——— Marking ——— */
+.hp-marking { display: block; width: 100%; height: 28px; color: var(--signal); }
+.hp-marking .edge { stroke: var(--marking-edge); }
+.hp-marking { overflow: hidden; }
+.hp-marking-wrap { display: flex; align-items: center; gap: var(--space-3); }
+.hp-marking-wrap .hp-marking { flex: 1; }
+.hp-marking-wrap .label { color: var(--ink-muted); white-space: nowrap; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 1ms !important; animation: none !important; }
+  .hp-btn:hover, a.hp-card:hover, .hp-btn--secondary:hover { transform: none; }
+}
+
+/* ——— FlipBoard (split-flap "Currently improving" display, home page) ———
+   Every character is its own flap tile in a fixed grid (--flip-cols columns,
+   set inline from the longest string the board will ever show). Two lines:
+   the label, then a project name, both padded to --flip-cols with blank
+   tiles. Legends are Martian Mono (the system's data/mono face) rather than
+   Archivo: a real split-flap is a mechanical character display, closer in
+   spirit to `.data`/`.label` than to a word-shaped sign legend, and a fixed
+   mono metric keeps every flap's glyph centred the same way. Tiles are
+   `--flip-tile`/`--flip-on-tile` (surface+ink by day, plate+on-plate by
+   night, like the location sign) with an `--flip-hairline` crease across
+   the middle, `radius-0`. The whole board is one link; hover/focus adds a
+   signal ring + shadow-lift + 2px lift without disturbing the standard
+   `--focus` ring drawn by the global `:focus-visible` rule. */
+.hp-flip {
+  --flip-step-t: 150ms; /* a single flap's click: --ease-step's overshoot, shorter than --t-step so a run of them reads as one mechanical flutter */
+  display: flex; flex-direction: column; gap: 3px; width: 100%; box-sizing: border-box;
+  text-decoration: none; color: inherit; padding: 3px; container-type: inline-size;
+  background: var(--flip-hairline); border-radius: var(--radius-plate); /* housing, same frame as the SignArray */
+  transition: transform var(--t-step) var(--ease-step), box-shadow var(--t-fast) var(--ease-out);
+}
+.hp-flip:hover, .hp-flip:focus-visible { transform: translate(-2px, -2px); box-shadow: 0 0 0 2px var(--signal), var(--shadow-lift); }
+.hp-flip__line { display: grid; grid-template-columns: repeat(var(--flip-cols, 1), 1fr); gap: 2px; }
+.hp-flip__tile {
+  position: relative; overflow: hidden; box-sizing: border-box;
+  aspect-ratio: 3 / 4; min-width: 0;
+  background: var(--flip-tile); color: var(--flip-on-tile);
+  border-radius: var(--radius-0);
+  perspective: 200px;
+}
+.hp-flip__tile::after {
+  content: ""; position: absolute; left: 0; right: 0; top: 50%; height: var(--stroke-hair);
+  background: var(--rule); transform: translateY(-50%); z-index: 2; pointer-events: none; /* the split between the two flap halves */
+}
+.hp-flip__face, .hp-flip__flap {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-mono); font-weight: 600; text-transform: uppercase; font-variant-numeric: tabular-nums;
+  font-size: clamp(9px, 3.6cqi, 20px); line-height: 1; letter-spacing: 0;
+  backface-visibility: hidden;
+}
+.hp-flip__flap { transform-origin: 50% 50%; background: var(--flip-tile); z-index: 1; opacity: 0; }
+.hp-flip__tile.is-flipping .hp-flip__flap { animation: hp-flap-step var(--flip-step-t, var(--t-fast)) var(--ease-step); }
+@keyframes hp-flap-step {
+  0% { transform: rotateX(0deg); opacity: 1; }
+  70% { opacity: 1; }
+  100% { transform: rotateX(-100deg); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hp-flip:hover, .hp-flip:focus-visible { transform: none; }
+  .hp-flip__tile.is-flipping .hp-flip__flap { animation: none; opacity: 0; }
+}
+

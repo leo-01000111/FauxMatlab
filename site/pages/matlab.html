@@ -1,0 +1,70 @@
+    <section class="proj-hero">
+      <p class="label">MATLAB compatibility</p>
+      <h1>Running MATLAB scripts</h1>
+      <p class="lede">The console prompt is Python, but the Script tab runs MATLAB scripts as written, and the Live tab opens MATLAB live scripts. This page lists what a script can use. It covers what two control courses need, not the whole MATLAB language.</p>
+    </section>
+
+    <section class="proj-section" id="language">
+      <div class="card prose">
+        <h2>The language</h2>
+        <p>Paste a <code>.m</code> file into the Script tab and Evans translates it. <em>Auto</em> picks the language from the text, and the selector beside Run overrides it. A script can use:</p>
+        <ul>
+          <li>matrix literals such as <code>[1 -2 3]</code>, <code>^</code> and the <code>'</code> transpose;</li>
+          <li>1-based indexing with <code>end</code>, and <code>a:b:c</code> ranges;</li>
+          <li><code>if</code>, <code>for</code>, <code>while</code>, <code>switch</code> and <code>try</code> blocks;</li>
+          <li>local functions, and function files in the script's folder, called the way MATLAB calls them, with <code>cd</code>, <code>pwd</code> and <code>addpath</code>;</li>
+          <li>cells, structs and struct arrays;</li>
+          <li><code>hold on</code>, <code>grid on</code> and <code>close all</code>;</li>
+          <li>multiple outputs: <code>[y, t] = step(G)</code> returns MATLAB's outputs in MATLAB's order without plotting.</li>
+        </ul>
+        <p>An error names the MATLAB line, never the generated Python.</p>
+      </div>
+    </section>
+
+    <section class="proj-section" id="functions">
+      <div class="card prose">
+        <h2>Functions</h2>
+        <p>The control commands are the console's, listed in the <a href="commands.html">command reference</a>. Beyond those:</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Area</th><th>Functions</th></tr></thead>
+          <tbody>
+            <tr><td>Output and formatting</td><td><code>legend</code>, <code>title</code>, <code>axis</code>, <code>bodeoptions</code> with phase matching, <code>fprintf</code>, <code>num2str</code>, <code>struct2table</code>, which behave as in MATLAB</td></tr>
+            <tr><td>Signal processing</td><td><code>fft</code>, <code>ifft</code>, <code>filter</code>, <code>conv</code>, <code>butter</code>, <code>cheby1</code>, <code>ellip</code>, <code>freqz</code>, <code>findpeaks</code></td></tr>
+            <tr><td>Audio</td><td><code>audioread</code>, <code>audiowrite</code>, <code>sound</code></td></tr>
+            <tr><td>Numerics</td><td><code>ode45</code>, <code>fzero</code>, <code>fminsearch</code>, <code>interp1</code>, <code>trapz</code>, <code>meshgrid</code></td></tr>
+            <tr><td>Files</td><td><code>save</code> and <code>load</code> of <code>.mat</code> files</td></tr>
+            <tr><td>Plots</td><td>real <code>subplot</code>, <code>stem</code>, <code>stairs</code>, <code>bar</code> and <code>histogram</code></td></tr>
+          </tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <section class="proj-section" id="editor">
+      <div class="card prose">
+        <h2>Running and debugging</h2>
+        <p>Run starts from a clean slate: it clears the transcript and the previous run's figures, and offers to save figures that were never saved. <code>%%</code> splits a script into sections; <kbd>Ctrl+Enter</kbd> runs the one under the cursor and <kbd>Ctrl+Shift+Enter</kbd> runs it and moves on.</p>
+        <p>Click the gutter for a breakpoint. <kbd>F5</kbd> runs or continues, <kbd>F10</kbd> steps and <kbd>F11</kbd> steps into your functions. While paused, the <code>K&gt;&gt;</code> prompt and the workspace see the paused scope. Stop, <kbd>Shift+F5</kbd> or <kbd>Ctrl+C</kbd> interrupts anything, <code>while true</code> included.</p>
+      </div>
+    </section>
+
+    <section class="proj-section" id="live">
+      <div class="card prose">
+        <h2>Live scripts</h2>
+        <p>The Live tab opens MATLAB's <code>.mlx</code> files and plain-text live <code>.m</code> files, and saves the latter. Code cells keep their output and figures underneath; text cells take <code>$…$</code> and <code>$$…$$</code> LaTeX and <code>{{Kp}}</code> for a workspace value.</p>
+        <p><em>Export report</em> writes a <code>.tex</code> with its figures and builds the PDF if a TeX engine (tectonic, MiKTeX, TeX Live) is installed, or an HTML page if not.</p>
+      </div>
+    </section>
+
+    <section class="proj-section" id="prompt">
+      <div class="card prose">
+        <h2>At the prompt</h2>
+        <p>Lines typed at the console prompt are Python. The command names are MATLAB's, so a snippet usually needs only commas added: <code>G = tf([1], [1, 2, 1])</code>. Powers are <code>**</code>, indexing is 0-based, and <code>s</code> is the Laplace variable.</p>
+      </div>
+    </section>
+
+    <section class="proj-section" id="trademark">
+      <div class="card prose">
+        <h2>Trademarks</h2>
+        <p>MATLAB and Simulink are registered trademarks of The MathWorks, Inc. Evans is an independent project, not affiliated with or endorsed by MathWorks.</p>
+      </div>
+    </section>

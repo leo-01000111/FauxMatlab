@@ -1,0 +1,63 @@
+    <section class="proj-hero">
+      <p class="label">Install · v@@version@@</p>
+      <h1>Install Evans</h1>
+      <p class="lede">On Windows, download the standalone build: it needs nothing else installed, not even Python. Everywhere else, and on Windows if you want to change the code, run it from source.</p>
+      <div class="cta">
+        <a class="hp-btn hp-btn--primary" href="@@releases@@"><span>Download for Windows</span><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><g transform="rotate(90 12 12)" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="square" stroke-linejoin="miter"><path d="M3.5 12H18.5"></path><path d="M12 5.2L18.8 12L12 18.8"></path></g></svg></a>
+      </div>
+    </section>
+
+    <section class="proj-section" id="windows">
+      <div class="card prose">
+        <h2>Windows: the release zip</h2>
+        <ol>
+          <li>Open the <a href="@@releases@@">latest release</a> and download <code>Evans-windows.zip</code> from its Assets list.</li>
+          <li>Unzip it anywhere, for example into <code>Documents\Evans</code>. Keep the folder together: the program is a folder, not a single file.</li>
+          <li>Run <code>Evans.exe</code> inside it. To uninstall, delete the folder.</li>
+        </ol>
+        <p>The folder also holds <code>Evans-check.exe</code>, the same program's headless self-test. Run it from a terminal: it checks every lesson's analytic claims and builds the whole window offscreen, and its exit code is the number of failures. It exists as a separate file because a windowed program on Windows has no console to print to.</p>
+        <p>It is a one-folder build on purpose. A one-file build unpacks the whole Qt runtime on every launch, which for PySide6, SciPy and SymPy takes several seconds before the window appears.</p>
+      </div>
+    </section>
+
+    <section class="proj-section" id="installer">
+      <div class="card prose">
+        <h2>An installer is coming</h2>
+        <p>A Windows installer, with a Start menu entry and an uninstaller, is being built. When it ships it will appear on the same <a href="@@releases@@">latest release</a> page, next to the zip, so the download link above stays the right one.</p>
+      </div>
+    </section>
+
+    <section class="proj-section" id="smartscreen">
+      <div class="card prose">
+        <h2>The SmartScreen warning</h2>
+        <p>The Windows build is not code-signed yet, so the first time you run it Windows SmartScreen may stop it with a blue <strong>Windows protected your PC</strong> window. That is what Windows shows for any program it has not seen signed, not a sign that something is wrong with the file.</p>
+        <ol>
+          <li>Click <strong>More info</strong>.</li>
+          <li>Check that the app is <code>Evans.exe</code>, then click <strong>Run anyway</strong>.</li>
+        </ol>
+        <p>Windows remembers the choice. If you would rather not run an unsigned build, run Evans from source instead: it is the same code, and you can read all of it first. The release is built by the repository's own <a href="@@repo@@/actions">GitHub Actions workflow</a> from the tagged commit.</p>
+      </div>
+    </section>
+
+    <section class="proj-section" id="source">
+      <div class="card prose">
+        <h2>From source</h2>
+        <p>On Windows, macOS or Linux, with Python 3.12 or newer:</p>
+<pre><code>git clone https://github.com/leo-01000111/evans.git
+cd evans
+python -m venv .venv</code></pre>
+        <p>Activate the environment (<code>.venv\Scripts\activate</code> on Windows, <code>source .venv/bin/activate</code> elsewhere), then:</p>
+<pre><code>pip install -e ".[dev]"
+python app.py</code></pre>
+        <div class="table-wrap"><table>
+          <thead><tr><th>To…</th><th>Run</th></tr></thead>
+          <tbody>
+            <tr><td>check the install (headless self-test; exit code = failures)</td><td><code>python app.py --check</code></td></tr>
+            <tr><td>run the test suite</td><td><code>pytest -q</code></td></tr>
+            <tr><td>build the standalone Windows app into <code>dist/Evans/</code></td><td><code>pyinstaller --clean --noconfirm packaging/evans.spec</code></td></tr>
+          </tbody>
+        </table></div>
+        <p>On Linux, PySide6 needs the usual Qt and X11 runtime libraries; the CI workflow (<code>.github/workflows/ci.yml</code>) lists the exact apt packages. There is no dependency on slycot, so a clean <code>pip install</code> is all it takes.</p>
+        <p>Exporting a live script as a PDF needs a TeX engine (MiKTeX, TeX Live or tectonic). Without one the report is written as HTML.</p>
+      </div>
+    </section>

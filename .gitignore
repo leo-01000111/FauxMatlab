@@ -39,3 +39,6 @@ scratch/
 
 # ── Claude Code session state ───────────────────────────────────
 .claude/
+
+# ── Documentation site build output ─────────────────────────────
+site/_build/
