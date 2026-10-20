@@ -21,6 +21,8 @@ stop it is.
 
 from __future__ import annotations
 
+import sys
+
 from PySide6.QtCore import QEvent, QPoint, QRect, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import (
@@ -39,6 +41,17 @@ from . import iconset, theme
 BAR_HEIGHT = 32
 BUTTON_SIZE = QSize(46, BAR_HEIGHT)
 GLYPH_PX = 20
+
+
+def draws_own_top_border() -> bool:
+    """
+    Whether the bar has to draw the window's 1-pixel top border itself.
+
+    With the caption taken away, Windows 11 still draws the frame's top line;
+    Windows 10 does not, so there the window's top edge would vanish into
+    whatever is behind it.
+    """
+    return sys.platform == "win32" and sys.getwindowsversion().build < 22000
 
 
 def _mix(a: str, b: str, amount: float) -> QColor:
@@ -206,6 +219,18 @@ class TitleBar(QWidget):
             self.setMaximumHeight(16777215)
         self.setVisible(on or not self.menu_bar.isNativeMenuBar())
 
+    def paintEvent(self, event) -> None:      # noqa: N802 (Qt API)
+        super().paintEvent(event)
+        if not (self._chrome and draws_own_top_border()
+                and not self._window.isMaximized()):
+            return
+        t = theme.tokens()
+        p = QPainter(self)
+        colour = (QColor(t.edge) if self._window.isActiveWindow()
+                  else _mix(t.ground, t.ink, .25))
+        p.fillRect(QRect(0, 0, self.width(), 1), colour)
+        p.end()
+
     def sync_window_state(self) -> None:
         """Maximise becomes restore, and back, with the window."""
         maximized = self._window.isMaximized()
@@ -226,6 +251,7 @@ class TitleBar(QWidget):
             kind = event.type()
             if kind == QEvent.WindowStateChange:
                 self.sync_window_state()
+                self.update()               # the top border comes and goes
             elif kind in (QEvent.ActivationChange, QEvent.WindowActivate,
                           QEvent.WindowDeactivate):
                 self.setProperty("active", self._window.isActiveWindow())

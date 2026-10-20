@@ -25,6 +25,12 @@ So the native frame is kept, and only its caption is taken away:
     snapping, double-click to maximise, right-click for the system menu),
     and everything else is ``HTCLIENT``, Qt's as usual.
 
+An auto-hide taskbar appears when the mouse reaches the screen edge it hides
+behind, but a maximised window with its caption gone covers that edge too.
+So a maximised window leaves a 2-pixel gap on each edge of its monitor that
+has an auto-hide bar (``ABM_GETAUTOHIDEBAREX``), as Windows Terminal and
+Chromium do.
+
 Because the maximise button answers ``HTMAXBUTTON``, Windows sends it
 non-client mouse messages rather than client ones; :class:`NativeFrame`
 turns those into hover, press and click on the Qt button.
@@ -74,6 +80,16 @@ SWP_NOZORDER = 0x0004
 SWP_NOACTIVATE = 0x0010
 SWP_FRAMECHANGED = 0x0020
 
+ABM_GETSTATE = 0x04
+ABM_GETAUTOHIDEBAREX = 0x0B
+ABS_AUTOHIDE = 0x01
+ABE_LEFT, ABE_TOP, ABE_RIGHT, ABE_BOTTOM = 0, 1, 2, 3
+MONITOR_DEFAULTTONEAREST = 2
+
+#: How far a maximised window keeps off an auto-hide taskbar's edge, in
+#: physical pixels: enough for the mouse to touch the edge and reveal it.
+AUTOHIDE_GAP = 2
+
 TME_LEAVE = 0x00000002
 TME_NONCLIENT = 0x00000010
 
@@ -88,6 +104,17 @@ HANDLED = frozenset((WM_NCCALCSIZE, WM_NCHITTEST, WM_NCMOUSEMOVE,
 
 class NCCALCSIZE_PARAMS(ctypes.Structure):  # noqa: N801 (Win32 name)
     _fields_ = [("rgrc", wintypes.RECT * 3), ("lppos", ctypes.c_void_p)]
+
+
+class APPBARDATA(ctypes.Structure):
+    _fields_ = [("cbSize", wintypes.DWORD), ("hWnd", wintypes.HWND),
+                ("uCallbackMessage", wintypes.UINT), ("uEdge", wintypes.UINT),
+                ("rc", wintypes.RECT), ("lParam", wintypes.LPARAM)]
+
+
+class MONITORINFO(ctypes.Structure):
+    _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", wintypes.RECT),
+                ("rcWork", wintypes.RECT), ("dwFlags", wintypes.DWORD)]
 
 
 class TRACKMOUSEEVENT(ctypes.Structure):
@@ -126,6 +153,23 @@ def client_hit(region: str, y: int, x: int, width: int, band: int,
     if region == "caption":
         return HTCAPTION
     return HTCLIENT
+
+
+def autohide_inset(rect, edges, gap: int = AUTOHIDE_GAP) -> None:
+    """
+    Pull a maximised client rectangle in by ``gap`` on each auto-hide edge.
+
+    ``rect`` has ``left``/``top``/``right``/``bottom`` and is changed in place;
+    ``edges`` holds ``ABE_*`` values.
+    """
+    if ABE_LEFT in edges:
+        rect.left += gap
+    if ABE_TOP in edges:
+        rect.top += gap
+    if ABE_RIGHT in edges:
+        rect.right -= gap
+    if ABE_BOTTOM in edges:
+        rect.bottom -= gap
 
 
 # ── the Win32 functions, declared ───────────────────────────────
@@ -170,6 +214,21 @@ class _Win32:
         self.GetSystemMetrics.argtypes = [ctypes.c_int]
         self.GetSystemMetrics.restype = ctypes.c_int
 
+        self.MonitorFromWindow = user32.MonitorFromWindow
+        self.MonitorFromWindow.argtypes = [wintypes.HWND, wintypes.DWORD]
+        self.MonitorFromWindow.restype = wintypes.HMONITOR
+
+        self.GetMonitorInfoW = user32.GetMonitorInfoW
+        self.GetMonitorInfoW.argtypes = [wintypes.HMONITOR,
+                                         ctypes.POINTER(MONITORINFO)]
+        self.GetMonitorInfoW.restype = wintypes.BOOL
+
+        shell32 = ctypes.WinDLL("shell32")
+        self.SHAppBarMessage = shell32.SHAppBarMessage
+        self.SHAppBarMessage.argtypes = [wintypes.DWORD,
+                                         ctypes.POINTER(APPBARDATA)]
+        self.SHAppBarMessage.restype = ctypes.c_size_t
+
         # Per-monitor DPI versions: Windows 10 1607 and later.
         self.GetDpiForWindow = getattr(user32, "GetDpiForWindow", None)
         self.GetSystemMetricsForDpi = getattr(user32, "GetSystemMetricsForDpi",
@@ -188,6 +247,25 @@ class _Win32:
             if dpi:
                 return self.GetSystemMetricsForDpi(index, dpi)
         return self.GetSystemMetrics(index)
+
+    def autohide_edges(self, hwnd: int) -> set[int]:
+        """The edges of ``hwnd``'s monitor that have an auto-hide appbar."""
+        bar = APPBARDATA(cbSize=ctypes.sizeof(APPBARDATA))
+        if not self.SHAppBarMessage(ABM_GETSTATE, ctypes.byref(bar)) \
+                & ABS_AUTOHIDE:
+            return set()
+        monitor = self.MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST)
+        info = MONITORINFO(cbSize=ctypes.sizeof(MONITORINFO))
+        if not monitor or not self.GetMonitorInfoW(monitor,
+                                                   ctypes.byref(info)):
+            return set()
+        edges = set()
+        for edge in (ABE_LEFT, ABE_TOP, ABE_RIGHT, ABE_BOTTOM):
+            bar = APPBARDATA(cbSize=ctypes.sizeof(APPBARDATA), uEdge=edge,
+                             rc=info.rcMonitor)
+            if self.SHAppBarMessage(ABM_GETAUTOHIDEBAREX, ctypes.byref(bar)):
+                edges.add(edge)
+        return edges
 
     def frame_y(self, hwnd: int) -> int:
         """The resize border's height, padding included, in physical px."""
@@ -314,6 +392,7 @@ class NativeFrame:
         params.rgrc[0].top = top
         if api.IsZoomed(hwnd):
             params.rgrc[0].top += api.frame_y(hwnd)
+            autohide_inset(params.rgrc[0], api.autohide_edges(hwnd))
         return True, 0
 
     def _hit_test(self, api: _Win32, hwnd, wparam, lparam):

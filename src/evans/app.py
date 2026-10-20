@@ -108,7 +108,8 @@ def main() -> None:
     # Enable high-DPI
     app.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
     app.setApplicationName("Evans")
-    app.setApplicationDisplayName("Evans — Classical & Modern Control")
+    # No setApplicationDisplayName: Qt appends it to every native caption,
+    # which made the window read "Evans — … - Evans — …".
 
     # Identity first: QSettings (the saved theme among them) is keyed on it.
     app.setOrganizationName("Evans")

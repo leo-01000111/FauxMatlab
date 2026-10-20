@@ -86,7 +86,7 @@ from .workspace import Workspace, WorkspaceStack
 
 class MainWindow(QMainWindow):
 
-    APP_TITLE = "Evans — Classical Control Workbench"
+    APP_TITLE = "Evans — Classical & Modern Control"
 
     def __init__(self, arch: CourseArchitecture | None = None) -> None:
         super().__init__()
@@ -1146,7 +1146,7 @@ class MainWindow(QMainWindow):
     def _show_about(self) -> None:
         QMessageBox.about(
             self, "About Evans",
-            "Evans — Classical Control Workbench\n\n"
+            "Evans — Classical & Modern Control\n\n"
             "Built for the CLACO course (Master Automatique et Robotique).\n\n"
             "Stack: Python 3.12 · python-control · PySide6 · pyqtgraph · sympy\n\n"
             "Architecture: 2-DOF feedback + feedforward (ch.5)\n"

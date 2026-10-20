@@ -341,3 +341,51 @@ def test_a_refused_frame_falls_back(win, monkeypatch):
         assert not win.title_bar.chrome_visible
     finally:
         win.set_integrated_title_bar(False, remember=False)
+
+
+# ── auto-hide taskbars, the Windows 10 border, the title ────────
+
+@pytest.mark.parametrize("edges, expected", [
+    (set(), (0, 0, 1920, 1080)),
+    ({winframe.ABE_BOTTOM}, (0, 0, 1920, 1078)),
+    ({winframe.ABE_TOP}, (0, 2, 1920, 1080)),
+    ({winframe.ABE_LEFT, winframe.ABE_RIGHT}, (2, 0, 1918, 1080)),
+])
+def test_a_maximised_window_leaves_auto_hide_edges_uncovered(edges, expected):
+    rect = wintypes.RECT(0, 0, 1920, 1080)
+    winframe.autohide_inset(rect, edges)
+    assert (rect.left, rect.top, rect.right, rect.bottom) == expected
+
+
+@pytest.mark.skipif(not winframe.supported(), reason="needs real Windows")
+def test_the_auto_hide_query_answers_on_real_windows(win):
+    api = winframe._Win32()
+    edges = api.autohide_edges(int(win.winId()))
+    assert edges <= {winframe.ABE_LEFT, winframe.ABE_TOP,
+                     winframe.ABE_RIGHT, winframe.ABE_BOTTOM}
+
+
+def test_the_top_border_is_drawn_only_on_windows_10(monkeypatch):
+    from evans.ui import titlebar
+
+    class Version:
+        def __init__(self, build):
+            self.build = build
+
+    monkeypatch.setattr(titlebar.sys, "platform", "win32")
+    monkeypatch.setattr(titlebar.sys, "getwindowsversion",
+                        lambda: Version(19045), raising=False)
+    assert titlebar.draws_own_top_border()           # Windows 10 22H2
+    monkeypatch.setattr(titlebar.sys, "getwindowsversion",
+                        lambda: Version(22631), raising=False)
+    assert not titlebar.draws_own_top_border()       # Windows 11
+    monkeypatch.setattr(titlebar.sys, "platform", "linux")
+    assert not titlebar.draws_own_top_border()
+
+
+def test_the_window_title_is_said_once(win):
+    """Qt appends an application display name to every native caption."""
+    assert QApplication.applicationDisplayName() in ("", "python", "pytest",
+                                                     QApplication.applicationName())
+    assert win.windowTitle() == "Evans — Classical & Modern Control"
+    assert win.windowTitle().count("Evans") == 1

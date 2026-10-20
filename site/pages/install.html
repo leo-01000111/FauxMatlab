@@ -7,23 +7,28 @@
       </div>
     </section>
 
-    <section class="proj-section" id="windows">
+    <section class="proj-section" id="installer">
       <div class="card prose">
-        <h2>Windows: the release zip</h2>
+        <h2>Windows: the installer (recommended)</h2>
         <ol>
-          <li>Open the <a href="@@releases@@">latest release</a> and download <code>Evans-windows.zip</code> from its Assets list.</li>
-          <li>Unzip it anywhere, for example into <code>Documents\Evans</code>. Keep the folder together: the program is a folder, not a single file.</li>
-          <li>Run <code>Evans.exe</code> inside it. To uninstall, delete the folder.</li>
+          <li>Open the <a href="@@releases@@">latest release</a> and download <code>Evans-Setup-@@version@@.exe</code> from its Assets list.</li>
+          <li>Run it. It installs for your account only, into <code>%LOCALAPPDATA%\Programs\Evans</code>, so it never asks for administrator rights.</li>
+          <li>Start Evans from the Start menu. Tick the box during setup if you also want a desktop shortcut.</li>
         </ol>
-        <p>The folder also holds <code>Evans-check.exe</code>, the same program's headless self-test. Run it from a terminal: it checks every lesson's analytic claims and builds the whole window offscreen, and its exit code is the number of failures. It exists as a separate file because a windowed program on Windows has no console to print to.</p>
-        <p>It is a one-folder build on purpose. A one-file build unpacks the whole Qt runtime on every launch, which for PySide6, SciPy and SymPy takes several seconds before the window appears.</p>
+        <p>Double-clicking an <code>.fmdl</code> model opens it in Evans. To upgrade, run a newer installer over the old one; to uninstall, use <em>Apps &amp; features</em>. Uninstalling leaves your settings (theme, layout, recent files) in place.</p>
       </div>
     </section>
 
-    <section class="proj-section" id="installer">
+    <section class="proj-section" id="windows">
       <div class="card prose">
-        <h2>An installer is coming</h2>
-        <p>A Windows installer, with a Start menu entry and an uninstaller, is being built. When it ships it will appear on the same <a href="@@releases@@">latest release</a> page, next to the zip, so the download link above stays the right one.</p>
+        <h2>Windows: the portable zip</h2>
+        <ol>
+          <li>From the same <a href="@@releases@@">latest release</a>, download <code>Evans-windows.zip</code>.</li>
+          <li>Unzip it anywhere, a USB stick included. Keep the folder together: the program is a folder, not a single file.</li>
+          <li>Run <code>Evans.exe</code> inside it. Nothing is installed or registered with Windows; to remove it, delete the folder.</li>
+        </ol>
+        <p>Both downloads hold <code>Evans-check.exe</code>, the same program's headless self-test. Run it from a terminal: it checks every lesson's analytic claims and builds the whole window offscreen, and its exit code is the number of failures. It exists as a separate file because a windowed program on Windows has no console to print to.</p>
+        <p>It is a one-folder build on purpose. A one-file build unpacks the whole Qt runtime on every launch, which for PySide6, SciPy and SymPy takes several seconds before the window appears.</p>
       </div>
     </section>
 
