@@ -135,7 +135,8 @@ The editor highlights MATLAB, numbers its lines and completes as you type, the w
 IDE does: a popup lists the workspace's variables (and their attributes after a `.`), the
 commands with their calls (`step(sys, t)`, `lqr(A, B, Q, R)`), MATLAB's or Python's
 builtins and keywords, and `.m` files in the folder, each with a line on what it is.
-Up/Down pick, Tab or Enter accept, Escape closes, Ctrl+Space opens it on demand; with it
+Up/Down pick, Tab or Enter accept (a function comes with its brackets, the cursor
+between them), Escape closes, Ctrl+Space opens it on demand; with it
 closed, Tab completes or indents. The prompt and live-script cells have the same popup,
 and a text cell completes LaTeX: `\frac`, `\alpha`, `\begin{align}` with its `\end`, and
 inside `\ref{` the figure labels the script defines.

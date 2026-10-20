@@ -169,7 +169,7 @@ def test_tab_completion_fills_in(app, win):
     console._input.setText("stepin")
     console._input.setCursorPosition(6)
     console._complete()
-    assert console._input.text() == "stepinfo"
+    assert console._input.text() == "stepinfo()"     # brackets come too
     console._input.clear()
 
 

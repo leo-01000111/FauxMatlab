@@ -250,7 +250,8 @@ def test_console_typing_opens_and_narrows_the_popup(console):
     texts = [c.text for c in console.completer.items()]
     assert texts[0] == "stepinfo" and len(texts) < before
     _key(line, Qt.Key_Tab)
-    assert line.text() == "stepinfo"
+    assert line.text() == "stepinfo()"                # a function: brackets
+    assert line.cursorPosition() == len("stepinfo(")  # the arguments go here
     assert not console.completer.is_open()
 
 
@@ -267,7 +268,7 @@ def test_console_up_down_move_the_selection_not_the_history(console):
     assert line.text() == "ste"                       # no history recalled
     _key(line, Qt.Key_Down)
     _key(line, Qt.Key_Return)                         # accepts, does not run
-    assert line.text() == second
+    assert line.text() == second + "()"
     assert console.interpreter.history[-1] == "history_line = 1"
 
 
@@ -304,7 +305,31 @@ def test_console_attribute_popup_after_a_dot(console):
     assert console.completer.is_open()
     _type(line, "sha")
     _key(line, Qt.Key_Enter)
-    assert line.text() == "A.shape"
+    assert line.text() == "A.shape"                   # a value: no brackets
+
+
+def test_console_attribute_methods_get_brackets_too(console):
+    console.execute("A = eye(2)")
+    line = console._input
+    _type(line, "A.resh")
+    _key(line, Qt.Key_Tab)
+    assert line.text() == "A.reshape()"
+    assert line.cursorPosition() == len("A.reshape(")
+
+
+def test_functions_come_with_their_brackets():
+    from evans.ui.code.popup import call_insertion
+    step = Completion("step", "command", signature="step(sys, t)")
+    assert call_insertion(step) == ("step()", 5)        # cursor inside
+    toc = Completion("toc", "function", signature="toc()")
+    assert call_insertion(toc) == ("toc()", 5)          # no arguments: after
+    assert call_insertion(step, after="(") == ("step", None)  # already there
+    clc = Completion("clc", "function")                 # a bare command
+    assert call_insertion(clc) == ("clc", None)
+    var = Completion("stepsize", "variable")
+    assert call_insertion(var) == ("stepsize", None)
+    unknown = Completion("helper", "function")          # arguments unknown
+    assert call_insertion(unknown) == ("helper()", 7)
 
 
 # ──────────────────────────────────────────────────────────────
@@ -335,12 +360,13 @@ def test_script_popup_keys(script):
     assert popup.current().resolved().signature == "lqr(A, B, Q, R)"
     _key(script, Qt.Key_Up)
     _key(script, Qt.Key_Tab)
-    assert script.toPlainText() == "y = lqi"
+    assert script.toPlainText() == "y = lqi()"
+    script.moveCursor(script.textCursor().MoveOperation.End)
     _type(script, "\nz = ste")
     assert popup.is_open()
     _key(script, Qt.Key_Escape)
     assert not popup.is_open()
-    assert script.toPlainText() == "y = lqi\nz = ste"
+    assert script.toPlainText() == "y = lqi()\nz = ste"
 
 
 def test_script_tab_still_indents_with_no_popup(script):
@@ -355,7 +381,7 @@ def test_script_tab_completes_when_the_popup_is_closed(script):
     script.setPlainText("stepi")
     script.moveCursor(script.textCursor().MoveOperation.End)
     _key(script, Qt.Key_Tab)
-    assert script.toPlainText() == "stepinfo"
+    assert script.toPlainText() == "stepinfo()"
 
 
 def test_script_ctrl_return_still_runs_the_section(script):
@@ -373,7 +399,7 @@ def test_script_python_completes_python(script):
     _type(script, "pri")
     assert script.completer.current().text == "print"
     _key(script, Qt.Key_Return)
-    assert script.toPlainText() == "print"
+    assert script.toPlainText() == "print()"
 
 
 def test_script_editor_in_the_console_panel_uses_the_popup(app):
@@ -420,9 +446,12 @@ def test_live_code_cell_completes_matlab(app, live):
     _key(cell.editor, Qt.Key_Down)
     _key(cell.editor, Qt.Key_Up)
     _key(cell.editor, Qt.Key_Tab)
-    assert cell.editor.toPlainText().endswith("\nstep")
-    assert live.document.cells[0].source.endswith("\nstep")
-    _type(cell.editor, "(G)\n% ste")
+    assert cell.editor.toPlainText().endswith("\nstep()")
+    assert live.document.cells[0].source.endswith("\nstep()")
+    _type(cell.editor, "G")                           # between the brackets
+    assert cell.editor.toPlainText().endswith("\nstep(G)")
+    cell.editor.moveCursor(cell.editor.textCursor().MoveOperation.End)
+    _type(cell.editor, "\n% ste")
     assert not cell.completer.is_open()               # a comment
 
 

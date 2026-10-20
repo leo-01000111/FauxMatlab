@@ -12,7 +12,8 @@ keeps the keyboard and the popup only listens.
 ``QLineEdit`` through an event filter. ``request(before)`` turns the text
 before the cursor into a :class:`~.completion.Request`. Typing opens the
 popup once the word is long enough (and something starts with it), and
-narrows it; Up/Down/PageUp/PageDown move, Tab or Return accept, Escape
+narrows it; Up/Down/PageUp/PageDown move, Tab or Return accept (a
+function with its brackets, see :func:`call_insertion`), Escape
 closes; Ctrl+Space opens it on demand. With ``tab_completes`` a Tab with the
 popup closed completes too (one match at once, else the common prefix and
 the popup); otherwise the editor decides what Tab means and calls
@@ -51,6 +52,7 @@ from PySide6.QtWidgets import (
 
 from .. import theme
 from .completion import Completion, Request, common_prefix, rank_scored
+from .signatures import SIGNATURES
 
 #: Rows shown before the list scrolls.
 VISIBLE_ROWS = 10
@@ -514,11 +516,11 @@ class CompletionController(QObject):
             self._widget.setFocus()
 
     def _insert(self, request: Request, item: Completion) -> None:
-        text = item.insertion
+        text, cursor = call_insertion(item, self._after_char())
         # A closing brace already there is the one the insertion brings.
         eat = "}" in text and self._after_char() == "}"
         self.close()
-        self._replace(len(request.prefix), text, item.cursor, eat)
+        self._replace(len(request.prefix), text, cursor, eat)
         self.accepted.emit(item)
         # \begin{ or \ref{ just inserted: offer what goes inside at once.
         follow = self._request_fn(self._before())
@@ -609,6 +611,32 @@ class CompletionController(QObject):
         self._widget.event(event)
         self.refresh(typed=typed and _opens(text))
         return True
+
+
+#: Kinds that are called, so accepting one brings its brackets.
+CALLABLE_KINDS = {"function", "command"}
+
+
+def call_insertion(item: Completion, after: str = "") -> tuple[str, int | None]:
+    """
+    What accepting ``item`` inserts, and where the cursor lands.
+
+    A function comes with its brackets: ``step()`` with the cursor between
+    them when it takes arguments (or when that is not known), after them
+    when it takes none. Not when a ``(`` already follows, nor for a MATLAB
+    command written without them (``clc``, ``tic``).
+    """
+    if item.insert is not None or after == "(":
+        return item.insertion, item.cursor
+    item.resolved()
+    if item.kind not in CALLABLE_KINDS:
+        return item.insertion, item.cursor
+    sig = item.signature
+    if not sig and item.text in SIGNATURES:
+        return item.insertion, item.cursor     # clc, tic: a bare command
+    no_args = sig.replace(" ", "") == item.text + "()"
+    text = item.text + "()"
+    return text, len(text) if no_args else len(text) - 1
 
 
 def _opens(text: str) -> bool:
