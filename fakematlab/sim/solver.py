@@ -151,7 +151,13 @@ class _Evaluator:
         with _warnings.catch_warnings():
             _warnings.simplefilter("ignore")
             solution, _info, ok, msg = fsolve(residual, guess, full_output=True)
-        if ok != 1:
+        # Judged by the residual, not by fsolve's flag alone: scipy ≥ 1.15
+        # can land on the root of a linear loop (residual ~1e-17, rounding
+        # noise) and then report "not making good progress" because the
+        # noise cannot be reduced further — a solved loop called a failure.
+        scale = 1.0 + float(np.max(np.abs(solution), initial=0.0))
+        if ok != 1 and not (np.max(np.abs(residual(solution)), initial=0.0)
+                            <= 1e-9 * scale):
             raise SimulationError(
                 f"the algebraic loop through "
                 f"{' → '.join(self.c.algebraic_loop)} did not converge at "

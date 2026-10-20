@@ -21,8 +21,9 @@ import numpy as np
 import pyqtgraph as pg
 from pyqtgraph import PlotWidget
 from pyqtgraph.exporters import SVGExporter
-from PySide6.QtCore import QPoint, Qt
-from PySide6.QtGui import QAction
+from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QPoint, QRectF, Qt
+from PySide6.QtGui import QAction, QPainter
+from PySide6.QtSvg import QSvgGenerator
 from PySide6.QtWidgets import (
     QFileDialog,
     QGridLayout,
@@ -414,6 +415,32 @@ def _write_csv(spec: FigureSpec, path: Path) -> None:
                              for _name, values in columns])
 
 
+def _scene_svg(widget: PlotWidget) -> str:
+    """
+    One plot widget as SVG: pyqtgraph's exporter, which keeps the curves as
+    editable paths, or Qt's own generator when the exporter cannot read
+    what Qt wrote. PySide6 6.12 changed the path syntax QSvgGenerator emits,
+    and pyqtgraph 0.14's post-processing fails on it with a ValueError.
+    """
+    try:
+        return SVGExporter(widget.scene()).export(toBytes=True).decode("utf-8")
+    except (ValueError, IndexError):
+        pass
+    data = QByteArray()
+    buffer = QBuffer(data)
+    buffer.open(QIODevice.WriteOnly)
+    generator = QSvgGenerator()
+    generator.setOutputDevice(buffer)
+    size = widget.size()
+    generator.setSize(size)
+    generator.setViewBox(QRectF(0, 0, size.width(), size.height()))
+    painter = QPainter(generator)
+    widget.render(painter)
+    painter.end()
+    buffer.close()
+    return bytes(data).decode("utf-8")
+
+
 def _figure_svg(fig: FigureView) -> str:
     """
     The figure as one SVG document.
@@ -425,7 +452,7 @@ def _figure_svg(fig: FigureView) -> str:
     parts = []
     width = height = 0.0
     for widget in fig.plot_widgets():
-        text = SVGExporter(widget.scene()).export(toBytes=True).decode("utf-8")
+        text = _scene_svg(widget)
         text = re.sub(r"<\?xml[^>]*\?>", "", text, count=1).strip()
         box = re.search(r'viewBox\s*=\s*"([^"]+)"', text)
         w, h = ((float(v) for v in box.group(1).split()[2:4]) if box

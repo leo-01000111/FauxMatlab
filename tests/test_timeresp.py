@@ -36,7 +36,8 @@ class TestImpulseResponse:
         # Integral of impulse response = DC gain
         tf = first_order(1.0, 1.0)
         resp = impulse_response(tf)
-        integral = np.trapz(resp.y.ravel(), resp.t)
+        # np.trapz was removed in numpy 2.4; trapezoid exists from 2.0.
+        integral = np.trapezoid(resp.y.ravel(), resp.t)
         assert abs(integral - 1.0) < 0.05
 
 
