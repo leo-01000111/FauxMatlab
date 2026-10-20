@@ -285,6 +285,11 @@ QMenuBar {{ background: {t.ground}; color: {t.ink};
 QMenuBar::item {{ background: transparent; padding: 4px 10px; }}
 QMenuBar::item:selected, QMenuBar::item:pressed {{
     background: {t.plate}; color: {t.on_plate}; }}
+/* The title bar holds the menu bar, so the hairline is the bar's. */
+#TitleBar {{ background: {t.ground}; border-bottom: 1px solid {t.rule}; }}
+#TitleBar QMenuBar {{ background: transparent; border: none; }}
+#TitleBarTitle {{ color: {t.ink_muted}; padding-left: {theme.SPACE_3}px; }}
+#TitleBar[active="false"] #TitleBarTitle {{ color: {muted}; }}
 QMenu {{ background: {t.surface}; color: {t.ink};
         border: 2px solid {t.ink}; padding: 3px; }}
 QMenu::item {{ padding: 5px 28px 5px 24px; background: transparent; }}

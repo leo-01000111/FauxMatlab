@@ -171,6 +171,12 @@ It uses the same design system as [leongorecki.eu](https://leongorecki.eu): Arch
 Martian Mono, concrete and asphalt grounds, sign-yellow highlights. View ▸ Theme picks
 Day, Night or the system setting.
 
+On Windows the menus and the window buttons share one strip at the top, the way Spotify
+and the Claude app do it. The native frame stays, so snapping, edge resizing, the shadow
+and the Snap Layouts flyout over maximise all still work. View ▸ Integrated title bar
+switches back to the ordinary Windows caption. On macOS and Linux the caption is always
+the system's own.
+
 | Day | Night |
 |---|---|
 | ![Evans, Day theme](docs/theme-day.png) | ![Evans, Night theme](docs/theme-night.png) |
@@ -223,7 +229,7 @@ a crossover above the plant's phase budget is impossible for it.
 pytest
 ```
 
-1171 tests, plus `ruff check .`. Most are golden tests: analytic values worked out by hand
+1215 tests, plus `ruff check .`. Most are golden tests: analytic values worked out by hand
 or by an independent route, rather than snapshots of whatever the code printed first. The
 numeric signal solver and the symbolic one check each other, and `python-control` is a
 third opinion.

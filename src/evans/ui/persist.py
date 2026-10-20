@@ -1,7 +1,8 @@
 """
-What outlives a session: the command history and the recent-files list.
+What outlives a session: the command history, the recent-files list and
+the integrated-title-bar preference.
 
-Both live in ``QSettings``, beside the window layout but not inside it:
+All live in ``QSettings``, beside the window layout but not inside it:
 *Reset layout* clears the layout's settings wholesale, and forgetting what was
 typed and opened is not part of putting the panels back. The location is read
 from :data:`ORG` / :data:`APP` each time, so the test suite can point it at a
@@ -153,3 +154,22 @@ class RecentFiles:
 def _key(path: Path) -> str:
     """The same file however its case was spelled, where the OS ignores it."""
     return os.path.normcase(str(path))
+
+
+#: Whether the menus and window buttons share one strip (Windows only).
+#: Kept here rather than with the layout: *Reset layout* puts panels back,
+#: it does not undo a preference.
+INTEGRATED_TITLE_BAR_KEY = "window/integratedTitleBar"
+
+
+def integrated_title_bar(default: bool) -> bool:
+    value = settings().value(INTEGRATED_TITLE_BAR_KEY)
+    if value is None:
+        return default
+    if isinstance(value, str):            # the INI backend stores text
+        return value.lower() in ("true", "1")
+    return bool(value)
+
+
+def set_integrated_title_bar(on: bool) -> None:
+    settings().setValue(INTEGRATED_TITLE_BAR_KEY, bool(on))
