@@ -141,49 +141,34 @@ def bind(target, name: str, role: str = "ink") -> None:
     would stay Day-coloured on a Night ground.
     """
     target.setIcon(icon(name, role))
-    # Weakly held, and disconnected when the target goes. A closure over the
-    # target itself, on this application-wide signal, kept every window that
-    # ever bound an icon alive: the test suite grew to 3 GB and four times
-    # slower before that was noticed.
-    ref = weakref.ref(target)
-    signal = theme.notifier().changed
-
-    def refresh(*_):
-        live = ref()
-        if live is None:
-            return
-        try:
-            live.setIcon(icon(name, role))
-        except RuntimeError:            # the C++ side is gone already
-            pass
-
-    # Connected after the cache-clearing slot, so it reads the new colours.
-    signal.connect(refresh)
-    target.destroyed.connect(lambda *_: _disconnect(signal, refresh))
+    on_theme_change(target, lambda live: live.setIcon(icon(name, role)))
 
 
 def on_theme_change(owner, method) -> None:
     """
     Call ``method(owner)`` after each theme change, for as long as ``owner``
-    lives — without the signal keeping ``owner`` alive.
+    lives.
+
+    ``owner`` is held weakly: a strong reference from this application-wide
+    signal kept every window that ever bound an icon alive. Nothing is
+    connected to ``owner.destroyed`` either. A Python slot on that signal
+    runs while Qt tears its objects down at exit, after Python's own state
+    is partly gone, and PySide6 6.12 crashes the process there. A slot whose
+    owner has gone simply does nothing.
     """
     ref = weakref.ref(owner)
-    signal = theme.notifier().changed
 
     def call(*_):
         live = ref()
-        if live is not None:
+        if live is None:
+            return
+        try:
             method(live)
+        except RuntimeError:            # the C++ side is gone already
+            pass
 
-    signal.connect(call)
-    owner.destroyed.connect(lambda *_: _disconnect(signal, call))
-
-
-def _disconnect(signal, slot) -> None:
-    try:
-        signal.disconnect(slot)
-    except (RuntimeError, TypeError):   # already gone at shutdown
-        pass
+    # Connected after the cache-clearing slot, so it reads the new colours.
+    theme.notifier().changed.connect(call)
 
 
 def size(px: int = 16) -> QSize:

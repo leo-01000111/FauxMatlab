@@ -12,6 +12,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, QSettings, QSize, Qt, QThread, Signal
 from PySide6.QtWidgets import (
+    QApplication,
     QComboBox,
     QDoubleSpinBox,
     QFileDialog,
@@ -98,6 +99,11 @@ class SimTab(QWidget, GuardedPanel):
         self._worker: _Worker | None = None
         self._result = None
         self._build_ui()
+        # Quitting mid-simulation must stop the solver thread first: Qt
+        # aborts the whole process if a QThread is destroyed while running.
+        app = QApplication.instance()
+        if app is not None:
+            app.aboutToQuit.connect(self.shutdown)
         self._load_default_model()
 
     # ── UI ──────────────────────────────────────────────────────
@@ -461,6 +467,11 @@ class SimTab(QWidget, GuardedPanel):
     def _cancel(self) -> None:
         if self._worker is not None:
             self._worker.cancelled = True
+
+    def shutdown(self) -> None:
+        """Cancel a running simulation and wait for its thread to end."""
+        self._cancel()
+        self._teardown_thread()
 
     def _teardown_thread(self) -> None:
         if self._thread is not None:

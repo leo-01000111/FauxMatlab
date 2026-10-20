@@ -69,3 +69,45 @@ def _no_modal_dialogs():
     yield
     for (owner, name), original in saved.items():
         setattr(owner, name, original)
+
+
+def pytest_sessionfinish(session, exitstatus):
+    session.config._evans_exitstatus = int(exitstatus)
+
+
+@pytest.hookimpl(trylast=True)
+def pytest_unconfigure(config):
+    """
+    End the process as soon as pytest has reported, with pytest's own status.
+
+    The suite leaves hundreds of hidden windows behind, and PySide6 6.12
+    crashes in Qt's own C++ teardown of them at interpreter exit: "Fatal
+    Python error: Aborted" with no Python frame, after every test had
+    passed — exit code 1 on the Windows runner, 139 on Linux. Each test file
+    run alone exits cleanly, and so does the application (checked with the
+    same versions), so only the full session's leftovers trigger it, and
+    tearing them down checks nothing. When Qt was used, skip it. Every report
+    has been written by now: this hook runs last, and it passes on pytest's
+    own status, so a failing test still fails the run.
+    """
+    import sys
+
+    widgets = sys.modules.get("PySide6.QtWidgets")
+    if widgets is None or widgets.QApplication.instance() is None:
+        return
+    status = getattr(config, "_evans_exitstatus", 0)
+    sys.stdout.flush()
+    sys.stderr.flush()
+    if sys.platform == "win32":
+        # os._exit still runs every DLL's detach code on Windows, Qt's
+        # teardown among it, and crashed there. TerminateProcess does not.
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32")
+        # Declared, or the pseudo-handle is passed as a 32-bit int on 64-bit
+        # Windows, the call fails silently and os._exit below runs anyway.
+        kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+        kernel32.TerminateProcess.argtypes = [wintypes.HANDLE, wintypes.UINT]
+        kernel32.TerminateProcess(kernel32.GetCurrentProcess(), status)
+    os._exit(status)
