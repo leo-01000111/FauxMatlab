@@ -2,7 +2,7 @@
 
 ## Purpose
 
-FauxMatlab already has a strong functional foundation: classical and modern control analysis, a block-diagram simulator, a MATLAB-shaped command window, lessons, plotting, design tools, and packaged builds. The main weakness is not missing functionality; it is that the interface has grown organically around an older six-tab layout.
+Evans already has a strong functional foundation: classical and modern control analysis, a block-diagram simulator, a MATLAB-shaped command window, lessons, plotting, design tools, and packaged builds. The main weakness is not missing functionality; it is that the interface has grown organically around an older six-tab layout.
 
 This plan redesigns the application around a clearer mental model:
 
@@ -12,7 +12,7 @@ The redesign should preserve the numerical engine and existing capabilities whil
 
 ## Current problems
 
-The current UI is centered on a permanent left-hand architecture panel and a flat tab bar in `fakematlab/ui/mainwindow.py`. This causes several measurable problems:
+The current UI is centered on a permanent left-hand architecture panel and a flat tab bar in `src/evans/ui/mainwindow.py`. This causes several measurable problems:
 
 - The application can require approximately 2038 px of horizontal space because the Simulink toolbar is one unbreakable row.
 - The permanent architecture/BlockEditor column consumes space on every analysis screen, including Simulink and Modern Control.
@@ -41,7 +41,7 @@ The current UI is centered on a permanent left-hand architecture panel and a fla
 Replace the current eight-peer tab structure with three top-level workspaces.
 
 ```text
-FauxMatlab
+Evans
 ├── Analyse   Current control system: plots, metrics, stability, design, lessons
 ├── Model     Simulink-style block-diagram editor and simulation
 └── Console   Command window, workspace, scripts, and figures
@@ -148,7 +148,7 @@ The Model workspace should provide a dedicated, uncluttered Simulink workflow.
 
 ### Toolbar
 
-Refactor `SimTab._build_toolbar` in `fakematlab/ui/sim/sim_tab.py` into a real `QToolBar` or an equivalent responsive command surface.
+Refactor `SimTab._build_toolbar` in `src/evans/ui/sim/sim_tab.py` into a real `QToolBar` or an equivalent responsive command surface.
 
 Group actions into:
 
@@ -352,7 +352,7 @@ Each phase should be independently reviewable and should preserve existing funct
 **Scope:** Responsive sizing and toolbar cleanup.
 
 - Rebuild the Simulink toolbar as a responsive toolbar with overflow.
-- Audit `setMinimumWidth`, `setMaximumWidth`, and fixed-size constraints in `fakematlab/ui/`.
+- Audit `setMinimumWidth`, `setMaximumWidth`, and fixed-size constraints in `src/evans/ui/`.
 - Make the model/editor panel collapsible.
 - Add a regression test for minimum-size behavior.
 

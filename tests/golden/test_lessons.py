@@ -13,7 +13,7 @@ import control as ctl
 import numpy as np
 import pytest
 
-from fakematlab.core.lessons import Claim, Lesson, all_lessons, lesson
+from evans.core.lessons import Claim, Lesson, all_lessons, lesson
 
 
 @pytest.fixture(params=all_lessons(), ids=lambda les: les.key)
@@ -91,7 +91,7 @@ def test_a_lesson_resets_the_blocks_it_does_not_mention(any_lesson):
     Otherwise a lesson shows something different depending on what was on
     screen before it, which makes it useless as a reference.
     """
-    from fakematlab.core.architecture import BLOCK_IDS, CourseArchitecture
+    from evans.core.architecture import BLOCK_IDS, CourseArchitecture
 
     arch = CourseArchitecture()
     for bid in BLOCK_IDS:
@@ -106,7 +106,7 @@ def test_a_lesson_resets_the_blocks_it_does_not_mention(any_lesson):
 
 
 def test_applying_a_lesson_matches_building_it_fresh(any_lesson):
-    from fakematlab.core.architecture import BLOCK_IDS, CourseArchitecture
+    from evans.core.architecture import BLOCK_IDS, CourseArchitecture
 
     applied = CourseArchitecture()
     any_lesson.apply_to(applied)
@@ -125,8 +125,8 @@ def test_lesson_lookup_names_the_alternatives():
 
 def test_every_lesson_targets_a_real_tab():
     """A lesson's tab is a pane kind now, or the Simulink workspace."""
-    from fakematlab.ui.mainwindow import MainWindow
-    from fakematlab.ui.panes import PANE_KINDS
+    from evans.ui.mainwindow import MainWindow
+    from evans.ui.panes import PANE_KINDS
 
     keys = {k.key for k in PANE_KINDS}
     for item in all_lessons():
@@ -148,7 +148,7 @@ def test_the_chapters_are_covered_in_order():
 
 def test_ch6_crossover_has_the_closed_form_the_note_quotes():
     """``|2/(1+jω)³| = 1`` ⇒ ``ωc = √(2^⅔ − 1)``, and PM = 180° − 3·arctan ωc."""
-    from fakematlab.core.freqresp import bode
+    from evans.core.freqresp import bode
 
     arch = lesson("ch6-margins").architecture()
     bd = bode(arch.loop_tf())
@@ -164,7 +164,7 @@ def test_ch6_at_unit_gain_there_is_no_crossover_at_all():
     The note's aside, checked: ``|L(0)| = 1`` exactly, so the loop starts on
     the 0 dB line and the phase margin is undefined rather than wrong.
     """
-    from fakematlab.core.freqresp import bode
+    from evans.core.freqresp import bode
 
     arch = lesson("ch6-margins").architecture()
     arch.set_block("K2", ctl.tf([1], [1]))
@@ -174,7 +174,7 @@ def test_ch6_at_unit_gain_there_is_no_crossover_at_all():
 
 def test_ch8_critical_values_are_exact_not_simulated():
     """``Pc = 8`` and ``Tc = 2π/√3``, solved rather than searched for."""
-    from fakematlab.core.stability import marginal_gain
+    from evans.core.stability import marginal_gain
 
     arch = lesson("ch8-ziegler-nichols").architecture()
     Ku, wu = marginal_gain(arch.loop_tf())
@@ -201,7 +201,7 @@ def test_ch7_an_unstable_pole_makes_the_waterbed_integral_positive():
     The half of Bode–Freudenberg the lesson describes but does not load:
     ``∫ln|S| = π·ΣRe(pᵢ)`` over the unstable poles.
     """
-    from fakematlab.core.performance import waterbed
+    from evans.core.performance import waterbed
 
     # 1/((s−1)(s+3)) stabilised by a gain: one unstable loop pole at +1.
     L = ctl.tf([8.0], [1.0, 2.0, -3.0])

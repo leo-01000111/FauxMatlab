@@ -11,18 +11,18 @@ import sys
 from pathlib import Path
 
 # Importable from a plain checkout too, not only after `pip install -e .`.
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 os.environ["PYQTGRAPH_QT_LIB"] = "PySide6"
 
 import control as ctl
 import numpy as np
 
-from fakematlab.core.architecture import CourseArchitecture
-from fakematlab.core.freqresp import bode, nichols, nyquist
-from fakematlab.core.performance import analyse_performance
-from fakematlab.core.stability import root_locus, routh_from_closed_loop, routh_table
-from fakematlab.core.tf_utils import (
+from evans.core.architecture import CourseArchitecture
+from evans.core.freqresp import bode, nichols, nyquist
+from evans.core.performance import analyse_performance
+from evans.core.stability import root_locus, routh_from_closed_loop, routh_table
+from evans.core.tf_utils import (
     PRESETS,
     analyse,
     factored_str,
@@ -35,14 +35,14 @@ from fakematlab.core.tf_utils import (
     second_order,
     unity,
 )
-from fakematlab.core.timeresp import (
+from evans.core.timeresp import (
     compute_step_metrics,
     impulse_response,
     parameter_sweep,
     ramp_response,
     step_response,
 )
-from fakematlab.core.tuning import (
+from evans.core.tuning import (
     LeadLagParams,
     PIDParams,
     lag_tf,
@@ -376,13 +376,13 @@ for name, (label, tf_preset) in PRESETS.items():
 print("\n══ 9. THE APPS ═══════════════════════════════════════")
 # ─────────────────────────────────────────────────────────────
 
-from fakematlab.core.collection import (
+from evans.core.collection import (
     SnapshotStore,
     SystemCollection,
     restore_snapshot,
     take_snapshot,
 )
-from fakematlab.core.designer import (
+from evans.core.designer import (
     Compensator,
     closed_loop_poles,
     evaluate,
@@ -390,9 +390,9 @@ from fakematlab.core.designer import (
     gain_for_overshoot,
     point_to_gain,
 )
-from fakematlab.core.pidtune import PIDKind, tune, tune_by_sliders
-from fakematlab.core.viewer import CHARACTERISTICS, ResponseKind
-from fakematlab.core.viewer import compute as viewer_compute
+from evans.core.pidtune import PIDKind, tune, tune_by_sliders
+from evans.core.viewer import CHARACTERISTICS, ResponseKind
+from evans.core.viewer import compute as viewer_compute
 
 
 def check_true(label, condition, why):

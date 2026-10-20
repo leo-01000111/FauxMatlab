@@ -13,15 +13,15 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from fakematlab.console import Interpreter, set_figure_sink
-from fakematlab.console.figures import recording_sink
-from fakematlab.console.matlab import (
+from evans.console import Interpreter, set_figure_sink
+from evans.console.figures import recording_sink
+from evans.console.matlab import (
     MatlabSyntaxError,
     looks_like_matlab,
     to_python,
     translate,
 )
-from fakematlab.console.matlab_runtime import Struct, StructArray
+from evans.console.matlab_runtime import Struct, StructArray
 
 
 @pytest.fixture

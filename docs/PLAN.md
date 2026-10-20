@@ -1,4 +1,4 @@
-# FakeMatlab v2 — from a classical-control workbench to a MATLAB slice
+# Evans v2 — from a classical-control workbench to a MATLAB slice
 
 **Goal.** Make this the tool you'd reach for instead of MATLAB for two courses — CLACO
 (classical, `COURSE MATERIAL/…classical_approach…pdf`, 254 slides, ch1–8) and DYBAC (modern /
@@ -49,11 +49,11 @@ Solved the loop by hand and compared against `CourseArchitecture.get_closed_loop
 | `K₁ ≠ 1, H = 1` | `r→e`, `di→u`, `n→e` |
 | `K₁ ≠ 1, H ≠ 1` | `r→y`, `r→e`, `di→u`, `do→u`, `n→u`, `n→e` |
 
-Root causes, in [architecture.py:160-220](fakematlab/core/architecture.py:160):
+Root causes, in [architecture.py:160-220](src/evans/core/architecture.py:160):
 - `di→u` returns `−S·K₂`; the course equation (slide 157, ch5 19/24) and the algebra both give
-  `−S·K₂·G`. Missing plant factor. — [architecture.py:198](fakematlab/core/architecture.py:198)
-- `n→e` returns `+S`; correct is `−S`. Sign flip. — [architecture.py:219](fakematlab/core/architecture.py:219)
-- `r→e` returns `S`; correct is `S·K₁`. Feedforward dropped. — [architecture.py:186](fakematlab/core/architecture.py:186)
+  `−S·K₂·G`. Missing plant factor. — [architecture.py:198](src/evans/core/architecture.py:198)
+- `n→e` returns `+S`; correct is `−S`. Sign flip. — [architecture.py:219](src/evans/core/architecture.py:219)
+- `r→e` returns `S`; correct is `S·K₁`. Feedforward dropped. — [architecture.py:186](src/evans/core/architecture.py:186)
 - **Every formula assumes `H = 1`.** `loop_tf()` correctly includes `H`, so `T = L/(1+L)` is
   right, but `r→y = T·K₁` is off by `1/H`, and the `u` row ignores `H` entirely. The `H` block is
   drawn on the canvas and editable — so it is a trap, not a feature.
@@ -67,9 +67,9 @@ pi.setLogMode(x=True); c = pi.plot(np.log10(w), ...)   →  xDisp range: nan nan
 pi.setLogMode(x=True); c = pi.plot(w, ...)             →  xDisp range: -2.0 2.0   ← correct
 ```
 
-18 call sites across [frequency_tab.py](fakematlab/ui/tabs/frequency_tab.py),
-[performance_tab.py](fakematlab/ui/tabs/performance_tab.py),
-[design_tab.py](fakematlab/ui/tabs/design_tab.py). Confirmed visually in a screenshot: the
+18 call sites across [frequency_tab.py](src/evans/ui/tabs/frequency_tab.py),
+[performance_tab.py](src/evans/ui/tabs/performance_tab.py),
+[design_tab.py](src/evans/ui/tabs/design_tab.py). Confirmed visually in a screenshot: the
 magnitude curve starts a third of the way across the axis. **The low-frequency half of every Bode
 plot in the app does not exist.** Margin annotations (`add_vline(np.log10(wc))`) land in the wrong
 place for the same reason.
@@ -91,7 +91,7 @@ M-circle mapped naïvely to (phase, dB) — that's a different locus. Use
 
 **(f) Dead code / stubs.**
 - `pure_delay_pade` returns a **tuple**, not a TF: the conversion is below an unconditional
-  `return`. — [tf_utils.py:116](fakematlab/core/tf_utils.py:116). Nothing calls it.
+  `return`. — [tf_utils.py:116](src/evans/core/tf_utils.py:116). Nothing calls it.
 - `SignalGraph.get_tf(fit=True)` imports `tf_utils.fit_frequency_response`, which doesn't exist.
 - `LeadLagParams.alpha` defaults to `10.0` with `is_lead=True`, and `lead_tf` raises on `α ≥ 1`.
   The default construction is an exception.
@@ -109,9 +109,9 @@ shows 2 rows of 10.
 ### 0.4 One genuinely good thing
 
 `SignalGraph.frequency_response` — the `(I − H·A)⁻¹` matrix solver in
-[signal_graph.py:161](fakematlab/core/signal_graph.py:161) — is **correct**. I checked all 12
+[signal_graph.py:161](src/evans/core/signal_graph.py:161) — is **correct**. I checked all 12
 input/output pairs against hand-solved ground truth: 9 exact, and the 3 `n→*` mismatches are a
-pure sign-convention difference (the graph subtracts noise at [architecture.py:287](fakematlab/core/architecture.py:287),
+pure sign-convention difference (the graph subtracts noise at [architecture.py:287](src/evans/core/architecture.py:287),
 the course diagram adds it), not an error in the solver.
 
 So the *numerical* path is right and the *hand-derived analytic* path is wrong. That inverts the
@@ -185,7 +185,7 @@ and logs it. A blank tab must become impossible.
 
 ```
 app.py
-fakematlab/
+src/evans/
   core/
     tf_utils.py        (fix: pade, dc_gain; add partial fractions, Laplace pairs)
     model.py       NEW  Model/Block/Port/Connection — the one graph type
@@ -339,7 +339,7 @@ expected — `control.gram` was only the first):
 
 ### Phase 5 — MATLAB shell ✅ **DONE** · [D4]
 
-**`fakematlab/console/`** — the API, testable with no display:
+**`src/evans/console/`** — the API, testable with no display:
 - `api.py` — **~60 MATLAB-shaped commands** in nine groups. Not just names: the
   *shapes* match, which is what makes transcription work. `stepinfo` returns MATLAB's
   field names, `margin` returns `(Gm, Pm, Wcg, Wcp)` with `Gm` in absolute units and the
@@ -354,7 +354,7 @@ expected — `control.gram` was only the first):
 - `interpreter.py` — persistent namespace, captured output, `ans`, statement-by-statement
   script execution so a failure names the line that stopped it.
 
-**`fakematlab/ui/console/`** — command window with transcript, ↑/↓ history, Tab
+**`src/evans/ui/console/`** — command window with transcript, ↑/↓ history, Tab
 completion (user names before commands) and Shift+Return continuation; workspace browser
 that lists *user* variables only and opens a system in the analysis tabs on double-click;
 a capped figure dock; a script editor running against the same workspace (F5).
@@ -474,17 +474,17 @@ a double integrator (not just the one loaded), and that an unstable pole makes �
 ### Phase 8 — Packaging ✅ **DONE**
 
 `git init`, `.gitignore`, `.gitattributes`, `pyproject.toml`, README, and the repository published
-at [github.com/leo-01000111/FauxMatlab](https://github.com/leo-01000111/FauxMatlab). Then:
+at [github.com/leo-01000111/evans](https://github.com/leo-01000111/evans). Then:
 
-1. ✅ **`--check`**, a headless self-test (`fakematlab/selftest.py`). Its payload is not smoke
+1. ✅ **`--check`**, a headless self-test (`src/evans/selftest.py`). Its payload is not smoke
    checks: it runs the course lessons' analytic claims, so a pass means the numbers agree with the
    theory rather than merely that nothing raised. Exit code is the failure count, so
    `app.py --check && deploy` does what it looks like it does.
 2. ✅ **CI** — ruff, pytest on Linux *and* Windows, then `app.py --check`. The Linux job installs
    the Qt runtime libraries PySide6 links against even offscreen.
-3. ✅ **PyInstaller** one-*folder* build (`packaging/fauxmatlab.spec`). One-file unpacks the whole
+3. ✅ **PyInstaller** one-*folder* build (`packaging/evans.spec`). One-file unpacks the whole
    Qt runtime on every launch; one-folder starts immediately. It builds two entry points over one
-   bundle — `FauxMatlab.exe` windowed and `FauxMatlab-check.exe` console, because a windowed
+   bundle — `Evans.exe` windowed and `Evans-check.exe` console, because a windowed
    executable on Windows has no stdout and `--check` there would set an exit code and print
    nothing.
 4. ✅ **ruff clean**, from 301 violations to zero. 225 were auto-fixed, ~20 were real dead code,
@@ -520,7 +520,7 @@ the source tree:
    package at once rather than patching them one by one.
 
    **The verification hole matters more than the bug.** The self-test passed, and CI was written to
-   run it — against `FauxMatlab-check.exe`, the *console* build, which does have streams. The
+   run it — against `Evans-check.exe`, the *console* build, which does have streams. The
    entry point people actually double-click was the one never tested. CI now self-tests both, and
    a test asserts that it does.
 

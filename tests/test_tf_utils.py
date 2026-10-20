@@ -1,9 +1,9 @@
-"""Tests for fakematlab.core.tf_utils."""
+"""Tests for evans.core.tf_utils."""
 
 import control as ctl
 import numpy as np
 
-from fakematlab.core.tf_utils import (
+from evans.core.tf_utils import (
     analyse,
     factored_str,
     first_order,

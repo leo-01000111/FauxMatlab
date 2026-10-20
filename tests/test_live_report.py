@@ -9,9 +9,9 @@ from pathlib import Path
 
 import pytest
 
-from fakematlab.console.figures import FigureSpec
-from fakematlab.console.interpreter import Interpreter
-from fakematlab.console.live import (
+from evans.console.figures import FigureSpec
+from evans.console.interpreter import Interpreter
+from evans.console.live import (
     Cell,
     CellKind,
     LiveDocument,
@@ -19,8 +19,8 @@ from fakematlab.console.live import (
     load,
     workspace_evaluator,
 )
-from fakematlab.console.live.render import MathError, figure_png, math_png, png_size
-from fakematlab.console.live.report import (
+from evans.console.live.render import MathError, figure_png, math_png, png_size
+from evans.console.live.report import (
     ENGINES,
     compile_pdf,
     engine_command,
@@ -94,7 +94,7 @@ def test_html_report_embeds_math_and_figures(ran, tmp_path):
 
 def test_verbatim_output_is_made_safe_for_pdflatex():
     doc = LiveDocument([Cell.code("x")])
-    from fakematlab.console.live import CellOutput
+    from evans.console.live import CellOutput
     doc[0].output = CellOutput(text="[1×500 double] … ω → \\end{verbatim}")
     tex = to_tex(doc)
     assert "[1x500 double] ... w -> \\end {verbatim}" in tex

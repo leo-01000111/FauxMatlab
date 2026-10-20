@@ -12,18 +12,18 @@ import numpy as np
 import pytest
 import sympy as sp
 
-from fakematlab.core.architecture import CourseArchitecture
-from fakematlab.core.performance import waterbed
-from fakematlab.core.report import text_report
-from fakematlab.core.session import (
+from evans.core.architecture import CourseArchitecture
+from evans.core.performance import waterbed
+from evans.core.report import text_report
+from evans.core.session import (
     SESSION_VERSION,
     architecture_from_session,
     load_session_dict,
     session_dict,
 )
-from fakematlab.core.stability import routh_from_closed_loop
-from fakematlab.core.tf_utils import factored_str, first_order, pure_delay_pade
-from fakematlab.core.tuning import zn_step
+from evans.core.stability import routh_from_closed_loop
+from evans.core.tf_utils import factored_str, first_order, pure_delay_pade
+from evans.core.tuning import zn_step
 
 # ──────────────────────────────────────────────────────────────
 #  Symbolic Routh (ch.6, 6/26)
@@ -51,7 +51,7 @@ def test_symbolic_stability_range(den, expected, assumptions):
 
 def test_symbolic_range_is_consistent_with_marginal_gain():
     """The upper bound must agree with the exact imaginary-axis crossing."""
-    from fakematlab.core.stability import marginal_gain
+    from evans.core.stability import marginal_gain
 
     G = ctl.tf([1], [1, 3, 2, 0])
     K = sp.Symbol("K", real=True)
@@ -66,7 +66,7 @@ def test_symbolic_range_is_consistent_with_marginal_gain():
 
 @pytest.mark.parametrize("T,order", [(0.2, 2), (0.5, 3), (1.0, 4)])
 def test_pade_is_all_pass_with_the_right_phase(T, order):
-    from fakematlab.core.freqresp import response
+    from evans.core.freqresp import response
 
     delay = pure_delay_pade(T, order)
     omega = np.linspace(0.05, order / T * 0.5, 40)

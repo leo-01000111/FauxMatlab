@@ -2,7 +2,7 @@
 Headless UI smoke test.
 
 Drives every pane kind, sub-tab and selector, then asserts that **no error banner
-appeared anywhere**. Because :func:`fakematlab.ui.guard.guard` now routes every
+appeared anywhere**. Because :func:`evans.ui.guard.guard` now routes every
 failure to a banner instead of a bare ``except: pass``, this single assertion
 catches the whole class of bugs that used to present as a silently blank tab.
 
@@ -20,10 +20,10 @@ pytest.importorskip("PySide6", reason="Qt not available")
 
 from PySide6.QtWidgets import QApplication
 
-from fakematlab.core.architecture import CourseArchitecture
-from fakematlab.core.tf_utils import second_order, unity
-from fakematlab.ui.guard import ErrorBanner
-from fakematlab.ui.mainwindow import MainWindow
+from evans.core.architecture import CourseArchitecture
+from evans.core.tf_utils import second_order, unity
+from evans.ui.guard import ErrorBanner
+from evans.ui.mainwindow import MainWindow
 
 
 @pytest.fixture(scope="module")
@@ -294,7 +294,7 @@ def test_guard_surfaces_a_failure(app, window):
 
     Without this, "no banner visible" could mean "banners never appear".
     """
-    from fakematlab.ui.guard import guard
+    from evans.ui.guard import guard
 
     class Boom:
         def __init__(self):

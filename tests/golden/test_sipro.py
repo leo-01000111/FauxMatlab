@@ -19,8 +19,8 @@ from xml.etree import ElementTree
 import numpy as np
 import pytest
 
-from fakematlab.console import Interpreter, matlab_runtime, set_figure_sink
-from fakematlab.console.figures import recording_sink
+from evans.console import Interpreter, matlab_runtime, set_figure_sink
+from evans.console.figures import recording_sink
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "sipro"
 _W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"

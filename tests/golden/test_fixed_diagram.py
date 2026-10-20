@@ -14,8 +14,8 @@ pytest.importorskip("PySide6", reason="Qt not available")
 
 from PySide6.QtWidgets import QApplication
 
-from fakematlab.ui.diagram.fixed_diagram import FixedDiagramView
-from fakematlab.ui.diagram.items import DiagramWire
+from evans.ui.diagram.fixed_diagram import FixedDiagramView
+from evans.ui.diagram.items import DiagramWire
 
 
 @pytest.fixture(scope="module")

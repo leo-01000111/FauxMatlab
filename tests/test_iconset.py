@@ -19,7 +19,7 @@ import pytest
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
-from fakematlab.ui import iconset, theme
+from evans.ui import iconset, theme
 
 # What the interface asks for. A name here that has no file is a broken icon
 # at run time, so the list is checked rather than trusted.
@@ -47,7 +47,7 @@ def test_every_required_icon_exists():
 
 
 def test_every_pane_kind_has_an_icon():
-    from fakematlab.ui.panes import PANE_KINDS
+    from evans.ui.panes import PANE_KINDS
     missing = [k.key for k in PANE_KINDS
                if f"pane-{k.key}" not in iconset.names()]
     assert not missing
@@ -69,11 +69,13 @@ def test_icon_keeps_to_holding_point(name):
 
 @pytest.mark.parametrize("name", iconset.names())
 def test_icon_renders_in_both_themes(app, name):
-    for mode in (theme.Mode.DAY, theme.Mode.NIGHT):
-        theme.set_mode(mode, persist=False)
-        icon = iconset.icon(name)
-        assert isinstance(icon, QIcon) and not icon.isNull()
-        img = icon.pixmap(24, 24).toImage()
+    # Drawn in each theme's ink directly. Switching the live theme here, twice
+    # per icon, restyled every window the UI tests had left open and made the
+    # whole suite four times slower; test_icon_follows_the_theme covers the
+    # live switch once.
+    assert not iconset.icon(name).isNull()
+    for tokens in (theme.DAY, theme.NIGHT):
+        img = iconset.pixmap(name, 24, tokens.ink).toImage()
         assert any(img.pixelColor(x, y).alpha() > 0
                    for x in range(24) for y in range(24)), "drew nothing"
 

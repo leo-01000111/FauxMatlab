@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from fakematlab.selftest import Report, run
+from evans.selftest import Report, run
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -34,7 +34,7 @@ def test_the_self_test_covers_every_lesson_claim():
     self-test that silently stopped running half the claims would still
     report OK.
     """
-    from fakematlab.core.lessons import all_lessons
+    from evans.core.lessons import all_lessons
 
     claims = sum(len(lesson.claims) for lesson in all_lessons())
     report = run(verbose=False, include_ui=False)
@@ -61,7 +61,7 @@ def test_the_self_test_reports_a_broken_build_rather_than_raising(monkeypatch):
     If a whole subsystem is broken the self-test must still finish and name
     it. An exception escaping here would leave the exit code meaningless.
     """
-    import fakematlab.selftest as selftest
+    import evans.selftest as selftest
 
     def explode(*_args, **_kwargs):
         raise RuntimeError("simulated breakage")
@@ -81,7 +81,7 @@ def test_the_report_survives_a_console_that_cannot_encode_it(capsys):
     """
     import io
 
-    import fakematlab.selftest as selftest
+    import evans.selftest as selftest
 
     narrow = io.TextIOWrapper(io.BytesIO(), encoding="cp1252",
                               errors="strict", newline="")
@@ -97,7 +97,7 @@ def test_the_report_survives_a_console_that_cannot_encode_it(capsys):
 def test_a_broken_subsystem_is_recorded_not_raised(monkeypatch):
     import control as ctl
 
-    import fakematlab.selftest as selftest
+    import evans.selftest as selftest
 
     monkeypatch.setattr(ctl, "tf", lambda *a, **k: 1 / 0)
     report = selftest.run(verbose=False, include_ui=False)
@@ -115,7 +115,7 @@ def test_version_flag_prints_and_exits_zero():
         [sys.executable, "app.py", "--version"],
         cwd=ROOT, capture_output=True, text=True, timeout=120)
     assert result.returncode == 0
-    assert "FauxMatlab" in result.stdout
+    assert "Evans" in result.stdout
 
 
 def test_check_flag_exits_zero_on_a_healthy_tree():
@@ -131,11 +131,11 @@ def test_check_flag_exits_zero_on_a_healthy_tree():
 
 def test_check_does_not_need_a_gui_before_it_decides():
     """
-    ``--check`` has to work on a headless machine, so ``app.py`` must not
-    import Qt or open a display at module level — only inside ``main()``
+    ``--check`` has to work on a headless machine, so the entry module must
+    not import Qt or open a display at module level — only inside ``main()``
     after the flags have been read.
     """
-    source = (ROOT / "app.py").read_text(encoding="utf-8")
+    source = (ROOT / "src" / "evans" / "app.py").read_text(encoding="utf-8")
     header = source.split("def main(")[0]
     for forbidden in ("import pyqtgraph", "from PySide6", "QApplication"):
         assert forbidden not in header, \
@@ -159,14 +159,14 @@ def test_the_spec_excludes_the_other_qt_bindings():
     sets of Qt DLLs in the same folder, which is the conflict ``app.py`` pins
     the binding to avoid — and it would only show up in the packaged build.
     """
-    text = (ROOT / "packaging" / "fauxmatlab.spec").read_text(encoding="utf-8")
+    text = (ROOT / "packaging" / "evans.spec").read_text(encoding="utf-8")
     assert '"PyQt5"' in text and '"PyQt6"' in text
 
 
 def test_the_spec_builds_a_console_entry_point_for_the_self_test():
     """A windowed exe has no stdout, so --check there would print nothing."""
-    text = (ROOT / "packaging" / "fauxmatlab.spec").read_text(encoding="utf-8")
-    assert "FauxMatlab-check" in text
+    text = (ROOT / "packaging" / "evans.spec").read_text(encoding="utf-8")
+    assert "Evans-check" in text
     assert "console=True" in text
 
 
@@ -178,7 +178,7 @@ def test_the_spec_installs_the_missing_stdio_runtime_hook():
     dies with ``AttributeError: 'NoneType' object has no attribute 'write'``
     before the window appears. The console build never sees it.
     """
-    spec = (ROOT / "packaging" / "fauxmatlab.spec").read_text(encoding="utf-8")
+    spec = (ROOT / "packaging" / "evans.spec").read_text(encoding="utf-8")
     assert "rthook_stdio.py" in spec
     assert "runtime_hooks=[]" not in spec
     assert (ROOT / "packaging" / "rthook_stdio.py").exists()
@@ -209,8 +209,8 @@ def test_ci_self_tests_the_windowed_build_too():
     """
     text = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
         encoding="utf-8")
-    assert "FauxMatlab-check.exe --check" in text
-    assert "FauxMatlab.exe" in text and "windowed" in text
+    assert "Evans-check.exe --check" in text
+    assert "Evans.exe" in text and "windowed" in text
 
 
 def test_the_spec_excludes_nothing_the_app_imports_at_startup():
@@ -228,7 +228,7 @@ def test_the_spec_excludes_nothing_the_app_imports_at_startup():
     import json
     import os
 
-    spec = (ROOT / "packaging" / "fauxmatlab.spec").read_text(encoding="utf-8")
+    spec = (ROOT / "packaging" / "evans.spec").read_text(encoding="utf-8")
     excluded: set[str] = set()
     for node in ast.walk(ast.parse(spec)):
         if (isinstance(node, ast.Assign)
@@ -245,7 +245,7 @@ def test_the_spec_excludes_nothing_the_app_imports_at_startup():
     env = {**os.environ, "QT_QPA_PLATFORM": "offscreen",
            "PYQTGRAPH_QT_LIB": "PySide6", "PYTHONPATH": str(ROOT)}
     probe = ("import sys, json;"
-             "import fakematlab.ui.mainwindow, fakematlab.selftest;"
+             "import evans.ui.mainwindow, evans.selftest;"
              "print(json.dumps(sorted(sys.modules)))")
     result = subprocess.run([sys.executable, "-c", probe], cwd=ROOT, env=env,
                             capture_output=True, text=True, timeout=300)
@@ -316,9 +316,9 @@ def test_the_readme_does_not_describe_the_old_layout():
 
 def test_the_readme_counts_match_the_code():
     """Numbers the README states, checked against what they count."""
-    from fakematlab.console.api import _GROUPS
-    from fakematlab.sim.block import block_types
-    from fakematlab.ui.panes import PANE_KINDS
+    from evans.console.api import _GROUPS
+    from evans.sim.block import block_types
+    from evans.ui.panes import PANE_KINDS
 
     text = _readme()
     assert f"{len(PANE_KINDS)} contents" in text.replace("seventeen",

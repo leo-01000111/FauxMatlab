@@ -9,7 +9,7 @@ pytest.importorskip("PySide6", reason="Qt not available")
 import control as ctl
 from PySide6.QtWidgets import QApplication
 
-from fakematlab.ui.minphase_view import MinPhaseView
+from evans.ui.minphase_view import MinPhaseView
 
 
 @pytest.fixture(scope="module")

@@ -19,14 +19,14 @@ import pytest
 from PySide6.QtGui import QColor, QFontDatabase, QPalette
 from PySide6.QtWidgets import QApplication, QPushButton
 
-from fakematlab.ui import theme, theme_qt
-from fakematlab.ui.design import Status, StatusBadge
+from evans.ui import theme, theme_qt
+from evans.ui.design import Status, StatusBadge
 
 
 @pytest.fixture(scope="module")
 def app():
     app = QApplication.instance() or QApplication([])
-    app.setOrganizationName("FauxMatlabTest")
+    app.setOrganizationName("EvansTest")
     app.setApplicationName("theme-tests")
     theme.load_fonts()
     theme.set_mode(theme.Mode.DAY, persist=False)
@@ -95,9 +95,9 @@ def test_the_fonts_ship_with_the_package():
     folder = theme._FONT_DIR
     assert (folder / "Archivo-Variable.ttf").is_file()
     assert (folder / "MartianMono-Variable.ttf").is_file()
-    spec = (theme._FONT_DIR.parents[2] / "packaging" / "fauxmatlab.spec")
+    spec = (theme._FONT_DIR.parents[3] / "packaging" / "evans.spec")
     assert "fonts" in spec.read_text(encoding="utf-8")
-    pyproject = (theme._FONT_DIR.parents[2] / "pyproject.toml")
+    pyproject = (theme._FONT_DIR.parents[3] / "pyproject.toml")
     assert "fonts/*" in pyproject.read_text(encoding="utf-8")
 
 
@@ -176,9 +176,9 @@ def test_the_console_clear_buttons_fit_their_labels(app):
     of 80 px cut "CLEAR ALL" off, so the buttons are sized by their labels —
     and still are when the pane they sit in is narrowed.
     """
-    from fakematlab.console.interpreter import Interpreter
-    from fakematlab.ui.console.console_widget import ConsoleWidget
-    from fakematlab.ui.console.workspace_widget import WorkspaceWidget
+    from evans.console.interpreter import Interpreter
+    from evans.ui.console.console_widget import ConsoleWidget
+    from evans.ui.console.workspace_widget import WorkspaceWidget
 
     interpreter = Interpreter()
     for widget in (WorkspaceWidget(interpreter), ConsoleWidget(interpreter)):
@@ -193,9 +193,9 @@ def test_the_console_clear_buttons_fit_their_labels(app):
 
 
 def test_the_main_window_offers_a_theme_menu(app, recorded):
-    from fakematlab.core.architecture import CourseArchitecture
-    from fakematlab.core.tf_utils import second_order, unity
-    from fakematlab.ui.mainwindow import MainWindow
+    from evans.core.architecture import CourseArchitecture
+    from evans.core.tf_utils import second_order, unity
+    from evans.ui.mainwindow import MainWindow
 
     arch = CourseArchitecture(G=second_order(K=1.0, zeta=0.5, wn=2.0),
                               K2=unity(), K1=unity(), H=unity())
@@ -226,14 +226,14 @@ def test_plot_colours_follow_a_theme_chosen_before_any_plot():
 
     probe = (
         "import os; os.environ['PYQTGRAPH_QT_LIB'] = 'PySide6'\n"
-        "from fakematlab.ui import plots, theme\n"
+        "from evans.ui import plots, theme\n"
         "theme.set_mode(theme.Mode.NIGHT, persist=False)\n"
         "assert plots.COLORS[0] == theme.NIGHT.ink, plots.COLORS\n"
     )
     env = dict(os.environ, QT_QPA_PLATFORM="offscreen")
     done = subprocess.run([sys.executable, "-c", probe], env=env,
                           capture_output=True, text=True, timeout=120,
-                          cwd=theme._FONT_DIR.parents[2])
+                          cwd=theme._FONT_DIR.parents[3])
     assert done.returncode == 0, done.stderr
 
 

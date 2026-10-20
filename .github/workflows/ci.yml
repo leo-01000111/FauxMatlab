@@ -85,7 +85,7 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -e ".[dev]"
-      - run: pyinstaller --clean --noconfirm packaging/fauxmatlab.spec
+      - run: pyinstaller --clean --noconfirm packaging/evans.spec
 
       # A build that cannot pass its own self-test is not a release.
       #
@@ -96,12 +96,12 @@ jobs:
       # fail there and nowhere else. Testing only the console exe is how a
       # launch-blocking crash shipped once already.
       - name: self-test the frozen build (console, readable report)
-        run: dist/FauxMatlab/FauxMatlab-check.exe --check
+        run: dist/Evans/Evans-check.exe --check
 
       - name: self-test the frozen build (windowed, exit code only)
         shell: pwsh
         run: |
-          $p = Start-Process -FilePath dist/FauxMatlab/FauxMatlab.exe `
+          $p = Start-Process -FilePath dist/Evans/Evans.exe `
                              -ArgumentList '--check' -Wait -PassThru
           if ($p.ExitCode -ne 0) {
             throw "windowed build failed its self-test (exit $($p.ExitCode))"
@@ -109,14 +109,14 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: FauxMatlab-windows
-          path: dist/FauxMatlab
+          name: Evans-windows
+          path: dist/Evans
           retention-days: 14
 
       - name: Zip the build
         if: startsWith(github.ref, 'refs/tags/')
         shell: pwsh
-        run: Compress-Archive -Path dist/FauxMatlab -DestinationPath FauxMatlab-windows.zip
+        run: Compress-Archive -Path dist/Evans -DestinationPath Evans-windows.zip
 
       - name: Publish the release
         if: startsWith(github.ref, 'refs/tags/')
@@ -124,5 +124,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: >
-          gh release create "${{ github.ref_name }}" FauxMatlab-windows.zip
-          --title "FauxMatlab ${{ github.ref_name }}" --generate-notes
+          gh release create "${{ github.ref_name }}" Evans-windows.zip
+          --title "Evans ${{ github.ref_name }}" --generate-notes

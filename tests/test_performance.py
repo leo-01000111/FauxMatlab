@@ -1,8 +1,8 @@
-"""Tests for fakematlab.core.performance."""
+"""Tests for evans.core.performance."""
 
 
-from fakematlab.core.performance import analyse_performance
-from fakematlab.core.tf_utils import first_order, integrator
+from evans.core.performance import analyse_performance
+from evans.core.tf_utils import first_order, integrator
 
 
 class TestPerformance:

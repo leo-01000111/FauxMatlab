@@ -1,4 +1,4 @@
-# FakeMatlab — Classical Control workbench (spec)
+# Evans — Classical Control workbench (spec)
 
 Native desktop tool replacing MATLAB/Simulink for the CLACO "Classical Control" course
 (`COURSE MATERIAL/CORO_CLACO_classical_approach_2026-2027_1slidepp.pdf`, 254 slides, ch1–8).
@@ -62,7 +62,7 @@ non-minimum-phase zero, satellite double integrator from ch2).
 ## Code structure
 ```
 app.py                 # entry point
-fakematlab/
+src/evans/
   core/                # pure engine, no Qt — unit tested
     tf.py              # parsing/formatting/factoring, presets
     architecture.py    # blocks + closed-loop TF derivation

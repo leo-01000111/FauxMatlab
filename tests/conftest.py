@@ -4,7 +4,7 @@ Shared pytest setup.
 PyQt5, PyQt6 and PySide6 are all installed in this environment. pyqtgraph
 picks PyQt5 by default, which then fights PySide6 over the Qt DLLs and fails
 with "DLL load failed while importing QtCore". ``app.py`` pins the binding
-before importing pyqtgraph; tests that touch :mod:`fakematlab.ui` need the
+before importing pyqtgraph; tests that touch :mod:`evans.ui` need the
 same pin, applied before any Qt import happens.
 """
 
@@ -25,11 +25,11 @@ def _scratch_persistence():
     before any function fixture runs, and it reads and writes both as it goes.
     """
     try:
-        from fakematlab.ui import persist
+        from evans.ui import persist
     except ImportError:                      # no Qt: nothing to redirect
         yield
         return
-    persist.ORG, persist.APP = "FauxMatlabTest", "PersistTest"
+    persist.ORG, persist.APP = "EvansTest", "PersistTest"
     persist.settings().clear()
     yield
     persist.settings().clear()

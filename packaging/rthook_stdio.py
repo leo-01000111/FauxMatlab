@@ -17,7 +17,7 @@ reached through ``scipy.linalg`` → ``scipy._lib._array_api`` →
 
 before the splash screen would have appeared. The console build is unaffected,
 which is exactly why the self-test missed it: the self-test was run against
-``FauxMatlab-check.exe``.
+``Evans-check.exe``.
 
 Replacing the missing streams with a discard sink fixes it for every package
 at once, rather than patching them one at a time as each is discovered. The

@@ -1,0 +1,464 @@
+"""
+The LTI Viewer — every loaded system, any response, side by side.
+
+The window is a renderer for :class:`~evans.core.viewer.ViewerData` and
+almost nothing else. Which systems, which response and which characteristics
+are the only state it owns; every number on screen came out of the core
+module, which is where they are checked.
+"""
+
+from __future__ import annotations
+
+import numpy as np
+import pyqtgraph as pg
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QAction
+from PySide6.QtWidgets import (
+    QComboBox,
+    QHBoxLayout,
+    QInputDialog,
+    QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QMenu,
+    QPushButton,
+    QSplitter,
+    QVBoxLayout,
+    QWidget,
+)
+
+from ...core.collection import SystemCollection
+from ...core.viewer import (
+    CHARACTERISTICS,
+    Characteristic,
+    ResponseKind,
+    ViewerData,
+    compute,
+)
+from .. import theme
+from ..design import EmptyState
+from ..guard import GuardedPanel, guard
+from ..plots import (
+    COLORS,
+    HoverReadout,
+    add_hline,
+    add_marker,
+    add_text_annotation,
+    add_vline,
+    curve_pen,
+    draw_asymptotes,
+    freq_marker,
+    freq_text,
+    install_hover_readout,
+    make_freq_plot,
+    make_plot,
+    plot_freq,
+)
+
+
+class LTIViewer(QWidget, GuardedPanel):
+    """A collection of systems, drawn as whichever response is selected."""
+
+    #: A system was double-clicked: analyse it in the main tabs.
+    open_requested = Signal(str, object)
+
+    def __init__(self, collection: SystemCollection | None = None,
+                 compact: bool = False, parent=None) -> None:
+        """
+        ``compact`` hides the system list and the response picker, leaving
+        just the plot.
+
+        That is what lets an analysis pane *be* an LTI Viewer rather than a
+        second implementation of the same plots — the viewer becomes the
+        multi-system form of the analysis area, and the pane the one-system
+        form, off one renderer.
+        """
+        super().__init__(parent)
+        self.setWindowTitle("LTI Viewer")
+        self.compact = compact
+        if not compact:
+            self.resize(1080, 680)
+        self.collection = collection or SystemCollection()
+        self._kind = ResponseKind.STEP
+        # A pane is the one-glance form of the analysis area, so it starts with
+        # every characteristic that applies switched on (``compute`` ignores
+        # the ones that mean nothing for the response). The full viewer starts
+        # clean: with several systems loaded, that many labels is clutter.
+        self._characteristics: set[Characteristic] = (
+            set(Characteristic) if compact else set())
+        self._hovers: list[HoverReadout] = []
+        self._build_ui()
+        self.refresh()
+
+    # ── UI ──────────────────────────────────────────────────────
+
+    def _build_ui(self) -> None:
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(6, 6, 6, 6)
+        self.install_error_banner(outer)
+
+        split = QSplitter(Qt.Horizontal)
+        outer.addWidget(split, stretch=1)
+
+        # ── left: the systems ──
+        left = QWidget()
+        left.setMaximumWidth(260)
+        left_lay = QVBoxLayout(left)
+        left_lay.setContentsMargins(0, 0, 0, 0)
+        left_lay.addWidget(QLabel("Systems"))
+
+        self._list = QListWidget()
+        self._list.itemChanged.connect(self._on_item_changed)
+        self._list.itemDoubleClicked.connect(self._on_double_click)
+        left_lay.addWidget(self._list, stretch=1)
+
+        buttons = QHBoxLayout()
+        for label, slot in (("Rename…", self._rename),
+                            ("Remove", self._remove),
+                            ("Clear", self._clear)):
+            button = QPushButton(label)
+            button.clicked.connect(slot)
+            buttons.addWidget(button)
+        left_lay.addLayout(buttons)
+        split.addWidget(left)
+
+        # ── right: the plot ──
+        right = QWidget()
+        right_lay = QVBoxLayout(right)
+        right_lay.setContentsMargins(0, 0, 0, 0)
+
+        top = QHBoxLayout()
+        self._kind_label = QLabel("Response:")
+        top.addWidget(self._kind_label)
+        self._kind_combo = QComboBox()
+        for kind in ResponseKind:
+            self._kind_combo.addItem(kind.value)
+        self._kind_combo.currentIndexChanged.connect(self._on_kind_changed)
+        top.addWidget(self._kind_combo)
+
+        self._char_btn = QPushButton("Characteristics ▾")
+        self._char_btn.setToolTip(
+            "Add markers to every curve at once — the same menu the plot's "
+            "right-click gives you.")
+        self._char_btn.clicked.connect(self._show_characteristics_menu)
+        top.addWidget(self._char_btn)
+        top.addStretch()
+        self._note = QLabel("")
+        self._note.setStyleSheet("color: palette(mid);")
+        top.addWidget(self._note)
+        right_lay.addLayout(top)
+
+        self._plot_host = QWidget()
+        self._plot_lay = QVBoxLayout(self._plot_host)
+        self._plot_lay.setContentsMargins(0, 0, 0, 0)
+        right_lay.addWidget(self._plot_host, stretch=1)
+
+        split.addWidget(right)
+        split.setStretchFactor(0, 0)
+        split.setStretchFactor(1, 1)
+
+        if self.compact:
+            # The pane's own header already says what is shown and which
+            # signal it is shown for; repeating it inside would be noise.
+            left.hide()
+            self._kind_combo.hide()
+            self._kind_label.hide()
+            outer.setContentsMargins(0, 0, 0, 0)
+
+    # ── collection management ───────────────────────────────────
+
+    def add_system(self, name: str, system) -> None:
+        self.collection.add(name, system)
+        self.refresh()
+
+    def set_collection(self, collection: SystemCollection) -> None:
+        self.collection = collection
+        self.refresh()
+
+    def set_response(self, kind: ResponseKind) -> None:
+        """Choose the response type from outside — what a pane does."""
+        self._kind_combo.setCurrentText(kind.value)
+        self._kind = kind
+        self._draw()
+
+    def _selected_name(self) -> str | None:
+        item = self._list.currentItem()
+        return item.text() if item is not None else None
+
+    def _rename(self) -> None:
+        name = self._selected_name()
+        if name is None:
+            return
+        new, ok = QInputDialog.getText(self, "Rename", "Name:", text=name)
+        if ok and new:
+            self.collection.rename(name, new)
+            self.refresh()
+
+    def _remove(self) -> None:
+        name = self._selected_name()
+        if name is not None:
+            self.collection.remove(name)
+            self.refresh()
+
+    def _clear(self) -> None:
+        self.collection.clear()
+        self.refresh()
+
+    def _on_item_changed(self, item: QListWidgetItem) -> None:
+        self.collection.set_visible(item.text(),
+                                    item.checkState() == Qt.Checked)
+        self._draw()
+
+    def _on_double_click(self, item: QListWidgetItem) -> None:
+        entry = self.collection.get(item.text())
+        self.open_requested.emit(entry.name, entry.system)
+
+    # ── response kind and characteristics ───────────────────────
+
+    def _on_kind_changed(self, index: int) -> None:
+        # Rebuilt from the text rather than taken from `itemData`. Qt stores
+        # item data in a QVariant, and a `str`-mixin enum goes in as an enum
+        # member and comes back out as a plain `str` — which compares and
+        # hashes equal to the member, so every dict lookup still works and the
+        # only symptom is `.value` raising several calls later.
+        self._kind = ResponseKind(self._kind_combo.itemText(index))
+        # Drop the ones that do not apply to the new response, rather than
+        # keeping them checked-but-ignored where they cannot be drawn.
+        # (A compact pane keeps them all: its kind is set from outside and the
+        # set is filtered per response when computing.)
+        if not self.compact:
+            self._characteristics &= set(CHARACTERISTICS[self._kind])
+        self._draw()
+
+    def set_characteristic(self, characteristic: Characteristic,
+                           on: bool) -> None:
+        if on:
+            self._characteristics.add(characteristic)
+        else:
+            self._characteristics.discard(characteristic)
+        self._draw()
+
+    def _show_characteristics_menu(self) -> None:
+        menu = self._characteristics_menu()
+        menu.exec(self._char_btn.mapToGlobal(
+            self._char_btn.rect().bottomLeft()))
+
+    def _characteristics_menu(self) -> QMenu:
+        menu = QMenu(self)
+        available = CHARACTERISTICS[self._kind]
+        if not available:
+            menu.addAction(QAction(
+                f"{self._kind.value} has no characteristics", self,
+                enabled=False))
+            return menu
+        for characteristic in available:
+            action = QAction(characteristic.value, self, checkable=True)
+            action.setChecked(characteristic in self._characteristics)
+            action.toggled.connect(
+                lambda on, c=characteristic: self.set_characteristic(c, on))
+            menu.addAction(action)
+        return menu
+
+    # ── drawing ─────────────────────────────────────────────────
+
+    def refresh(self, *_ignored) -> None:
+        """Rebuild the system list and redraw."""
+        self._list.blockSignals(True)
+        self._list.clear()
+        for entry in self.collection:
+            item = QListWidgetItem(entry.name)
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            item.setCheckState(Qt.Checked if entry.visible else Qt.Unchecked)
+            item.setForeground(pg.mkColor(COLORS[entry.colour % len(COLORS)]))
+            if entry.note:
+                item.setToolTip(entry.note)
+            self._list.addItem(item)
+        self._list.blockSignals(False)
+        self._draw()
+
+    @guard("LTI Viewer")
+    def _draw(self) -> None:
+        data = compute(self.collection, self._kind, self._characteristics)
+        self._note.setText(data.note)
+        self._clear_plots()
+        if not data.curves:
+            # An empty plot is indistinguishable from a broken one. Say why
+            # there is nothing rather than drawing empty axes.
+            self._plot_lay.addWidget(EmptyState(
+                f"Nothing to show as {self._kind.value.lower()}",
+                data.note or "Add a system, or tick one in the list."))
+            return
+        if len(data.panels) == 2:
+            self._draw_two_panels(data)
+        else:
+            self._draw_one_panel(data)
+
+    def hover_readouts(self) -> list[HoverReadout]:
+        """The hover readout of every plot currently shown, top to bottom."""
+        return list(self._hovers)
+
+    def _clear_plots(self) -> None:
+        self._hovers = []
+        while self._plot_lay.count():
+            item = self._plot_lay.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.setParent(None)
+                widget.deleteLater()
+
+    def _draw_one_panel(self, data: ViewerData) -> None:
+        nichols = data.kind is ResponseKind.NICHOLS
+        widget = (make_freq_plot(data.kind.value, data.ylabel) if data.log_x
+                  else make_plot(data.kind.value, data.xlabel, data.ylabel,
+                                 x_unit="phase" if nichols else None,
+                                 y_unit="db" if nichols else None))
+        plot = widget.getPlotItem()
+        plot.addLegend(offset=(-10, 10))
+        if data.aspect_locked:
+            plot.setAspectLocked(True)
+        hover = self._new_hover(plot, data)
+        self._paint(plot, data, "main", hover)
+        if data.kind is ResponseKind.NYQUIST:
+            self._nyquist_furniture(plot, hover)
+        if nichols:
+            self._nichols_furniture(plot, hover)
+        if data.kind is ResponseKind.PZMAP:
+            add_vline(plot, 0.0, theme.plot_colour("muted"), width=0.6)
+            add_hline(plot, 0.0, theme.plot_colour("muted"), width=0.6)
+        self._install_context_menu(widget)
+        self._plot_lay.addWidget(widget)
+
+    def _draw_two_panels(self, data: ViewerData) -> None:
+        splitter = QSplitter(Qt.Vertical)
+        top = make_freq_plot(f"{data.kind.value} — magnitude", data.ylabel,
+                             y_unit="db")
+        bottom = make_freq_plot(f"{data.kind.value} — phase",
+                                data.phase_label, y_unit="phase")
+        top.setXLink(bottom)
+        splitter.addWidget(top)
+        splitter.addWidget(bottom)
+
+        top_plot = top.getPlotItem()
+        top_plot.addLegend(offset=(-10, 10))
+        top_hover = self._new_hover(top_plot, data)
+        self._paint(top_plot, data, "main", top_hover)
+        add_hline(top_plot, 0.0, theme.plot_colour("muted"), width=0.8)
+
+        bottom_plot = bottom.getPlotItem()
+        bottom_hover = self._new_hover(bottom_plot, data)
+        self._paint(bottom_plot, data, "phase", bottom_hover)
+        add_hline(bottom_plot, -180.0, theme.plot_colour("reference"), width=0.8)
+
+        for widget in (top, bottom):
+            self._install_context_menu(widget)
+        self._plot_lay.addWidget(splitter)
+
+    def _new_hover(self, plot, data: ViewerData) -> HoverReadout:
+        hover = install_hover_readout(plot, log_x=data.log_x)
+        self._hovers.append(hover)
+        return hover
+
+    def _paint(self, plot, data: ViewerData, panel: str,
+               hover: HoverReadout | None = None) -> None:
+        if panel in ("main", "phase") and data.asymptotes:
+            self._draw_asymptotes(plot, data, panel, hover)
+
+        for curve in data.curves_on(panel):
+            pen = _pen(curve.colour, curve.style)
+            if curve.style in ("poles", "zeros"):
+                plot.plot(curve.x, curve.y, pen=None,
+                          symbol="x" if curve.style == "poles" else "o",
+                          symbolSize=13,
+                          symbolPen=curve_pen(curve.colour, 2.2),
+                          symbolBrush=None, name=curve.name)
+            elif data.log_x:
+                plot_freq(plot, curve.x, curve.y, pen=pen,
+                          name=curve.name if panel == "main" else None)
+            else:
+                plot.plot(curve.x, curve.y, pen=pen,
+                          name=curve.name if panel == "main" else None)
+            if hover is not None:
+                hover.model.add_curve(
+                    curve.x, curve.y, quantity=curve.quantity,
+                    name=curve.name, param=curve.param,
+                    colour=_hex(curve.colour))
+
+        for mark in data.marks_on(panel):
+            colour = COLORS[mark.colour % len(COLORS)]
+            # Full sentence when there is room for it (the standalone viewer),
+            # the short caption in a pane; the hover always has the full one.
+            text = mark.caption if self.compact else mark.label
+            if mark.kind == "hline":
+                add_hline(plot, mark.y, colour,
+                          label=text if not self.compact else mark.caption,
+                          width=1.0)
+            elif data.log_x:
+                freq_marker(plot, mark.x, mark.y, color=colour)
+                freq_text(plot, mark.x, mark.y, text, color=colour)
+            else:
+                add_marker(plot, mark.x, mark.y, color=colour)
+                add_text_annotation(plot, mark.x, mark.y, text, color=colour)
+            if hover is not None:
+                hover.model.add_mark(mark.x, mark.y, mark.label,
+                                     kind=mark.kind, colour=colour)
+
+    def _draw_asymptotes(self, plot, data: ViewerData, panel: str,
+                         hover: HoverReadout | None) -> None:
+        """Each system's classical sketch, in that system's colour."""
+        for aset in data.asymptotes:
+            asym = aset.asymptotes
+            draw_asymptotes(
+                plot,
+                asym.magnitude if panel == "main" else asym.phase,
+                COLORS[aset.colour % len(COLORS)], hover=hover,
+                corners=asym.breaks if panel == "main" else ())
+
+    def _nyquist_furniture(self, plot, hover: HoverReadout | None = None) -> None:
+        theta = np.linspace(0, 2 * np.pi, 200)
+        plot.plot(np.cos(theta), np.sin(theta), pen=_pen(-1, "dashed"))
+        add_marker(plot, -1.0, 0.0, symbol="x", color=theme.plot_colour("danger"), size=14)
+        add_text_annotation(plot, -1.0, 0.06, "−1", theme.plot_colour("danger"))
+        add_vline(plot, 0.0, theme.plot_colour("muted"), width=0.6)
+        add_hline(plot, 0.0, theme.plot_colour("muted"), width=0.6)
+        if hover is not None:
+            hover.model.add_mark(-1.0, 0.0, "critical point −1 + j0",
+                                 colour=theme.plot_colour("danger"))
+
+    def _nichols_furniture(self, plot, hover: HoverReadout | None = None) -> None:
+        """The 0 dB line, the −180° line and the critical point they cross at."""
+        add_vline(plot, -180.0, theme.plot_colour("reference"), width=0.8)
+        add_hline(plot, 0.0, theme.plot_colour("muted"), width=0.8)
+        add_marker(plot, -180.0, 0.0, symbol="x", color=theme.plot_colour("danger"), size=14)
+        if hover is not None:
+            hover.model.add_mark(-180.0, 0.0,
+                                 "critical point (−180°, 0 dB)",
+                                 colour=theme.plot_colour("danger"))
+
+    def _install_context_menu(self, widget) -> None:
+        """
+        Right-click on the plot opens the characteristics menu.
+
+        This is the gesture the MATLAB viewer trains into you, and it is the
+        reason the button exists too: discoverability for anyone who has not
+        been trained into it.
+        """
+        widget.setContextMenuPolicy(Qt.CustomContextMenu)
+        widget.customContextMenuRequested.connect(
+            lambda pos, w=widget: self._characteristics_menu().exec(
+                w.mapToGlobal(pos)))
+
+
+def _hex(index: int) -> str:
+    """Palette colour of a curve; the reference curves (−1) are grey."""
+    return theme.plot_colour("muted") if index < 0 else COLORS[index % len(COLORS)]
+
+
+def _pen(index: int, style: str):
+    if index < 0:
+        pen = pg.mkPen(theme.plot_colour("muted"), width=1.4)
+        pen.setStyle(Qt.DashLine)
+        return pen
+    pen = curve_pen(index, 2.0 if style == "line" else 1.4)
+    if style == "dashed":
+        pen.setStyle(Qt.DashLine)
+    return pen

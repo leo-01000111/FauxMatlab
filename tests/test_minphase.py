@@ -4,7 +4,7 @@ import control as ctl
 import numpy as np
 import pytest
 
-from fakematlab.core.minphase import minimum_phase_split
+from evans.core.minphase import minimum_phase_split
 
 W = np.logspace(-2, 3, 400)
 

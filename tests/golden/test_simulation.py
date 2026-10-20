@@ -16,11 +16,11 @@ import control as ctl
 import numpy as np
 import pytest
 
-from fakematlab.sim.block import BlockError, block_types, create
-from fakematlab.sim.blocks import by_category  # noqa: F401  (registers library)
-from fakematlab.sim.compile import CompileError, compile_model, describe_algebraic_loop
-from fakematlab.sim.model import ModelError, SimModel
-from fakematlab.sim.solver import simulate
+from evans.sim.block import BlockError, block_types, create
+from evans.sim.blocks import by_category  # noqa: F401  (registers library)
+from evans.sim.compile import CompileError, compile_model, describe_algebraic_loop
+from evans.sim.model import ModelError, SimModel
+from evans.sim.solver import simulate
 
 # ──────────────────────────────────────────────────────────────
 #  Helpers
@@ -452,7 +452,7 @@ def test_every_registered_block_can_be_instantiated():
 # ──────────────────────────────────────────────────────────────
 
 def test_linearisation_recovers_an_open_loop_transfer_function():
-    from fakematlab.sim.linearize import linearize
+    from evans.sim.linearize import linearize
 
     m = SimModel("open")
     m.add("Constant", "r", value=0.0)
@@ -467,10 +467,10 @@ def test_linearisation_recovers_an_open_loop_transfer_function():
 def test_linearised_canvas_loop_equals_the_exact_algebra():
     """
     The bridge, end to end: a loop drawn on the canvas must linearise to the
-    same transfer function :mod:`fakematlab.core.algebra` derives symbolically
+    same transfer function :mod:`evans.core.algebra` derives symbolically
     for the equivalent block diagram.
     """
-    from fakematlab.sim.linearize import linearize
+    from evans.sim.linearize import linearize
 
     m = unity_loop()
     m.remove("r")
@@ -495,7 +495,7 @@ def test_linearisation_depends_on_the_operating_point(u0):
     is the whole reason to linearise numerically rather than read coefficients
     off the blocks.
     """
-    from fakematlab.sim.linearize import linearize
+    from evans.sim.linearize import linearize
 
     m = SimModel("nonlinear")
     m.add("Constant", "r", value=u0)
@@ -509,7 +509,7 @@ def test_linearisation_depends_on_the_operating_point(u0):
 
 
 def test_linearisation_inside_saturation_keeps_the_loop_gain():
-    from fakematlab.sim.linearize import linearize, steady_state
+    from evans.sim.linearize import linearize, steady_state
 
     m = SimModel("sat-lin")
     m.add("Constant", "r", value=0.0)
@@ -529,7 +529,7 @@ def test_linearisation_inside_saturation_keeps_the_loop_gain():
 
 
 def test_linearisation_refuses_an_algebraic_loop():
-    from fakematlab.sim.linearize import LinearizationError, linearize
+    from evans.sim.linearize import LinearizationError, linearize
 
     m = SimModel("alg")
     m.add("Step", "r", step_time=0.0)
@@ -544,7 +544,7 @@ def test_linearisation_refuses_an_algebraic_loop():
 
 
 def test_linearisation_reports_an_unnamed_port_clearly():
-    from fakematlab.sim.linearize import LinearizationError, linearize
+    from evans.sim.linearize import LinearizationError, linearize
 
     m = unity_loop()
     with pytest.raises(LinearizationError, match="name one"):
@@ -552,7 +552,7 @@ def test_linearisation_reports_an_unnamed_port_clearly():
 
 
 def test_steady_state_refuses_a_model_that_never_settles():
-    from fakematlab.sim.linearize import LinearizationError, steady_state
+    from evans.sim.linearize import LinearizationError, steady_state
 
     m = SimModel("ramp")
     m.add("Step", "r", step_time=0.0)
@@ -595,7 +595,7 @@ def test_subsystem_ports_come_from_its_inports_and_outports():
 
 
 def test_flattening_splices_the_contents_in():
-    from fakematlab.sim.compile import flatten
+    from evans.sim.compile import flatten
 
     flat = flatten(pi_subsystem_model())
     assert set(flat.blocks) == {"r", "e", "G", "C/pi"}
@@ -644,7 +644,7 @@ def test_a_loop_through_a_subsystem_is_still_detected():
 
 
 def test_nested_subsystems_flatten_all_the_way_down():
-    from fakematlab.sim.compile import flatten
+    from evans.sim.compile import flatten
 
     deepest = SimModel("deepest")
     deepest.add("Inport", "i", port_name="in", order=1)

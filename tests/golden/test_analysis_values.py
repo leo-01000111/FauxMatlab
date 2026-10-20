@@ -11,12 +11,12 @@ import control as ctl
 import numpy as np
 import pytest
 
-from fakematlab.core.architecture import CourseArchitecture
-from fakematlab.core.freqresp import bode, nichols_m_contour, nyquist, response
-from fakematlab.core.stability import marginal_gain, root_locus
-from fakematlab.core.tf_utils import dc_gain, pure_delay_pade, second_order
-from fakematlab.core.timeresp import compute_step_metrics, step_response
-from fakematlab.core.tuning import zn_ultimate
+from evans.core.architecture import CourseArchitecture
+from evans.core.freqresp import bode, nichols_m_contour, nyquist, response
+from evans.core.stability import marginal_gain, root_locus
+from evans.core.tf_utils import dc_gain, pure_delay_pade, second_order
+from evans.core.timeresp import compute_step_metrics, step_response
+from evans.core.tuning import zn_ultimate
 
 # ──────────────────────────────────────────────────────────────
 #  ch.4 — second-order step-response metrics in closed form
@@ -134,7 +134,7 @@ def test_bode_covers_low_frequencies():
     logarithm twice and every ω < 1 became NaN. The low-frequency half of each
     Bode plot silently vanished.
     """
-    from fakematlab.ui.plots import to_freq_coord
+    from evans.ui.plots import to_freq_coord
 
     bd = bode(ctl.tf([1], [1, 1, 0]))
     assert bd.omega.min() < 1.0, "test needs samples below 1 rad/s"

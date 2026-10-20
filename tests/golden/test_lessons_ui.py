@@ -17,10 +17,10 @@ pytest.importorskip("PySide6", reason="Qt not available")
 import control as ctl
 from PySide6.QtWidgets import QApplication
 
-from fakematlab.core.architecture import CourseArchitecture
-from fakematlab.core.lessons import all_lessons, lesson
-from fakematlab.ui.guard import ErrorBanner
-from fakematlab.ui.mainwindow import MainWindow
+from evans.core.architecture import CourseArchitecture
+from evans.core.lessons import all_lessons, lesson
+from evans.ui.guard import ErrorBanner
+from evans.ui.mainwindow import MainWindow
 
 
 @pytest.fixture(scope="module")
@@ -86,7 +86,7 @@ def test_a_lesson_brings_its_own_pane_kind_forward(app, win):
 
 def test_every_lesson_tab_name_maps_to_a_pane_kind(app, win):
     """A lesson naming a tab the panes cannot show would silently do nothing."""
-    from fakematlab.ui.panes import PANE_KINDS
+    from evans.ui.panes import PANE_KINDS
 
     keys = {k.key for k in PANE_KINDS}
     for les in all_lessons():

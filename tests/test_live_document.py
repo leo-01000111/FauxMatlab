@@ -9,8 +9,8 @@ import control as ctl
 import numpy as np
 import pytest
 
-from fakematlab.console.interpreter import Interpreter
-from fakematlab.console.live import (
+from evans.console.interpreter import Interpreter
+from evans.console.live import (
     Cell,
     CellKind,
     InterpolationError,
@@ -18,7 +18,7 @@ from fakematlab.console.live import (
     format_value,
     workspace_evaluator,
 )
-from fakematlab.console.live.markup import (
+from evans.console.live.markup import (
     escape_markdown,
     inline_latex,
     parse_blocks,

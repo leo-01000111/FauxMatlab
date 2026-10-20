@@ -16,10 +16,10 @@ pytest.importorskip("PySide6", reason="Qt not available")
 
 from PySide6.QtWidgets import QApplication
 
-from fakematlab.core.collection import SystemCollection
-from fakematlab.core.viewer import Characteristic, ResponseKind
-from fakematlab.ui.apps.lti_viewer import LTIViewer
-from fakematlab.ui.plots import (
+from evans.core.collection import SystemCollection
+from evans.core.viewer import Characteristic, ResponseKind
+from evans.ui.apps.lti_viewer import LTIViewer
+from evans.ui.plots import (
     DbAxis,
     HoverModel,
     PhaseAxis,
@@ -226,7 +226,7 @@ def test_mark_hover_shows_its_full_label():
 
 
 def test_segment_hover_reports_slope_and_end_points():
-    from fakematlab.core.asymptotes import bode_asymptotes
+    from evans.core.asymptotes import bode_asymptotes
 
     seg = bode_asymptotes(SLIDES, 0.01, 100).magnitude[1]
     model = HoverModel(log_x=True)

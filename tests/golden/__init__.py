@@ -9,6 +9,6 @@ These assert *values*:
 
 * against hand-derived algebra and the ch.4 closed-form formulas,
 * against ``control.stability_margins`` and the numerical
-  :class:`~fakematlab.core.signal_graph.SignalGraph` solver, which reach the
+  :class:`~evans.core.signal_graph.SignalGraph` solver, which reach the
   same answers by an entirely different route.
 """

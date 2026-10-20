@@ -18,10 +18,10 @@ pytest.importorskip("PySide6", reason="Qt not available")
 import control as ctl
 from PySide6.QtWidgets import QApplication
 
-from fakematlab.sim.model import SimModel
-from fakematlab.ui.sim.canvas import SimCanvas
-from fakematlab.ui.sim.palette import BlockPalette
-from fakematlab.ui.sim.sim_tab import SimTab, course_loop
+from evans.sim.model import SimModel
+from evans.ui.sim.canvas import SimCanvas
+from evans.ui.sim.palette import BlockPalette
+from evans.ui.sim.sim_tab import SimTab, course_loop
 
 
 @pytest.fixture(scope="module")
@@ -223,7 +223,7 @@ def test_paste_ignores_clipboard_junk(canvas):
 # ──────────────────────────────────────────────────────────────
 
 def test_palette_lists_every_block(app):
-    from fakematlab.sim.block import block_types
+    from evans.sim.block import block_types
 
     palette = BlockPalette()
     listed = set()
@@ -304,8 +304,8 @@ def test_fixed_step_solver_without_a_step_reports_clearly(app):
 
 
 def test_scope_shows_the_channels_a_run_logged(app):
-    from fakematlab.sim.solver import simulate
-    from fakematlab.ui.sim.scope import ScopeWidget
+    from evans.sim.solver import simulate
+    from evans.ui.sim.scope import ScopeWidget
 
     result = simulate(course_loop(), t_end=5.0, n_points=400)
     scope = ScopeWidget()
@@ -397,7 +397,7 @@ def test_validation_inside_a_subsystem_uses_the_whole_model(app):
 
 def test_root_model_folds_in_open_subsystem_edits(app):
     """Running while inside a subsystem must use the edited whole model."""
-    from fakematlab.sim.solver import simulate
+    from evans.sim.solver import simulate
 
     view = SimCanvas(_nested_model())
     view.descend("C")

@@ -1,10 +1,10 @@
-"""Tests for fakematlab.core.timeresp."""
+"""Tests for evans.core.timeresp."""
 
 import control as ctl
 import numpy as np
 
-from fakematlab.core.tf_utils import first_order, second_order
-from fakematlab.core.timeresp import (
+from evans.core.tf_utils import first_order, second_order
+from evans.core.timeresp import (
     compute_step_metrics,
     impulse_response,
     parameter_sweep,

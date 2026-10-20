@@ -13,10 +13,10 @@ pytest.importorskip("PySide6", reason="Qt not available")
 
 from PySide6.QtWidgets import QApplication
 
-from fakematlab.console.figures import figure_sink, set_figure_sink
-from fakematlab.console.interpreter import Interpreter
-from fakematlab.console.live import Cell, CellKind, LiveDocument, load
-from fakematlab.ui.console.live_editor import (
+from evans.console.figures import figure_sink, set_figure_sink
+from evans.console.interpreter import Interpreter
+from evans.console.live import Cell, CellKind, LiveDocument, load
+from evans.ui.console.live_editor import (
     CodeCellWidget,
     LiveScriptEditor,
     TextCellWidget,
@@ -175,7 +175,7 @@ def test_save_open_and_mlx_round_trip(app, editor, tmp_path):
 
 def test_export_report_without_tex_writes_html_and_says_how(
         app, editor, tmp_path, monkeypatch):
-    from fakematlab.ui.console import live_editor
+    from evans.ui.console import live_editor
     monkeypatch.setattr(live_editor, "find_engines", lambda: [])
     editor.set_document(LiveDocument([Cell.text("R", CellKind.TITLE),
                                       Cell.code("a = 1")]))
@@ -191,8 +191,8 @@ def test_export_report_builds_pdf_off_the_ui_thread(
         app, editor, tmp_path, monkeypatch):
     import threading
 
-    from fakematlab.console.live.report import BuildResult
-    from fakematlab.ui.console import live_editor
+    from evans.console.live.report import BuildResult
+    from evans.ui.console import live_editor
 
     release = threading.Event()
     threads = []
@@ -228,7 +228,7 @@ def test_highlighter_hook_reaches_every_code_cell(app, editor):
 
 
 def test_console_panel_has_a_live_tab_on_the_shared_workspace(app):
-    from fakematlab.ui.console import ConsolePanel, FigureArea
+    from evans.ui.console import ConsolePanel, FigureArea
 
     previous = figure_sink()
     try:
@@ -240,7 +240,7 @@ def test_console_panel_has_a_live_tab_on_the_shared_workspace(app):
         panel.live.run_all()
         assert panel.interpreter.namespace["shared"] == 42
         panel.live.figure_requested.emit(
-            __import__("fakematlab.console.figures", fromlist=["FigureSpec"])
+            __import__("evans.console.figures", fromlist=["FigureSpec"])
             .FigureSpec("xy", title="popped").add([0, 1], [0, 1]))
         assert panel.figures.figure_count == 1
     finally:
@@ -248,8 +248,8 @@ def test_console_panel_has_a_live_tab_on_the_shared_workspace(app):
 
 
 def test_live_tab_hides_the_figure_area_and_pops_figures_out(app):
-    from fakematlab.console.figures import FigureSpec
-    from fakematlab.ui.console import ConsolePanel, FigureArea
+    from evans.console.figures import FigureSpec
+    from evans.ui.console import ConsolePanel, FigureArea
 
     previous = figure_sink()
     try:
@@ -273,8 +273,8 @@ def test_live_tab_hides_the_figure_area_and_pops_figures_out(app):
 
 def test_a_failed_engine_falls_through_to_the_next(
         app, editor, tmp_path, monkeypatch):
-    from fakematlab.console.live.report import BuildResult
-    from fakematlab.ui.console import live_editor
+    from evans.console.live.report import BuildResult
+    from evans.ui.console import live_editor
 
     tried = []
 
@@ -297,8 +297,8 @@ def test_a_failed_engine_falls_through_to_the_next(
 
 def test_when_every_engine_fails_html_is_written_and_the_error_shown(
         app, editor, tmp_path, monkeypatch):
-    from fakematlab.console.live.report import BuildResult
-    from fakematlab.ui.console import live_editor
+    from evans.console.live.report import BuildResult
+    from evans.ui.console import live_editor
 
     def compile_(report, engine):
         if engine[0] == "xelatex":

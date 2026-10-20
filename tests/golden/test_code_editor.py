@@ -17,9 +17,9 @@ from PySide6.QtGui import QTextDocument
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QLineEdit
 
-from fakematlab.console.interpreter import Interpreter
-from fakematlab.ui import theme
-from fakematlab.ui.code import (
+from evans.console.interpreter import Interpreter
+from evans.ui import theme
+from evans.ui.code import (
     CodeEditor,
     Completer,
     MatlabHighlighter,
@@ -30,7 +30,7 @@ from fakematlab.ui.code import (
     split_sections,
     tokenize_line,
 )
-from fakematlab.ui.code.highlighter import BLOCK_COMMENT, NORMAL, syntax_formats
+from evans.ui.code.highlighter import BLOCK_COMMENT, NORMAL, syntax_formats
 
 
 @pytest.fixture(scope="module")

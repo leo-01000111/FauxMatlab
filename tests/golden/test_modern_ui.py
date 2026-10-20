@@ -17,10 +17,10 @@ pytest.importorskip("PySide6", reason="Qt not available")
 import control as ctl
 from PySide6.QtWidgets import QApplication
 
-from fakematlab.core.architecture import CourseArchitecture
-from fakematlab.core.statespace import state_space
-from fakematlab.ui.guard import ErrorBanner
-from fakematlab.ui.tabs.modern import ModernTab
+from evans.core.architecture import CourseArchitecture
+from evans.core.statespace import state_space
+from evans.ui.guard import ErrorBanner
+from evans.ui.tabs.modern import ModernTab
 
 
 @pytest.fixture(scope="module")
@@ -250,7 +250,7 @@ def test_minimal_realisation_button_reduces_the_model(app, tab):
 
 
 def test_matrix_editor_round_trips(app, tab):
-    from fakematlab.ui.tabs.modern.widgets import matrix_text, parse_matrix
+    from evans.ui.tabs.modern.widgets import matrix_text, parse_matrix
 
     A = np.array([[0.0, 1.0], [-2.0, -3.0]])
     assert np.allclose(parse_matrix(matrix_text(A)), A)
@@ -260,7 +260,7 @@ def test_matrix_editor_round_trips(app, tab):
 
 
 def test_ragged_matrix_is_refused_clearly(app, tab):
-    from fakematlab.ui.tabs.modern.widgets import parse_matrix
+    from evans.ui.tabs.modern.widgets import parse_matrix
 
     with pytest.raises(ValueError, match="different lengths"):
         parse_matrix("1 2 3; 4 5")

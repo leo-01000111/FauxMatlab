@@ -1,11 +1,11 @@
-"""Tests for fakematlab.core.architecture."""
+"""Tests for evans.core.architecture."""
 
 import control as ctl
 import numpy as np
 import pytest
 
-from fakematlab.core.architecture import CourseArchitecture
-from fakematlab.core.tf_utils import first_order, second_order, unity
+from evans.core.architecture import CourseArchitecture
+from evans.core.tf_utils import first_order, second_order, unity
 
 
 class TestArchitecture:

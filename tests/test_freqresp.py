@@ -1,10 +1,10 @@
-"""Tests for fakematlab.core.freqresp."""
+"""Tests for evans.core.freqresp."""
 
 import control as ctl
 import numpy as np
 
-from fakematlab.core.freqresp import bode, nichols, nyquist
-from fakematlab.core.tf_utils import first_order, second_order
+from evans.core.freqresp import bode, nichols, nyquist
+from evans.core.tf_utils import first_order, second_order
 
 
 class TestBode:

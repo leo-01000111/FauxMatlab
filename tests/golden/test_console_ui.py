@@ -13,11 +13,11 @@ pytest.importorskip("PySide6", reason="Qt not available")
 import control as ctl
 from PySide6.QtWidgets import QApplication
 
-from fakematlab.core.architecture import CourseArchitecture
-from fakematlab.core.tf_utils import second_order
-from fakematlab.ui.guard import ErrorBanner
-from fakematlab.ui.mainwindow import MainWindow
-from fakematlab.ui.workspace import Workspace
+from evans.core.architecture import CourseArchitecture
+from evans.core.tf_utils import second_order
+from evans.ui.guard import ErrorBanner
+from evans.ui.mainwindow import MainWindow
+from evans.ui.workspace import Workspace
 
 
 @pytest.fixture(scope="module")
@@ -100,7 +100,7 @@ def test_every_figure_kind_renders(app, win, command):
 
 
 def test_figures_are_capped(app, win):
-    from fakematlab.ui.console.console_dock import MAX_FIGURES
+    from evans.ui.console.console_dock import MAX_FIGURES
 
     for _ in range(MAX_FIGURES + 3):
         win._console.execute("step(G)")
@@ -181,7 +181,7 @@ def test_script_editor_runs_against_the_same_workspace(app, win):
 
 
 def test_simulink_model_is_in_the_workspace(app, win):
-    from fakematlab.sim.model import SimModel
+    from evans.sim.model import SimModel
 
     model = win._console.interpreter.namespace.get("model")
     assert isinstance(model, SimModel)
@@ -289,7 +289,7 @@ def test_cancelling_the_prompt_leaves_everything_as_it_was(app, win, answers):
 
 
 def test_placeholder_names_skip_files_already_there(tmp_path):
-    from fakematlab.ui.console.console_dock import placeholder_names
+    from evans.ui.console.console_dock import placeholder_names
 
     (tmp_path / "figure_2.png").write_bytes(b"")
     names = [p.name for p in placeholder_names(tmp_path, 3)]
@@ -415,8 +415,8 @@ def test_script_lines_stay_out_of_the_history(app, win, history, answers):
 
 
 def test_the_history_outlives_the_session(app, win, history):
-    from fakematlab.ui.console.history_widget import HistoryWidget
-    from fakematlab.ui.persist import CommandHistory
+    from evans.ui.console.history_widget import HistoryWidget
+    from evans.ui.persist import CommandHistory
 
     win._console.execute("kept = 3")
     _settle(app)
@@ -499,7 +499,7 @@ def test_recent_files_keep_ten(tmp_path, recent):
 
 
 def test_missing_recent_files_are_forgotten(tmp_path, recent):
-    from fakematlab.ui.persist import RecentFiles
+    from evans.ui.persist import RecentFiles
 
     gone = tmp_path / "gone.m"
     gone.write_text("", encoding="utf-8")
@@ -564,7 +564,7 @@ def _figure(app, win, command: str):
 
 @pytest.mark.parametrize("command", ["step(G)", "bode(G)"])
 def test_a_figure_exports_as_png_svg_and_csv(app, win, tmp_path, command):
-    from fakematlab.ui.console.figure_view import export_figure
+    from evans.ui.console.figure_view import export_figure
 
     view = _figure(app, win, command)
     png = export_figure(view, tmp_path / "f.png")
@@ -580,7 +580,7 @@ def test_a_figure_exports_as_png_svg_and_csv(app, win, tmp_path, command):
 def test_csv_has_an_x_and_a_y_column_per_series(app, win, tmp_path):
     import csv
 
-    from fakematlab.ui.console.figure_view import export_figure
+    from evans.ui.console.figure_view import export_figure
 
     view = _figure(app, win, "bode(G)")
     with export_figure(view, tmp_path / "bode.csv").open(
@@ -596,7 +596,7 @@ def test_csv_has_an_x_and_a_y_column_per_series(app, win, tmp_path):
 
 
 def test_an_unknown_extension_is_refused(app, win, tmp_path):
-    from fakematlab.ui.console.figure_view import export_figure
+    from evans.ui.console.figure_view import export_figure
 
     view = _figure(app, win, "step(G)")
     with pytest.raises(ValueError, match=".png"):
@@ -604,7 +604,7 @@ def test_an_unknown_extension_is_refused(app, win, tmp_path):
 
 
 def test_the_plot_menu_offers_export(app, win, tmp_path, monkeypatch):
-    from fakematlab.ui.console import figure_view
+    from evans.ui.console import figure_view
 
     view = _figure(app, win, "step(G)")
     menu = view.plot_widgets()[0].getPlotItem().getViewBox().menu
@@ -624,7 +624,7 @@ def test_the_plot_menu_offers_export(app, win, tmp_path, monkeypatch):
 
 
 def test_the_save_button_saves_svg_too(app, win, tmp_path, monkeypatch):
-    from fakematlab.ui.console import figure_view
+    from evans.ui.console import figure_view
 
     view = _figure(app, win, "step(G)")
     monkeypatch.setattr(

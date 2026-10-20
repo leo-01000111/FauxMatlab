@@ -17,9 +17,9 @@ import control as ctl
 from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import QApplication
 
-from fakematlab.console.apps import AppRequest
-from fakematlab.core.architecture import CourseArchitecture
-from fakematlab.ui.design import (
+from evans.console.apps import AppRequest
+from evans.core.architecture import CourseArchitecture
+from evans.ui.design import (
     NORMAL,
     PANEL,
     SECTION,
@@ -28,10 +28,10 @@ from fakematlab.ui.design import (
     Status,
     StatusBadge,
 )
-from fakematlab.ui.guard import ErrorBanner
-from fakematlab.ui.mainwindow import MainWindow
-from fakematlab.ui.panes import PANE_KINDS, Source
-from fakematlab.ui.workspace import Workspace
+from evans.ui.guard import ErrorBanner
+from evans.ui.mainwindow import MainWindow
+from evans.ui.panes import PANE_KINDS, Source
+from evans.ui.workspace import Workspace
 
 #: The plan's target: usable at 1280×720, comfortable at 1920×1080.
 TARGET_W, TARGET_H = 1280, 720
@@ -290,10 +290,10 @@ def test_pane_labels_are_words_not_emoji(win):
 @pytest.fixture
 def scratch_settings(monkeypatch):
     """Keep the tests out of the real registry."""
-    monkeypatch.setattr(MainWindow, "SETTINGS_ORG", "FauxMatlabTest")
+    monkeypatch.setattr(MainWindow, "SETTINGS_ORG", "EvansTest")
     monkeypatch.setattr(MainWindow, "SETTINGS_APP", "LayoutTest")
     yield
-    QSettings("FauxMatlabTest", "LayoutTest").clear()
+    QSettings("EvansTest", "LayoutTest").clear()
 
 
 def test_layout_is_saved_and_restored(app, win, scratch_settings):
@@ -494,7 +494,7 @@ def test_every_workspace_has_a_shortcut_and_a_description():
 #  The analysis pane grid
 # ──────────────────────────────────────────────────────────────
 
-from fakematlab.ui.panes import (  # noqa: E402
+from evans.ui.panes import (  # noqa: E402
     DEFAULT_LAYOUT,
     LAYOUTS,
     PANE_KINDS,
@@ -560,8 +560,8 @@ def _pane_fingerprints(grid) -> list[str]:
     import numpy as np
     from PySide6.QtWidgets import QLabel
 
-    from fakematlab.core.viewer import compute
-    from fakematlab.ui.apps.lti_viewer import LTIViewer
+    from evans.core.viewer import compute
+    from evans.ui.apps.lti_viewer import LTIViewer
 
     out: list[str] = []
     for pane in grid.panes:
@@ -613,7 +613,7 @@ def test_a_new_pane_arrives_pointing_at_its_kinds_default_signal(app, win):
     starts on the signal that kind is normally read on. (Changing the kind of
     an existing pane keeps the user's source; see the next test.)
     """
-    from fakematlab.ui.panes import AnalysisPane
+    from evans.ui.panes import AnalysisPane
 
     assert AnalysisPane(win._arch, "bode").source is Source.OPEN_LOOP
     assert AnalysisPane(win._arch, "step").source is Source.CLOSED_LOOP
@@ -654,7 +654,7 @@ def test_relayout_keeps_each_panes_source(app, win, grid):
 
 
 def test_an_explicit_source_beats_the_kind_default(app, win):
-    from fakematlab.ui.panes import AnalysisPane
+    from evans.ui.panes import AnalysisPane
 
     pane = AnalysisPane(win._arch, "bode", source=Source.PLANT)
     assert pane.source is Source.PLANT
@@ -930,7 +930,7 @@ def test_ports_are_easier_to_hit_than_they_are_to_see(app):
     A 5 px dot is a 10 px target and half of it overlaps the block body.
     The hit area is widened without widening the mark.
     """
-    from fakematlab.ui.sim.items import PORT_HIT_MARGIN, PORT_R
+    from evans.ui.sim.items import PORT_HIT_MARGIN, PORT_R
 
     assert PORT_HIT_MARGIN > 0
     assert PORT_R + PORT_HIT_MARGIN >= 2 * PORT_R, \

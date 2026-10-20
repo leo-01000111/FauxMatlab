@@ -16,9 +16,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from fakematlab.console import matlab_runtime
-from fakematlab.console.interpreter import Interpreter
-from fakematlab.console.live import (
+from evans.console import matlab_runtime
+from evans.console.interpreter import Interpreter
+from evans.console.live import (
     Cell,
     CellKind,
     LiveDocument,
@@ -31,8 +31,8 @@ from fakematlab.console.live import (
     save,
     to_live_m,
 )
-from fakematlab.console.live.livem import escape_math, unescape_math
-from fakematlab.console.live.mlx import document_xml, parse_document_xml
+from evans.console.live.livem import escape_math, unescape_math
+from evans.console.live.mlx import document_xml, parse_document_xml
 
 SIPRO = Path(__file__).parent / "fixtures" / "sipro"
 
@@ -72,7 +72,7 @@ def test_c1_consecutive_paragraphs_join_one_text_cell_and_stay_literal():
     paragraphs = cell.source.split("\n\n")
     assert len(paragraphs) == 2
     # "k*f_s" is prose, not the start of italics: it was escaped on import.
-    from fakematlab.console.live.markup import parse_blocks, plain_text
+    from evans.console.live.markup import parse_blocks, plain_text
     second = parse_blocks(cell.source)[1]
     assert plain_text(second.nodes) == "f_observed = min(k) |+/- f_actual + k*f_s|"
 
@@ -316,7 +316,7 @@ def test_cells_run_in_the_scripts_folder(tmp_path, monkeypatch):
 
 
 def test_figures_and_errors_stay_with_their_cell():
-    from fakematlab.console.figures import figure_sink, set_figure_sink
+    from evans.console.figures import figure_sink, set_figure_sink
 
     drawn = []
     previous = set_figure_sink(drawn.append)

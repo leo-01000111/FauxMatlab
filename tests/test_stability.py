@@ -1,10 +1,10 @@
-"""Tests for fakematlab.core.stability."""
+"""Tests for evans.core.stability."""
 
 import control as ctl
 import numpy as np
 import sympy as sp
 
-from fakematlab.core.stability import (
+from evans.core.stability import (
     RouthResult,
     root_locus,
     routh_from_closed_loop,

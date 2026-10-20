@@ -16,9 +16,9 @@ import time
 import numpy as np
 import pytest
 
-from fakematlab.console import Interpreter, matlab_runtime, set_figure_sink
-from fakematlab.console.figures import recording_sink
-from fakematlab.console.matlab_runtime import Cell, Struct
+from evans.console import Interpreter, matlab_runtime, set_figure_sink
+from evans.console.figures import recording_sink
+from evans.console.matlab_runtime import Cell, Struct
 
 
 @pytest.fixture
@@ -559,7 +559,7 @@ def test_saveas_and_print_write_images(it, tmp_path):
 def test_saveas_uses_the_figure_uis_exporter_when_there_is_one(
         it, tmp_path, monkeypatch):
     pytest.importorskip("PySide6", reason="Qt not available")
-    from fakematlab.ui.console import figure_view
+    from evans.ui.console import figure_view
     calls = []
     monkeypatch.setattr(figure_view, "export_figure",
                         lambda view, path: calls.append((view, path)),

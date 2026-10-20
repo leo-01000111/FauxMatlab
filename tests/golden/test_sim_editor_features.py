@@ -17,14 +17,14 @@ pytest.importorskip("PySide6", reason="Qt not available")
 from PySide6.QtCore import QEvent, QPointF, QSettings, Qt
 from PySide6.QtWidgets import QApplication, QDialogButtonBox, QGraphicsSceneMouseEvent
 
-from fakematlab.sim.linearize import LinearizationError, plant_seen_by
-from fakematlab.sim.model import SimModel
-from fakematlab.sim.solver import simulate
-from fakematlab.ui.sim.canvas import SimCanvas
-from fakematlab.ui.sim.items import ALIGN_THRESHOLD, BLOCK_W, align_snap
-from fakematlab.ui.sim.palette import STRIP_WIDTH
-from fakematlab.ui.sim.scope import ScopeWidget
-from fakematlab.ui.sim.sim_tab import SimTab, course_loop
+from evans.sim.linearize import LinearizationError, plant_seen_by
+from evans.sim.model import SimModel
+from evans.sim.solver import simulate
+from evans.ui.sim.canvas import SimCanvas
+from evans.ui.sim.items import ALIGN_THRESHOLD, BLOCK_W, align_snap
+from evans.ui.sim.palette import STRIP_WIDTH
+from evans.ui.sim.scope import ScopeWidget
+from evans.ui.sim.sim_tab import SimTab, course_loop
 
 
 @pytest.fixture(scope="module")
@@ -306,7 +306,7 @@ def test_nonlinear_blocks_in_the_loop_are_noted_not_fatal():
 # ──────────────────────────────────────────────────────────────
 
 def test_the_tune_dialog_reads_the_plant_from_the_diagram(app):
-    from fakematlab.core.pidtune import crossover_for, phase_margin_for, tune
+    from evans.core.pidtune import crossover_for, phase_margin_for, tune
 
     view = SimCanvas(course_loop())
     dialog = view.make_tune_dialog("K2")
@@ -327,7 +327,7 @@ def test_the_tune_dialog_reads_the_plant_from_the_diagram(app):
 
 
 def test_accepting_the_dialog_writes_gains_through_undo(app, monkeypatch):
-    from fakematlab.ui.sim.tune_dialog import PIDTuneDialog
+    from evans.ui.sim.tune_dialog import PIDTuneDialog
 
     monkeypatch.setattr(PIDTuneDialog, "exec",
                         lambda self: (self._accept(), 1)[1])
@@ -347,7 +347,7 @@ def test_accepting_the_dialog_writes_gains_through_undo(app, monkeypatch):
 
 
 def test_cancelling_the_dialog_leaves_the_block_alone(app, monkeypatch):
-    from fakematlab.ui.sim.tune_dialog import PIDTuneDialog
+    from evans.ui.sim.tune_dialog import PIDTuneDialog
 
     monkeypatch.setattr(PIDTuneDialog, "exec",
                         lambda self: (self.reject(), 0)[1])
@@ -418,9 +418,9 @@ def test_the_inspector_offers_tune_only_for_a_pid(app):
 
 @pytest.fixture
 def shown_tab(app, monkeypatch):
-    monkeypatch.setattr(SimTab, "SETTINGS_ORG", "FauxMatlabTest")
+    monkeypatch.setattr(SimTab, "SETTINGS_ORG", "EvansTest")
     monkeypatch.setattr(SimTab, "SETTINGS_APP", "PaletteTest")
-    QSettings("FauxMatlabTest", "PaletteTest").clear()
+    QSettings("EvansTest", "PaletteTest").clear()
     tab = SimTab()
     tab.resize(1200, 700)
     tab.show()
@@ -429,7 +429,7 @@ def shown_tab(app, monkeypatch):
     yield tab
     tab.hide()
     tab.deleteLater()
-    QSettings("FauxMatlabTest", "PaletteTest").clear()
+    QSettings("EvansTest", "PaletteTest").clear()
 
 
 def test_collapsing_the_palette_hides_it_and_widens_the_canvas(app, shown_tab):

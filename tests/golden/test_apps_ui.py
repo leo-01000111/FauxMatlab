@@ -16,14 +16,14 @@ pytest.importorskip("PySide6", reason="Qt not available")
 import control as ctl
 from PySide6.QtWidgets import QApplication
 
-from fakematlab.console.apps import AppRequest
-from fakematlab.core.architecture import CourseArchitecture
-from fakematlab.core.collection import SystemCollection
-from fakematlab.core.designer import closed_loop_poles
-from fakematlab.core.tf_utils import second_order
-from fakematlab.core.viewer import CHARACTERISTICS, ResponseKind
-from fakematlab.ui.guard import ErrorBanner
-from fakematlab.ui.mainwindow import MainWindow
+from evans.console.apps import AppRequest
+from evans.core.architecture import CourseArchitecture
+from evans.core.collection import SystemCollection
+from evans.core.designer import closed_loop_poles
+from evans.core.tf_utils import second_order
+from evans.core.viewer import CHARACTERISTICS, ResponseKind
+from evans.ui.guard import ErrorBanner
+from evans.ui.mainwindow import MainWindow
 
 LOCUS_PLANT = ctl.tf([1], [1, 3, 2, 0])
 
@@ -106,7 +106,7 @@ def test_the_response_kind_survives_the_combo_round_trip(app, win):
 
 
 def test_characteristics_that_do_not_apply_are_dropped_on_switching(app, win):
-    from fakematlab.core.viewer import Characteristic
+    from evans.core.viewer import Characteristic
 
     viewer = win._open_lti_viewer()
     viewer._kind_combo.setCurrentText(ResponseKind.STEP.value)
@@ -158,7 +158,7 @@ def test_a_long_title_cannot_stretch_a_plot_off_its_panel(app):
     blank while every value in it is correct and nothing reports an error —
     which is exactly how it was found, in the designer's root locus.
     """
-    from fakematlab.ui.plots import make_plot
+    from evans.ui.plots import make_plot
 
     widget = make_plot("Root locus", "Re", "Im")
     widget.resize(434, 470)

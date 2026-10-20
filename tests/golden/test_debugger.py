@@ -13,8 +13,8 @@ import sys
 
 import pytest
 
-from fakematlab.console.interpreter import Interpreter
-from fakematlab.console.tracer import CONTINUE, STEP, STEP_IN, STOP
+from evans.console.interpreter import Interpreter
+from evans.console.tracer import CONTINUE, STEP, STEP_IN, STOP
 
 
 def _stop_after(interp: Interpreter, polls: int = 5) -> None:
@@ -209,8 +209,8 @@ def panel():
     pytest.importorskip("PySide6", reason="Qt not available")
     from PySide6.QtWidgets import QApplication
 
-    from fakematlab.console.figures import set_figure_sink
-    from fakematlab.ui.console import ConsolePanel, FigureArea
+    from evans.console.figures import set_figure_sink
+    from evans.ui.console import ConsolePanel, FigureArea
 
     app = QApplication.instance() or QApplication([])
     previous = set_figure_sink(None)

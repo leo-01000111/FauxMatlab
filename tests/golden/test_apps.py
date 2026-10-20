@@ -13,8 +13,8 @@ import control as ctl
 import numpy as np
 import pytest
 
-from fakematlab.core.architecture import CourseArchitecture
-from fakematlab.core.collection import (
+from evans.core.architecture import CourseArchitecture
+from evans.core.collection import (
     MAX_SNAPSHOTS,
     Snapshot,
     SnapshotStore,
@@ -22,7 +22,7 @@ from fakematlab.core.collection import (
     restore_snapshot,
     take_snapshot,
 )
-from fakematlab.core.designer import (
+from evans.core.designer import (
     Compensator,
     closed_loop_poles,
     damping_of,
@@ -31,8 +31,8 @@ from fakematlab.core.designer import (
     gain_for_overshoot,
     point_to_gain,
 )
-from fakematlab.core.freqresp import bode
-from fakematlab.core.pidtune import (
+from evans.core.freqresp import bode
+from evans.core.pidtune import (
     NEUTRAL_PHASE,
     PIDKind,
     crossover_for,
@@ -42,7 +42,7 @@ from fakematlab.core.pidtune import (
     tune,
     tune_by_sliders,
 )
-from fakematlab.core.viewer import (
+from evans.core.viewer import (
     CHARACTERISTICS,
     Characteristic,
     ResponseKind,
@@ -207,7 +207,7 @@ def test_a_characteristic_that_does_not_apply_is_dropped(pair):
 
 
 def test_step_characteristics_match_the_metrics_module(pair):
-    from fakematlab.core.timeresp import compute_step_metrics, step_response
+    from evans.core.timeresp import compute_step_metrics, step_response
 
     data = compute(pair, ResponseKind.STEP, {Characteristic.PEAK})
     peak = next(m for m in data.marks if m.name == "second order")
@@ -474,7 +474,7 @@ def test_a_more_robust_target_overshoots_less():
 
 
 def test_the_default_crossover_is_where_the_plant_has_the_needed_phase():
-    from fakematlab.core.freqresp import response
+    from evans.core.freqresp import response
 
     wc = default_crossover(THIRD_ORDER, 60.0)
     _, phase = response(THIRD_ORDER, np.array([wc]))
@@ -529,7 +529,7 @@ def test_proportional_feedback_on_a_type_zero_plant_settles_short():
 
 @pytest.fixture
 def app_sink():
-    from fakematlab.console.apps import recording_sink, set_app_sink
+    from evans.console.apps import recording_sink, set_app_sink
 
     recorder = recording_sink()
     previous = set_app_sink(recorder)
@@ -538,7 +538,7 @@ def app_sink():
 
 
 def test_app_commands_emit_a_request(app_sink):
-    from fakematlab.console import Interpreter
+    from evans.console import Interpreter
 
     it = Interpreter()
     assert it.run("G = tf([1], [1, 2, 1])").ok
@@ -553,7 +553,7 @@ def test_app_commands_emit_a_request(app_sink):
 
 
 def test_pidtune_returns_a_usable_controller(app_sink):
-    from fakematlab.console import Interpreter
+    from evans.console import Interpreter
 
     it = Interpreter()
     assert it.run("G = tf([1], [1, 3, 3, 1])").ok
@@ -568,7 +568,7 @@ def test_pidtune_returns_a_usable_controller(app_sink):
 
 
 def test_pidtune_refuses_an_impossible_target_loudly():
-    from fakematlab.console import Interpreter
+    from evans.console import Interpreter
 
     it = Interpreter()
     assert it.run("G = tf([1], [1, 3, 3, 1])").ok
@@ -579,7 +579,7 @@ def test_pidtune_refuses_an_impossible_target_loudly():
 
 
 def test_the_apps_group_is_advertised_and_real():
-    from fakematlab.console.api import _GROUPS, build_namespace
+    from evans.console.api import _GROUPS, build_namespace
 
     namespace = build_namespace()
     assert "Apps" in _GROUPS

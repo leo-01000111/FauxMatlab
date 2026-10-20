@@ -12,9 +12,9 @@ import control as ctl
 import numpy as np
 import pytest
 
-from fakematlab.console import Interpreter, set_figure_sink
-from fakematlab.console.api import build_namespace, command_names, describe_api
-from fakematlab.console.figures import recording_sink
+from evans.console import Interpreter, set_figure_sink
+from evans.console.api import build_namespace, command_names, describe_api
+from evans.console.figures import recording_sink
 
 
 @pytest.fixture
@@ -49,7 +49,7 @@ def test_every_advertised_command_exists():
     the group headings contain spaces, so word-splitting the prose reads
     "State space" as a command called ``space``.
     """
-    from fakematlab.console.api import _GROUPS
+    from evans.console.api import _GROUPS
 
     namespace = build_namespace()
     for group, names in _GROUPS.items():
@@ -59,7 +59,7 @@ def test_every_advertised_command_exists():
 
 
 def test_help_text_mentions_every_group():
-    from fakematlab.console.api import _GROUPS
+    from evans.console.api import _GROUPS
 
     text = describe_api()
     for group in _GROUPS:
@@ -123,7 +123,7 @@ def test_damp_displays_a_table_and_still_unpacks(it):
 
 
 def test_errconst_matches_the_performance_tab(it):
-    from fakematlab.core.performance import analyse_performance
+    from evans.core.performance import analyse_performance
 
     _run(it, "L = tf([1], [1, 1, 0])", "e = errconst(L)")
     reference = analyse_performance(ctl.tf([1], [1, 1, 0]))
@@ -144,8 +144,8 @@ def test_d2c_returns_the_type_it_was_given(it):
 
 
 def test_lqr_matches_the_core_module(it):
-    from fakematlab.core.statefbk import lqr as core_lqr
-    from fakematlab.core.statespace import state_space
+    from evans.core.statefbk import lqr as core_lqr
+    from evans.core.statespace import state_space
 
     _run(it,
          "sys = ss([[0, 1], [0, 0]], [[0], [1]], [[1, 0]])",

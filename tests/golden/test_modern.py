@@ -12,7 +12,7 @@ import control as ctl
 import numpy as np
 import pytest
 
-from fakematlab.core.discrete import (
+from evans.core.discrete import (
     DiscreteError,
     c2d,
     d2c,
@@ -21,21 +21,21 @@ from fakematlab.core.discrete import (
     sample_rate_sweep,
     settling_samples,
 )
-from fakematlab.core.observers import (
+from evans.core.observers import (
     compensator,
     estimation_error_response,
     kalman,
     observer,
     reduced_observer,
 )
-from fakematlab.core.statefbk import (
+from evans.core.statefbk import (
     DesignError,
     acker,
     lqi,
     lqr,
     place,
 )
-from fakematlab.core.statespace import (
+from evans.core.statespace import (
     StateSpaceError,
     analyse,
     minimal,
@@ -44,7 +44,7 @@ from fakematlab.core.statespace import (
     similarity_transform,
     state_space,
 )
-from fakematlab.core.structural import (
+from evans.core.structural import (
     analyse_structure,
     balanced_realization,
     balanced_reduction,

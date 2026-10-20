@@ -13,8 +13,8 @@ import control as ctl
 import numpy as np
 import pytest
 
-from fakematlab.core.asymptotes import bode_asymptotes
-from fakematlab.core.freqresp import bode
+from evans.core.asymptotes import bode_asymptotes
+from evans.core.freqresp import bode
 
 W0, W1 = 0.01, 100.0
 
