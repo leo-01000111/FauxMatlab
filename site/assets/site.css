@@ -18,7 +18,9 @@ body > .site-header, body > .site-footer {
 .header-tools { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .hp-signarray { max-width: 100%; }
 .docs-nav { margin-top: var(--space-3); }
-.docs-nav .hp-signarray { display: flex; }
+/* As wide as its signs, as on the website: `flex` here stretched the
+   frame's grey across the whole row, past the last sign. */
+.docs-nav .hp-signarray { display: inline-flex; max-width: 100%; }
 
 /* ——— Footer ——— */
 .site-footer { padding: var(--space-6) 0 var(--space-6); }
@@ -128,3 +130,15 @@ td.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; whit
   .ref-index { grid-template-columns: 1fr; }
 }
 .small { font-size: 14px; }
+
+/* What to do after pressing Download: filled in by download.js for the
+   visitor's system (Windows: the SmartScreen step; elsewhere: from source). */
+.download-note {
+  margin: var(--space-3) 0 0;
+  padding: var(--space-2) var(--space-3);
+  border-left: 4px solid var(--signal, #f5c518);
+  background: color-mix(in srgb, var(--signal, #f5c518) 12%, transparent);
+  max-width: 60ch;
+  line-height: 1.55;
+}
+.download-note[hidden] { display: none; }

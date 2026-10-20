@@ -83,6 +83,7 @@ TEMPLATE = """<!DOCTYPE html>
   <link rel="icon" href="assets/evans.svg" type="image/svg+xml" />
   <link rel="preload" href="assets/fonts/archivo-latin-wdth-normal.woff2" as="font" type="font/woff2" crossorigin />
   <script src="assets/theme.js"></script>
+  <script src="assets/download.js" defer></script>
   <link rel="stylesheet" href="assets/tokens.css" />
   <link rel="stylesheet" href="assets/components.css" />
   <link rel="stylesheet" href="assets/site.css" />
@@ -97,7 +98,7 @@ TEMPLATE = """<!DOCTYPE html>
       </nav>
       <div class="header-tools">
         <div class="hp-lang" role="group" aria-label="Theme" data-theme-toggle hidden><button type="button" data-set-theme="light" aria-pressed="false">Day</button><button type="button" data-set-theme="dark" aria-pressed="false">Night</button></div>
-        <a class="hp-btn hp-btn--secondary hp-btn--sm" href="{releases}">Download</a>
+        <a class="hp-btn hp-btn--secondary hp-btn--sm" href="{releases}" data-download data-download-short><span>Download</span></a>
       </div>
     </div>
     <nav class="docs-nav" aria-label="Documentation"><div class="hp-signarray">{nav}</div></nav>
