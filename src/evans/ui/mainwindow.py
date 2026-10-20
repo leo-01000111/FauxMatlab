@@ -5,6 +5,8 @@ Main application window.
 ::
 
   ┌──────────────────────────────────────────────────────────┐
+  │ ▣ File Export View …              Evans — …          ─ □ ✕ │  title bar
+  ├──────────────────────────────────────────────────────────┤
   │ G(s) = …   K₂(s) = …   ● stable   PM 60°   [Edit model ▾]│  context bar
   ├──────────────────────────────────────────────────────────┤
   │ 📌 Snapshot  [ … ]  Restore  Delete  Compare             │
@@ -22,6 +24,11 @@ entirely. What is always visible instead is the context bar, which answers
 
 Geometry, dock layout and the current tab are saved on close and restored on
 launch; View ▸ Reset layout puts them back to the defaults.
+
+The title bar (:mod:`.titlebar`) carries the menus. On Windows it replaces
+the native caption while keeping the native frame (:mod:`.winframe`), so the
+window still snaps, resizes and casts its shadow; View ▸ Integrated title bar
+turns that off, and everywhere else the caption is the system's own.
 """
 
 from __future__ import annotations
@@ -30,7 +37,7 @@ import json
 from pathlib import Path
 
 import control as ctl
-from PySide6.QtCore import QSettings, Qt
+from PySide6.QtCore import QSettings, Qt, QTimer
 from PySide6.QtGui import QAction, QActionGroup
 from PySide6.QtWidgets import (
     QApplication,
@@ -40,6 +47,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMainWindow,
     QMenu,
+    QMenuBar,
     QMessageBox,
     QScrollArea,
     QSplitter,
@@ -60,7 +68,7 @@ from ..core.tf_utils import (
     second_order,
     unity,
 )
-from . import theme, theme_qt
+from . import persist, theme, theme_qt, winframe
 from .apps import ControlSystemDesigner, LTIViewer, PIDTuner, SnapshotBar
 from .block_editor import BlockEditor
 from .console import ConsolePanel, FigureArea
@@ -72,6 +80,7 @@ from .panes import DEFAULT_LAYOUT, LAYOUTS, PANE_KINDS, PaneGrid, Source
 from .persist import RecentFiles
 from .sim.sim_tab import SimTab
 from .tabs.modern import ModernTab
+from .titlebar import TitleBar
 from .workspace import Workspace, WorkspaceStack
 
 
@@ -96,11 +105,96 @@ class MainWindow(QMainWindow):
         self._app_docks: dict[str, QDockWidget] = {}
         #: Scripts and models opened or saved, for File ▸ Open recent.
         self.recent_files = RecentFiles()
+        # Before the menus: the title bar holds the menu bar they fill.
+        self._title_bar = TitleBar(self)
+        # Looked up at click time, not bound now, so the tests can patch them.
+        self._title_bar.minimize_requested.connect(lambda: self.showMinimized())
+        self._title_bar.maximize_requested.connect(
+            lambda: self.toggle_maximized())
+        self._title_bar.close_requested.connect(lambda: self.close())
+        self.setMenuWidget(self._title_bar)
+        self._native_frame = winframe.NativeFrame(self, self._title_bar)
         self._build_ui()
         self._build_docks()
         self._build_menus()
         self._build_status_bar()
+        self.set_integrated_title_bar(
+            persist.integrated_title_bar(default=winframe.supported()),
+            remember=False)
         set_app_sink(self.open_app)
+
+    # ── Title bar ─────────────────────────────────────────────
+
+    def menuBar(self) -> QMenuBar:          # noqa: N802 (Qt API)
+        """
+        The menu bar inside the title bar.
+
+        ``QMainWindow.menuBar()`` would make a new, empty one and put it in
+        place of the title bar, since the menu widget is not a QMenuBar.
+        """
+        return self._title_bar.menu_bar
+
+    @property
+    def title_bar(self) -> TitleBar:
+        return self._title_bar
+
+    @property
+    def integrated_title_bar(self) -> bool:
+        """Whether the native caption is gone and our strip replaces it."""
+        return self._title_bar.chrome_visible
+
+    def toggle_maximized(self) -> None:
+        if self.isMaximized():
+            self.showNormal()
+        else:
+            self.showMaximized()
+
+    def set_integrated_title_bar(self, on: bool, *, remember: bool = True
+                                 ) -> bool:
+        """
+        Menus and window buttons in one strip, or the system's caption.
+
+        Only on Windows; elsewhere, or if Windows refuses, the caption stays
+        and the strip is a plain menu bar. ``remember`` keeps the choice for
+        the next launch. Returns whether the strip is now integrated.
+        """
+        if remember:
+            persist.set_integrated_title_bar(on)
+        active = False
+        if on:
+            self._title_bar.set_chrome_visible(True)
+            active = self._native_frame.install()
+        if not active:
+            self._native_frame.uninstall()
+            self._title_bar.set_chrome_visible(False)
+        action = getattr(self, "_act_title_bar", None)
+        if action is not None:
+            action.blockSignals(True)
+            action.setChecked(on)
+            action.blockSignals(False)
+        return active
+
+    def nativeEvent(self, event_type, message):   # noqa: N802 (Qt API)
+        frame = getattr(self, "_native_frame", None)
+        if frame is not None and frame.enabled:
+            try:
+                handled, result = frame.handle(int(message))
+            except Exception:                       # noqa: BLE001
+                # Never take the window down with us: stop handling at once,
+                # and put the system caption back once this message is done.
+                frame.enabled = False
+                QTimer.singleShot(0, self._native_frame_failed)
+                return False, 0
+            if handled:
+                return True, result
+        return super().nativeEvent(event_type, message)
+
+    def _native_frame_failed(self) -> None:
+        self._native_frame.uninstall()
+        self._title_bar.set_chrome_visible(False)
+        self._status.showMessage(
+            "The integrated title bar failed; using the system's instead",
+            8000)
 
     # ── UI construction ───────────────────────────────────────
 
@@ -737,6 +831,15 @@ class MainWindow(QMainWindow):
 
         view_menu.addSeparator()
         view_menu.addMenu(self._build_theme_menu())
+        act_title_bar = QAction("Integrated &title bar", self, checkable=True)
+        act_title_bar.setStatusTip(
+            "Menus and window buttons in one strip (Windows)" if
+            winframe.supported() else
+            "Only on Windows; this system draws its own title bar")
+        act_title_bar.setEnabled(winframe.supported())
+        act_title_bar.triggered.connect(self.set_integrated_title_bar)
+        self._act_title_bar = act_title_bar
+        view_menu.addAction(act_title_bar)
         view_menu.addSeparator()
         view_menu.addAction(QAction(
             "&Reset layout", self, triggered=self.reset_layout,
