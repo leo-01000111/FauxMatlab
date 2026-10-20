@@ -592,3 +592,87 @@ def test_middle_drag_pans_the_canvas(canvas, app):
     assert canvas._pending_port is port         # the wire is still armed
     canvas._cancel_wire()
     canvas.hide()
+
+
+# ──────────────────────────────────────────────────────────────
+#  Real clicks, not calls to the wiring methods
+# ──────────────────────────────────────────────────────────────
+
+def _two_blocks(app):
+    from PySide6.QtCore import QPointF
+
+    model = SimModel("clicks")
+    model.add("Step", "r")
+    model.add("Gain", "k", gain=2.0)
+    view = SimCanvas(model)
+    view.resize(900, 600)
+    view.show()
+    view._blocks["r"].setPos(QPointF(-150, 0))
+    view._blocks["k"].setPos(QPointF(150, 0))
+    for _ in range(5):
+        app.processEvents()
+    out = next(p for (_, is_in), p in view._blocks["r"].ports.items()
+               if not is_in)
+    inp = next(p for (_, is_in), p in view._blocks["k"].ports.items()
+               if is_in)
+    return model, view, out, inp
+
+
+def _at(view, port):
+    return view.mapFromScene(port.scene_pos())
+
+
+def test_click_an_output_then_an_input_makes_a_wire(app):
+    """
+    The dashed preview wire ends under the cursor and used to answer the
+    second click, so the wire was dropped and the block got selected.
+    """
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    model, view, out, inp = _two_blocks(app)
+    vp = view.viewport()
+    QTest.mouseClick(vp, Qt.LeftButton, Qt.NoModifier, _at(view, out))
+    QTest.mouseMove(vp, _at(view, inp))
+    app.processEvents()
+    QTest.mouseClick(vp, Qt.LeftButton, Qt.NoModifier, _at(view, inp))
+    app.processEvents()
+    assert [(c.src.block, c.dst.block) for c in model.connections] == \
+        [("r", "k")]
+    assert view._pending_port is None
+    assert not view.scene().selectedItems()
+    view.deleteLater()
+
+
+def test_drag_from_an_output_to_an_input_makes_a_wire(app):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    model, view, out, inp = _two_blocks(app)
+    vp = view.viewport()
+    QTest.mousePress(vp, Qt.LeftButton, Qt.NoModifier, _at(view, out))
+    QTest.mouseMove(vp, _at(view, inp))
+    app.processEvents()
+    QTest.mouseRelease(vp, Qt.LeftButton, Qt.NoModifier, _at(view, inp))
+    app.processEvents()
+    assert [(c.src.block, c.dst.block) for c in model.connections] == \
+        [("r", "k")]
+    view.deleteLater()
+
+
+def test_right_click_delete_removes_the_wire_under_the_cursor(app):
+    from evans.ui.sim.items import WireItem
+
+    model, view, out, inp = _two_blocks(app)
+    model.connect("r", "k")
+    view.rebuild()
+    app.processEvents()
+    wire = next(i for i in view.scene().items() if isinstance(i, WireItem))
+    pos = view.mapFromScene(wire.mapToScene(wire._path.pointAtPercent(0.5)))
+    menu = view.context_menu(pos)
+    labels = [a.text() for a in menu.actions()]
+    assert "Delete wire" in labels                 # it selected the wire first
+    next(a for a in menu.actions() if a.text() == "Delete wire").trigger()
+    app.processEvents()
+    assert not model.connections
+    view.deleteLater()

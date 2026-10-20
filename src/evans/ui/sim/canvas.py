@@ -258,7 +258,7 @@ class SimCanvas(QGraphicsView):
             self.viewport().setCursor(Qt.ClosedHandCursor)
             event.accept()
             return
-        item = self.itemAt(event.position().toPoint())
+        item = self._item_at(event.position().toPoint())
         if event.button() != Qt.LeftButton:
             super().mousePressEvent(event)
             return
@@ -338,7 +338,7 @@ class SimCanvas(QGraphicsView):
             event.accept()
             return
         if self._pending_port is not None:
-            target = self.itemAt(event.position().toPoint())
+            target = self._item_at(event.position().toPoint())
             if isinstance(target, PortItem) and target is not self._pending_port:
                 # A drag that landed on another port: connect and finish.
                 self._finish_wire(target)
@@ -573,9 +573,38 @@ class SimCanvas(QGraphicsView):
         else:
             super().wheelEvent(event)
 
+    def _item_at(self, pos):
+        """
+        The topmost real item under a view point: a port, block or wire.
+
+        Not ``itemAt``: while a wire is being drawn, its dashed preview ends
+        under the cursor and sits above everything, so ``itemAt`` answered
+        with the preview, never the input port being clicked. The click was
+        taken as one on empty canvas, the wire was dropped and the block
+        behind the port got selected instead: no wire could be made by
+        clicking or dragging. The alignment guides are skipped the same way.
+        """
+        skip = {self._rubber_wire, *self._guides}
+        for item in self.items(pos):
+            if item not in skip:
+                return item
+        return None
+
     def contextMenuEvent(self, event) -> None:
+        self.context_menu(event.pos()).exec(event.globalPos())
+
+    def context_menu(self, pos) -> QMenu:
+        """The right-click menu for a view point, built but not shown."""
         menu = QMenu(self)
-        item = self.itemAt(event.pos())
+        item = self._item_at(pos)
+        if isinstance(item, PortItem):
+            item = item.parentItem()
+        # Right-click acts on what is under the cursor, as everywhere else:
+        # select it first, so "Delete" deletes it and not whatever happened
+        # to be selected before (often nothing, so Delete did nothing).
+        if isinstance(item, (BlockItem, WireItem)) and not item.isSelected():
+            self._scene.clearSelection()
+            item.setSelected(True)
         if isinstance(item, BlockItem):
             if item.block.type_name == "Subsystem":
                 menu.addAction("Open subsystem",
@@ -589,12 +618,18 @@ class SimCanvas(QGraphicsView):
         if self.inside_subsystem:
             menu.addAction("↑ Up one level", self.ascend)
             menu.addSeparator()
-        menu.addAction("Delete", self.delete_selection)
+        selected = self._scene.selectedItems()
+        label = ("Delete wire" if len(selected) == 1
+                 and isinstance(selected[0], WireItem)
+                 else "Delete block" if len(selected) == 1 else "Delete")
+        delete = menu.addAction(label, self.delete_selection)
+        delete.setShortcut("Del")
+        delete.setEnabled(bool(selected))
         menu.addAction("Copy", self.copy_selection)
         menu.addAction("Paste", self.paste)
         menu.addSeparator()
         menu.addAction("Fit to view", self.fit_all)
-        menu.exec(event.globalPos())
+        return menu
 
     # ── drag & drop from the palette ────────────────────────────
 
