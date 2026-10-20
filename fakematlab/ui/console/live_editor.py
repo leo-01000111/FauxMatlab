@@ -67,8 +67,10 @@ from ...console.live.markup import inline_html, to_html
 from ...console.live.render import MathError, math_png, png_size
 from ...console.live.report import (
     INSTALL_HINT,
+    BuildResult,
     compile_pdf,
-    find_engine,
+    find_engines,
+    tex_error,
     write_html,
     write_tex,
 )
@@ -843,7 +845,8 @@ class LiveScriptEditor(QWidget):
         """
         Write the .tex (and figure PNGs); build the PDF off the UI thread if
         a TeX engine is installed, otherwise write HTML too and say how to
-        get an engine.
+        get an engine. If every engine fails the HTML is written as well, so
+        an export always ends with something readable.
         """
         self._sync()
         path = path or self._ask_save_path(
@@ -853,8 +856,8 @@ class LiveScriptEditor(QWidget):
             return None
         evaluate = self._evaluator()
         report = write_tex(self.document, Path(path), evaluate=evaluate)
-        engine = find_engine()
-        if engine is None:
+        engines = find_engines()
+        if not engines:
             html = write_html(self.document, report.main.with_suffix(".html"),
                               evaluate=evaluate)
             self._status.setText(f"Wrote {report.main.name} and "
@@ -864,25 +867,46 @@ class LiveScriptEditor(QWidget):
                          + INSTALL_HINT)
             return html.main
         self._status.setText(f"Wrote {report.main.name}; building the PDF "
-                             f"with {engine[0]}…")
+                             f"with {engines[0][0]}…")
+        self._report = report
         self._build_thread = threading.Thread(
             target=lambda: self.pdf_finished.emit(
-                *_build(report, engine)), daemon=True)
+                *_build(report, engines)), daemon=True)
         self._build_thread.start()
         return report.main
 
     def _on_pdf_finished(self, ok: bool, pdf, log: str) -> None:
         if ok:
             self._status.setText(f"PDF written: {pdf}")
-        else:
-            tail = "\n".join(log.strip().splitlines()[-15:])
-            self._status.setText("The PDF build failed; the .tex is kept.")
-            self._inform("PDF build failed",
-                         "The TeX engine reported an error. The .tex file "
-                         f"was written and can be fixed by hand.\n\n{tail}",
-                         warning=True)
+            return
+        main = self._report.main
+        try:
+            html = write_html(self.document, main.with_suffix(".html"),
+                              evaluate=self._evaluator()).main
+        except (OSError, ValueError):
+            html = None
+        also = f" and {html.name}" if html else ""
+        self._status.setText(f"The PDF build failed; wrote {main.name}{also}.")
+        self._inform("PDF build failed",
+                     f"No PDF was made. {main.name} was written and can be "
+                     f"fixed by hand"
+                     + (f"; the report is also in {html}" if html else "")
+                     + f".\n\n{log}", warning=True)
 
 
-def _build(report, engine) -> tuple[bool, object, str]:
-    result = compile_pdf(report, engine)
-    return result.ok, result.pdf, result.log
+def _build(report, engines) -> tuple[bool, object, str]:
+    """
+    Try each engine in turn until one makes the PDF. Runs on the build
+    thread, so nothing may escape it: an exception here would leave the
+    status saying "building…" for ever.
+    """
+    failures = []
+    for engine in engines:
+        try:
+            result = compile_pdf(report, engine)
+        except Exception as exc:                      # noqa: BLE001
+            result = BuildResult(False, None, f"{type(exc).__name__}: {exc}")
+        if result.ok:
+            return True, result.pdf, result.log
+        failures.append(f"{engine[0]}:\n{tex_error(result.log)}")
+    return False, None, "\n\n".join(failures)

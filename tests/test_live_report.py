@@ -25,6 +25,9 @@ from fakematlab.console.live.report import (
     compile_pdf,
     engine_command,
     find_engine,
+    find_engines,
+    tex_error,
+    tex_folders,
     to_tex,
     write_html,
     write_tex,
@@ -103,6 +106,16 @@ def test_engine_detection_and_commands():
                         else None)
     assert found == ("pdflatex", "/bin/pdflatex")
     assert ENGINES[0] == "tectonic"                   # preferred
+    # latexmk is a Perl script: without Perl it is skipped, not chosen.
+    everything = lambda name: f"/bin/{name}" if name != "tectonic" else None
+    assert [n for n, _ in find_engines(everything)] == [
+        "pdflatex", "xelatex", "latexmk"]
+    no_perl = lambda name: None if name in ("perl", "tectonic") \
+        else f"/bin/{name}"
+    assert [n for n, _ in find_engines(no_perl)] == ["pdflatex", "xelatex"]
+    miktex = engine_command("pdflatex", r"C:\MiKTeX\pdflatex.exe", "a.tex")
+    assert "--enable-installer" in miktex
+    assert "--enable-installer" not in engine_command("pdflatex", "p", "a.tex")
     assert engine_command("tectonic", "t", "a.tex") == ["t", "--keep-logs",
                                                         "a.tex"]
     assert engine_command("latexmk", "l", "a.tex")[1] == "-pdf"
@@ -149,3 +162,22 @@ def test_every_figure_kind_draws(kind, tmp_path):
     spec.extra["logx"] = kind == "xy"
     data = figure_png(spec, tmp_path / "f.png")
     assert data.startswith(PNG) and (tmp_path / "f.png").exists()
+
+
+def test_tex_error_picks_the_line_that_matters():
+    log = "lots\nof\nnoise\n! Missing $ inserted.\n<inserted text>\nl.7 x_1"
+    assert tex_error(log).startswith("! Missing $ inserted.")
+    assert "noise" not in tex_error(log)
+    miktex = ("\nSorry, but latexmk.EXE did not succeed for the following "
+              "reason:\n\n  MiKTeX could not find the script engine 'perl'")
+    assert "perl" in tex_error(miktex)
+    assert tex_error("a\nb\nc", lines=2) == "b\nc"
+
+
+def test_tex_folders_cover_the_default_installs():
+    folders = tex_folders({"LOCALAPPDATA": r"C:\U\AppData\Local",
+                           "ProgramFiles": r"C:\Program Files",
+                           "SystemDrive": "Z:"})
+    assert any("AppData" in f and "MiKTeX" in f for f in folders)
+    assert any(f.startswith(r"C:\Program Files") and "MiKTeX" in f
+               for f in folders)

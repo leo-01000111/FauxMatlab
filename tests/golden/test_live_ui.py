@@ -176,7 +176,7 @@ def test_save_open_and_mlx_round_trip(app, editor, tmp_path):
 def test_export_report_without_tex_writes_html_and_says_how(
         app, editor, tmp_path, monkeypatch):
     from fakematlab.ui.console import live_editor
-    monkeypatch.setattr(live_editor, "find_engine", lambda: None)
+    monkeypatch.setattr(live_editor, "find_engines", lambda: [])
     editor.set_document(LiveDocument([Cell.text("R", CellKind.TITLE),
                                       Cell.code("a = 1")]))
     editor.run_all()
@@ -202,8 +202,8 @@ def test_export_report_builds_pdf_off_the_ui_thread(
         release.wait(5)
         return BuildResult(True, report.main.with_suffix(".pdf"), "")
 
-    monkeypatch.setattr(live_editor, "find_engine",
-                        lambda: ("tectonic", "tectonic"))
+    monkeypatch.setattr(live_editor, "find_engines",
+                        lambda: [("tectonic", "tectonic")])
     monkeypatch.setattr(live_editor, "compile_pdf", slow_compile)
     editor.export_report(tmp_path / "p.tex")
     # export_report has returned while the build is still blocked.
@@ -269,3 +269,52 @@ def test_live_tab_hides_the_figure_area_and_pops_figures_out(app):
         panel.figures.close_all()
     finally:
         set_figure_sink(previous)
+
+
+def test_a_failed_engine_falls_through_to_the_next(
+        app, editor, tmp_path, monkeypatch):
+    from fakematlab.console.live.report import BuildResult
+    from fakematlab.ui.console import live_editor
+
+    tried = []
+
+    def compile_(report, engine):
+        tried.append(engine[0])
+        if engine[0] == "latexmk":
+            return BuildResult(False, None, "Sorry, but latexmk.EXE did not "
+                               "succeed.\nMiKTeX could not find 'perl'.")
+        return BuildResult(True, report.main.with_suffix(".pdf"), "")
+
+    monkeypatch.setattr(live_editor, "find_engines",
+                        lambda: [("latexmk", "l"), ("pdflatex", "p")])
+    monkeypatch.setattr(live_editor, "compile_pdf", compile_)
+    editor.export_report(tmp_path / "f.tex")
+    editor._build_thread.join(5)
+    _settle(app)
+    assert tried == ["latexmk", "pdflatex"]
+    assert "PDF written" in editor._status.text()
+
+
+def test_when_every_engine_fails_html_is_written_and_the_error_shown(
+        app, editor, tmp_path, monkeypatch):
+    from fakematlab.console.live.report import BuildResult
+    from fakematlab.ui.console import live_editor
+
+    def compile_(report, engine):
+        if engine[0] == "xelatex":
+            raise RuntimeError("boom")              # must not hang the export
+        return BuildResult(False, None, "noise\n! Undefined control "
+                           "sequence.\nl.12 \\oops")
+
+    monkeypatch.setattr(live_editor, "find_engines",
+                        lambda: [("pdflatex", "p"), ("xelatex", "x")])
+    monkeypatch.setattr(live_editor, "compile_pdf", compile_)
+    editor.messages.clear()
+    editor.export_report(tmp_path / "g.tex")
+    editor._build_thread.join(5)
+    _settle(app)
+    assert (tmp_path / "g.html").exists()
+    title, text = editor.messages[-1]
+    assert title == "PDF build failed"
+    assert "! Undefined control sequence." in text and "noise" not in text
+    assert "RuntimeError: boom" in text

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import base64
 import html
+import os
 import shutil
 import subprocess
 import tempfile
@@ -31,8 +32,16 @@ from .render import MathError, figure_png, math_png
 
 #: In the order they are preferred. tectonic is a single self-contained
 #: binary that fetches packages on demand; the others come with a TeX
-#: distribution (MiKTeX, TeX Live).
-ENGINES = ("tectonic", "latexmk", "pdflatex", "xelatex")
+#: distribution (MiKTeX, TeX Live). latexmk is last, and only used when Perl
+#: is installed: it is a Perl script, and on Windows MiKTeX ships the
+#: launcher without the interpreter — an install with latexmk on PATH but no
+#: Perl is the usual MiKTeX setup, and choosing latexmk there failed every
+#: export while pdflatex beside it worked.
+ENGINES = ("tectonic", "pdflatex", "xelatex", "latexmk")
+
+#: Engines that need a second pass for hyperref's outlines and page labels.
+#: (tectonic and latexmk rerun by themselves.)
+TWO_PASS = ("pdflatex", "xelatex")
 
 INSTALL_HINT = (
     "No TeX engine was found, so the report was written as HTML instead.\n\n"
@@ -44,23 +53,81 @@ INSTALL_HINT = (
     "Then export again.")
 
 
-def find_engine(which=shutil.which) -> tuple[str, str] | None:
-    """(name, path) of the first TeX engine on PATH, or None."""
+def tex_folders(environ=os.environ) -> list[str]:
+    """
+    Where TeX distributions install their binaries by default on Windows.
+
+    Searched after PATH: an app started from the Start menu or the bundled
+    exe can have a PATH that predates the TeX install, or MiKTeX may have
+    been installed for one user without touching PATH at all.
+    """
+    miktex = os.path.join("MiKTeX", "miktex", "bin", "x64")
+    folders = []
+    if environ.get("LOCALAPPDATA"):                 # "for me only"
+        folders.append(os.path.join(environ["LOCALAPPDATA"], "Programs",
+                                    miktex))
+    if environ.get("ProgramFiles"):                 # "for all users"
+        folders.append(os.path.join(environ["ProgramFiles"], miktex))
+    texlive = Path(environ.get("SystemDrive", "C:") + os.sep, "texlive")
+    if texlive.is_dir():
+        for year in sorted(texlive.iterdir(), reverse=True):
+            folders.append(str(year / "bin" / "windows"))
+            folders.append(str(year / "bin" / "win32"))
+    return folders
+
+
+def _which(name: str) -> str | None:
+    """``shutil.which``, then the distributions' default folders."""
+    return shutil.which(name) or shutil.which(
+        name, path=os.pathsep.join(tex_folders()))
+
+
+def find_engines(which=_which) -> list[tuple[str, str]]:
+    """Every usable TeX engine, as (name, path), in order of preference."""
+    found = []
     for name in ENGINES:
+        if name == "latexmk" and not which("perl"):
+            continue
         path = which(name)
         if path:
-            return name, path
-    return None
+            found.append((name, path))
+    return found
+
+
+def find_engine(which=_which) -> tuple[str, str] | None:
+    """(name, path) of the preferred TeX engine, or None."""
+    engines = find_engines(which)
+    return engines[0] if engines else None
 
 
 def engine_command(name: str, path: str, tex: str) -> list[str]:
     """The command line that turns ``tex`` (a file name) into a PDF beside it."""
     if name == "tectonic":
         return [path, "--keep-logs", tex]
+    # MiKTeX asks before fetching a missing package, in a dialog no one sees
+    # from a background build; this lets it install without asking.
+    miktex = ["--enable-installer"] if "miktex" in path.lower() else []
     if name == "latexmk":
         return [path, "-pdf", "-interaction=nonstopmode", "-halt-on-error",
-                tex]
-    return [path, "-interaction=nonstopmode", "-halt-on-error", tex]
+                *(["-latexoption=--enable-installer"] if miktex else []), tex]
+    return [path, *miktex, "-interaction=nonstopmode", "-halt-on-error", tex]
+
+
+def tex_error(log: str, lines: int = 15) -> str:
+    """
+    The part of a build log worth showing: TeX's own ``!`` error with the
+    line it points at, or a distribution's "did not succeed" explanation,
+    or else the log's last lines.
+    """
+    text = log.strip().splitlines()
+    for i, line in enumerate(text):
+        if line.startswith("! "):
+            tail = text[i:i + 8]
+            return "\n".join(l for l in tail if l.strip())
+    for i, line in enumerate(text):
+        if "did not succeed" in line:
+            return "\n".join(l for l in text[i:i + 6] if l.strip())
+    return "\n".join(text[-lines:])
 
 
 @dataclass
@@ -197,14 +264,21 @@ def compile_pdf(report: Report, engine: tuple[str, str],
         shutil.copy2(report.main, work / report.main.name)
         for figure in report.figures:
             shutil.copy2(figure, work / figure.name)
-        try:
-            done = subprocess.run(
-                engine_command(name, exe, report.main.name), cwd=work,
-                capture_output=True, text=True, timeout=timeout,
-                stdin=subprocess.DEVNULL)
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            return BuildResult(False, None, str(exc))
-        log = (done.stdout or "") + (done.stderr or "")
+        # No console window flashing up for each pass from the windowed exe.
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        log = ""
+        for _ in range(2 if name in TWO_PASS else 1):
+            try:
+                done = subprocess.run(
+                    engine_command(name, exe, report.main.name), cwd=work,
+                    capture_output=True, text=True, timeout=timeout,
+                    stdin=subprocess.DEVNULL, creationflags=flags,
+                    encoding="utf-8", errors="replace")
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                return BuildResult(False, None, f"{name}: {exc}")
+            log = (done.stdout or "") + (done.stderr or "")
+            if done.returncode != 0:
+                break
         built = work / (report.main.stem + ".pdf")
         if done.returncode != 0 or not built.exists():
             return BuildResult(False, None, log)
