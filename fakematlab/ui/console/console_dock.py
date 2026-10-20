@@ -160,7 +160,6 @@ class FigureArea(QWidget):
         layout.addWidget(self._splitter, stretch=1)
         self._active = self._tabs
 
-        self._count = 0
         self._views: list[FigureView] = []
         self._windows: dict[FigureView, FigureWindow] = {}
         self._script_running = False
@@ -207,7 +206,8 @@ class FigureArea(QWidget):
             lambda checked: self.set_split(checked))
         self._split_button.setCheckable(True)
         self._move_button = tool(
-            "Move ↔", "Move the current figure to the other side",
+            "Move ↔", "Move the current figure to the other side — "
+            "or, when it is alone there, swap it with the one opposite",
             lambda: self.move_to_other_side())
         self._undock_button = tool(
             "Undock", "Open the current figure in a window of its own",
@@ -222,8 +222,11 @@ class FigureArea(QWidget):
     def show_figure(self, spec: FigureSpec) -> FigureView:
         """Render a figure spec as a new tab, and bring it to the front."""
         view = FigureView(spec)
-        self._count += 1
-        view.number = self._count
+        # The lowest number no open figure has, as MATLAB numbers them: once
+        # a run's figures are cleared away, the next run starts at 1 again.
+        taken = {v.number for v in self._views}
+        view.number = next(n for n in range(1, len(taken) + 2)
+                           if n not in taken)
         view.from_script = self._script_running
         self._views.append(view)
         self._place(view, self._tabs)
@@ -238,7 +241,15 @@ class FigureArea(QWidget):
         return f"{view.number}: {view.spec.title or view.spec.kind}"
 
     def _place(self, view: FigureView, pane: QTabWidget) -> None:
-        index = pane.addTab(view, self._label(view))
+        """
+        Add a figure's tab, kept in the order the figures were drawn — so
+        however often they cross a split and come back, older is left.
+        """
+        order = self._views.index(view) if view in self._views else len(self._views)
+        index = next((i for i in range(pane.count())
+                      if self._views.index(pane.widget(i)) > order),
+                     pane.count())
+        index = pane.insertTab(index, view, self._label(view))
         pane.setCurrentIndex(index)
         self._active = pane
 
@@ -320,18 +331,20 @@ class FigureArea(QWidget):
         """
         Two figures side by side, or one strip again.
 
-        Splitting moves the current figure to the right and leaves the one
-        before it on the left — usually the comparison wanted: the plot just
-        drawn beside the one it is meant to be compared with. New figures
-        still arrive on the left. Unsplitting brings the right side's figures
-        back to the left strip.
+        Splitting pairs the current figure with its neighbour — the next
+        one drawn, or for the newest the one before it — and moves the newer
+        of the two to the right, so the older is on the left whichever of
+        them was selected. New figures still arrive on the left.
+        Unsplitting brings the right side's figures back, in drawing order.
         """
         if on and not self.split:
             if self._tabs.count() < 2:
                 self._split_button.setChecked(False)
                 return
+            index = self._tabs.currentIndex()
+            newer = index + 1 if index + 1 < self._tabs.count() else index
             self._side.show()
-            self.move_to_other_side(self._tabs.currentWidget())
+            self.move_to_other_side(self._tabs.widget(newer))
             half = max(self._splitter.width() // 2, 1)
             self._splitter.setSizes([half, half])
         elif not on and self.split:
@@ -345,16 +358,27 @@ class FigureArea(QWidget):
         self._sync_controls()
 
     def move_to_other_side(self, view: FigureView | None = None) -> None:
-        """Move a docked figure across the split."""
+        """
+        Move a docked figure across the split.
+
+        A figure alone on its side swaps with the one shown opposite instead:
+        moving it outright would empty that side and fold the split away,
+        which is what pressing Split again already does.
+        """
         view = view or self.current_figure()
         if view is None or not self.split:
             return
         source = self._tabs if self._tabs.indexOf(view) >= 0 else self._side
+        target = self._side if source is self._tabs else self._tabs
         index = source.indexOf(view)
         if index < 0:
             return
+        partner = target.currentWidget() if source.count() == 1 else None
         source.removeTab(index)
-        self._place(view, self._side if source is self._tabs else self._tabs)
+        if partner is not None:
+            target.removeTab(target.indexOf(partner))
+            self._place(partner, source)
+        self._place(view, target)
         self._sync_placeholder()
 
     # ── undocking ───────────────────────────────────────────────
@@ -667,6 +691,9 @@ class ConsolePanel(QWidget):
     open_system = Signal(str, object)
     #: A Simulink model in the workspace was double-clicked.
     open_model = Signal(str, object)
+    #: Whether the figure area below is worth showing: not on the Live tab,
+    #: where each cell's figures are drawn inline under it.
+    figure_area_wanted = Signal(bool)
 
     def __init__(self, figures: FigureArea, extra: dict | None = None,
                  parent=None) -> None:
@@ -714,8 +741,10 @@ class ConsolePanel(QWidget):
         self.live = LiveScriptEditor(self.interpreter)
         set_code_highlighter(MatlabHighlighter)  # its cells read as MATLAB
         self.live.ran.connect(self.workspace.refresh)
-        self.live.figure_requested.connect(self.figures.show_figure)
+        self.live.figure_requested.connect(self._open_live_figure)
         self._tabs.addTab(self.live, "Live")
+        self._tabs.currentChanged.connect(
+            lambda _index: self.figure_area_wanted.emit(not self.live_active))
 
         layout.addWidget(self._tabs)
 
@@ -757,6 +786,23 @@ class ConsolePanel(QWidget):
             shortcut = QShortcut(QKeySequence(keys), self)
             shortcut.setContext(Qt.WidgetWithChildrenShortcut)
             shortcut.activated.connect(slot)
+
+    @property
+    def live_active(self) -> bool:
+        """Whether the Live tab is the one showing."""
+        return self._tabs.currentWidget() is self.live
+
+    def _open_live_figure(self, spec: FigureSpec) -> None:
+        """
+        A live script's figure, opened larger than it is inline.
+
+        The figure area is hidden while the Live tab shows, so the figure
+        goes straight to a window of its own; its Dock button still puts it
+        in the figure area, for when the Console tab is back.
+        """
+        view = self.figures.show_figure(spec)
+        if self.live_active:
+            self.figures.undock(view)
 
     def _folder(self) -> Path:
         """The current folder: the script's, or where the app started."""

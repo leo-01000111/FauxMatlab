@@ -396,9 +396,10 @@ class CodeCellWidget(CellWidget):
             row = QHBoxLayout()
             row.addStretch()
             pop = QToolButton()
-            pop.setText("Open in figures")
-            pop.setToolTip("Open this figure in the Console's figure area, "
-                           "where it can be zoomed, split and saved")
+            pop.setText("Open in window")
+            pop.setToolTip("Open this figure larger, in a window of its own, "
+                           "where it can be zoomed and saved. Its Dock button "
+                           "moves it to the Console's figure area.")
             pop.setAutoRaise(True)
             pop.clicked.connect(lambda _=False, s=spec: self.figure_requested.emit(s))
             row.addWidget(pop)

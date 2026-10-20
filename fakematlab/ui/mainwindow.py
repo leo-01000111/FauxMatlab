@@ -278,6 +278,9 @@ class MainWindow(QMainWindow):
         split = QSplitter(Qt.Vertical)
         split.addWidget(self._console)
         split.addWidget(self._figures)
+        # Hidden on the Live tab: its figures are inline under their cells,
+        # and a strip of the same figures below them only takes room.
+        self._console.figure_area_wanted.connect(self._figures.setVisible)
         split.setStretchFactor(0, 3)
         split.setStretchFactor(1, 2)
         return split

@@ -245,3 +245,27 @@ def test_console_panel_has_a_live_tab_on_the_shared_workspace(app):
         assert panel.figures.figure_count == 1
     finally:
         set_figure_sink(previous)
+
+
+def test_live_tab_hides_the_figure_area_and_pops_figures_out(app):
+    from fakematlab.console.figures import FigureSpec
+    from fakematlab.ui.console import ConsolePanel, FigureArea
+
+    previous = figure_sink()
+    try:
+        panel = ConsolePanel(FigureArea())
+        wanted = []
+        panel.figure_area_wanted.connect(wanted.append)
+        panel._tabs.setCurrentWidget(panel.live)
+        assert panel.live_active and wanted[-1] is False
+        # From the Live tab a figure opens in its own window, not in the
+        # area that is hidden underneath.
+        panel.live.figure_requested.emit(
+            FigureSpec("xy", title="popped").add([0, 1], [0, 1]))
+        view = panel.figures.figures[0]
+        assert panel.figures.window_for(view) is not None
+        panel._tabs.setCurrentIndex(0)
+        assert wanted[-1] is True
+        panel.figures.close_all()
+    finally:
+        set_figure_sink(previous)

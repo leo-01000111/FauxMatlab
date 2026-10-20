@@ -343,14 +343,46 @@ def test_two_figures_side_by_side(app, win, answers):
     assert figures._side.currentWidget() is newest
     assert figures._tabs.isVisible() and figures._side.isVisible()
 
-    figures.move_to_other_side(newest)          # emptying a side unsplits
+    oldest = figures._tabs.currentWidget()
+    figures.move_to_other_side(newest)          # alone on its side: a swap
     _settle(app)
-    assert not figures.split
-    assert figures._tabs.count() == 2
+    assert figures.split
+    assert figures._tabs.currentWidget() is newest
+    assert figures._side.currentWidget() is oldest
 
-    figures.set_split(True)
     figures.set_split(False)
     assert figures._tabs.count() == 2 and figures._side.count() == 0
+    # Unsplitting puts the tabs back in the order they were drawn.
+    assert figures._tabs.widget(0) is oldest
+
+
+def test_split_keeps_the_older_figure_left_whichever_is_selected(
+        app, win, answers):
+    figures = win._figures
+    script = "s = tf('s');\nH = 1/(s+1);\nstep(H)\nbode(H)"
+    for _ in range(3):
+        win._console._run_script(script, "matlab")
+        _settle(app)
+        figures._tabs.setCurrentIndex(0)        # the older one selected
+        figures.set_split(True)
+        _settle(app)
+        assert figures._tabs.currentWidget().spec.kind == "time"
+        assert figures._side.currentWidget().spec.kind == "bode"
+
+
+def test_a_cleared_run_numbers_its_figures_from_one_again(app, win, answers):
+    script = "s = tf('s');\nH = 1/(s+1);\nstep(H)\nbode(H)"
+    for _ in range(3):
+        win._console._run_script(script, "matlab")
+        _settle(app)
+        assert [v.number for v in win._figures.figures] == [1, 2]
+    # A figure typed at the prompt keeps its number through the next run,
+    # which reuses the numbers its own cleared figures had.
+    win._console.execute("nyquist(H)")
+    win._console._run_script(script, "matlab")
+    _settle(app)
+    assert [v.number for v in win._figures.figures if not v.from_script] == [3]
+    assert [v.number for v in win._figures.figures if v.from_script] == [1, 2]
 
 
 # ──────────────────────────────────────────────────────────────
