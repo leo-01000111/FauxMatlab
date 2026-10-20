@@ -1,0 +1,95 @@
+    <section class="proj-hero">
+      <div class="hero-top">
+        <div>
+          <p class="label">Control engineering · Desktop app · v@@version@@</p>
+          <h1>Evans, a control-systems workbench</h1>
+          <p class="lede">Classical and modern control, a block-diagram simulator and a MATLAB-shaped command window in one desktop application. It covers the part of MATLAB, Simulink and the Control System Toolbox that two control courses use: CLACO (classical, frequency domain) and DYBAC (modern, state space). Every number it shows can be traced back to something exact.</p>
+          <div class="cta">
+            <a class="hp-btn hp-btn--primary" href="@@releases@@"><span>Download for Windows</span><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><g transform="rotate(90 12 12)" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="square" stroke-linejoin="miter"><path d="M3.5 12H18.5"></path><path d="M12 5.2L18.8 12L12 18.8"></path></g></svg></a>
+            <a class="hp-btn hp-btn--ghost" href="@@repo@@"><span>Source on GitHub</span><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><g transform="rotate(315 12 12)" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="square" stroke-linejoin="miter"><path d="M3.5 12H18.5"></path><path d="M12 5.2L18.8 12L12 18.8"></path></g></svg></a>
+          </div>
+          <p class="cta-note">Free and MIT-licensed. The download is a zip: unzip it anywhere and run <code>Evans.exe</code>. <a href="install.html">Install notes</a></p>
+        </div>
+        <div class="hp-plate" aria-label="At a glance">
+          <div class="hp-plate__head"><span class="hp-plate__title">At a glance</span><span class="hp-plate__ref">v@@version@@</span></div>
+          <dl>
+            <dt>Commands</dt><dd>@@n_commands@@ in the console</dd>
+            <dt>Blocks</dt><dd>@@n_blocks@@ simulator block types</dd>
+            <dt>Lessons</dt><dd>@@n_lessons@@ self-checking chapters</dd>
+            <dt>Runs on</dt><dd>Windows build; source on Windows, macOS, Linux</dd>
+            <dt>Python</dt><dd>3.12 or newer, PySide6</dd>
+            <dt>Licence</dt><dd>MIT</dd>
+          </dl>
+        </div>
+      </div>
+    </section>
+
+    <section class="proj-section">
+      <div class="card prose">
+        <h2>What it looks like</h2>
+        <p>Three workspaces sit on a rail down the left: <strong>Analyse</strong> for the current control system, <strong>Model</strong> for the block-diagram simulator and <strong>Console</strong> for the command window, scripts and figures. View ▸ Theme picks Day, Night or the system setting.</p>
+        <div class="shot-pair">
+          <figure class="shot">
+            <img src="assets/shots/theme-day.png" width="1800" height="1075" loading="lazy" alt="Evans in the Day theme: the Analyse workspace showing the closed-loop step response of G(s) = 4/(s² + 2s + 4), marked with rise time 0.495 s, 31% overshoot, settling time 3.87 s and final value 0.5. The context bar reads stable, phase margin 90°." />
+            <figcaption class="label">FIG. 01: Day theme</figcaption>
+          </figure>
+          <figure class="shot">
+            <img src="assets/shots/theme-night.png" width="1800" height="1075" loading="lazy" alt="Evans in the Night theme: the same step response and context bar on a dark ground with sign-yellow highlights." />
+            <figcaption class="label">FIG. 02: Night theme</figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <section class="proj-section">
+      <div class="card prose">
+        <h2>What's in it</h2>
+        <div class="data-grid">
+          <a class="data-grid__item" href="tour.html#panes">
+            <div class="data-grid__label">Analysis</div>
+            <div class="data-grid__value">One, two or four panes with seventeen contents each: step, Bode, Nyquist, Nichols, root locus, pole-zero map, margins, Routh and more, all reading the same live model.</div>
+          </a>
+          <a class="data-grid__item" href="commands.html">
+            <div class="data-grid__label">Command window</div>
+            <div class="data-grid__value">@@n_commands@@ MATLAB-shaped commands such as <code>tf</code>, <code>feedback</code>, <code>margin</code>, <code>rlocus</code>, <code>lqr</code>, <code>c2d</code> and <code>pidtune</code>, with a workspace browser and history.</div>
+          </a>
+          <a class="data-grid__item" href="matlab.html">
+            <div class="data-grid__label">MATLAB scripts</div>
+            <div class="data-grid__value">The Script tab runs <code>.m</code> files as written, with a debugger. The Live tab opens <code>.mlx</code> live scripts and exports a report.</div>
+          </a>
+          <a class="data-grid__item" href="blocks.html">
+            <div class="data-grid__label">Simulator</div>
+            <div class="data-grid__value">@@n_blocks@@ block types, subsystems, RK4, RK45 and Euler solvers, scopes, and <code>linearize()</code> from a nonlinear diagram.</div>
+          </a>
+          <a class="data-grid__item" href="tour.html#apps">
+            <div class="data-grid__label">Design apps</div>
+            <div class="data-grid__value">LTI Viewer, Control System Designer (drag a pole along the root locus) and a PID Tuner whose margins are exact.</div>
+          </a>
+          <a class="data-grid__item" href="lessons.html">
+            <div class="data-grid__label">Lessons</div>
+            <div class="data-grid__value">One worked example per chapter. Each claim is measured from the loaded model, so a note that stops being true shows a cross.</div>
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <section class="proj-section">
+      <div class="card prose">
+        <h2>Run it from source</h2>
+        <p>On Windows, macOS or Linux, with Python 3.12 or newer:</p>
+<pre><code>git clone https://github.com/leo-01000111/evans.git
+cd evans
+python -m venv .venv
+.venv\Scripts\activate          # Windows; elsewhere: source .venv/bin/activate
+pip install -e ".[dev]"
+python app.py</code></pre>
+        <p><code>python app.py --check</code> runs a headless self-test whose exit code is the number of failures. <a href="install.html#source">More on running from source</a></p>
+      </div>
+    </section>
+
+    <section class="proj-section">
+      <div class="card prose">
+        <h2>The name</h2>
+        <p>Evans is named after Walter R. Evans, who invented the root locus. It was called FauxMatlab before version 0.9; models and settings saved under that name still open.</p>
+      </div>
+    </section>

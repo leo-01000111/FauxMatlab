@@ -79,10 +79,12 @@ def zpk(zeros, poles, gain, dt=None):
 
 
 def tf2ss(sys):
+    """State-space realisation of a transfer function."""
     return ctl.tf2ss(sys)
 
 
 def ss2tf(sys):
+    """Transfer function of a state-space model."""
     return ctl.ss2tf(sys)
 
 
@@ -128,14 +130,17 @@ def minreal(sys, tol=1e-9):
 # ──────────────────────────────────────────────────────────────
 
 def pole(sys):
+    """Poles of a system, as an array."""
     return np.atleast_1d(ctl.poles(sys))
 
 
 def zero(sys):
+    """Zeros of a system, as an array."""
     return np.atleast_1d(ctl.zeros(sys))
 
 
 def dcgain(sys):
+    """Steady-state gain, the value of ``G(0)``."""
     return _tfu.dc_gain(sys) if isinstance(sys, ctl.TransferFunction) \
         else float(np.atleast_2d(ctl.dcgain(sys))[0, 0])
 
@@ -261,6 +266,10 @@ def allmargin(sys) -> dict[str, float]:
 
 
 def bandwidth(sys):
+    """
+    −3 dB bandwidth in rad/s of the unity-feedback closed loop
+    ``feedback(sys, 1)``, so ``sys`` is the open loop ``L``.
+    """
     return _freq.bode(sys).bw_3dB
 
 
@@ -532,12 +541,14 @@ def figure_spec_for(sys, kind: str = "time"):
 # ──────────────────────────────────────────────────────────────
 
 def ctrb(A, B=None):
+    """Controllability matrix, from ``(A, B)`` or a state-space model."""
     if B is None:
         A, B = np.asarray(A.A), np.asarray(A.B)
     return _struct.controllability_matrix(A, B)
 
 
 def obsv(A, C=None):
+    """Observability matrix, from ``(A, C)`` or a state-space model."""
     if C is None:
         A, C = np.asarray(A.A), np.asarray(A.C)
     return _struct.observability_matrix(A, C)
@@ -567,6 +578,7 @@ def place(sys_or_A, B=None, poles=None):
 
 
 def acker(A, B, poles):
+    """State-feedback gain ``K`` placing the poles of ``A − BK``, by Ackermann's formula."""
     return _fbk.acker(_ss.state_space(
         A, B, np.eye(np.atleast_2d(A).shape[0])), poles).K
 
@@ -578,6 +590,11 @@ def lqr(sys, Q=None, R=None):
 
 
 def lqi(sys, Q=None, R=None):
+    """
+    LQR with integral action on the tracking error: ``(K, P, eigenvalues)``.
+
+    ``K`` has one extra column, the gain on the integral state.
+    """
     design = _fbk.lqi(sys, Q, R)
     return design.K, design.riccati, design.eigenvalues
 
@@ -597,10 +614,12 @@ def estim(sys, poles):
 
 
 def isctrb(sys) -> bool:
+    """Whether a state-space model is controllable."""
     return _struct.analyse_structure(sys).controllable
 
 
 def isobsv(sys) -> bool:
+    """Whether a state-space model is observable."""
     return _struct.analyse_structure(sys).observable
 
 
@@ -625,6 +644,13 @@ def canon(sys, form: str = "modal"):
 # ──────────────────────────────────────────────────────────────
 
 def c2d(sys, dt: float, method: str = "zoh", prewarp=None):
+    """
+    Discretise a continuous model with sample time ``dt``.
+
+    ``method`` is ``zoh`` (the default, what a D/A converter does), ``tustin``
+    or ``bilinear``, ``euler``, ``backward_diff`` or ``matched``. ``prewarp``
+    makes ``tustin`` exact at one chosen frequency.
+    """
     return _discrete.c2d(sys, dt, method, prewarp)
 
 
@@ -643,6 +669,10 @@ def d2c(sys, method: str = "zoh"):
 
 
 def deadbeat(sys):
+    """
+    State feedback placing every closed-loop eigenvalue of a discrete model
+    at ``z = 0``, so the state reaches zero in ``n`` samples.
+    """
     return _discrete.deadbeat(sys)
 
 
@@ -657,11 +687,22 @@ def pid(Kp=1.0, Ki=0.0, Kd=0.0, Tf=0.0):
 
 
 def lead(K=1.0, alpha=0.1, tau=1.0):
+    """
+    Lead compensator ``K·(τs + 1)/(ατs + 1)`` with ``alpha < 1``.
+
+    Adds phase around ``ω = 1/(τ√α)``, the PD approximation of ch.8.
+    """
     from ..core.tuning import LeadLagParams, lead_tf
     return lead_tf(LeadLagParams(K=K, alpha=alpha, tau=tau, is_lead=True))
 
 
 def lag(K=1.0, alpha=10.0, tau=1.0):
+    """
+    Lag compensator ``K·(τs + 1)/(ατs + 1)`` with ``alpha > 1``.
+
+    Raises the low-frequency gain while leaving the phase near crossover
+    almost untouched, the PI approximation of ch.8.
+    """
     from ..core.tuning import LeadLagParams, lag_tf
     return lag_tf(LeadLagParams(K=K, alpha=alpha, tau=tau, is_lead=False))
 

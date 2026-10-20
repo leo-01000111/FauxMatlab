@@ -12,6 +12,10 @@ To use it without Python, download `Evans-windows.zip` from the
 [latest release](https://github.com/leo-01000111/evans/releases/latest), unzip it
 anywhere and run `Evans.exe`. There is nothing else to install.
 
+The documentation, with a tour and a reference for every console command, simulator block
+and lesson, is at [www.leongorecki.eu/evans](https://www.leongorecki.eu/evans/). Its source
+is in [`site/`](site/README.md).
+
 ## Quick start
 
 From source, on Windows, macOS or Linux, with Python 3.12 or newer:

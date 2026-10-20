@@ -1,0 +1,134 @@
+    <section class="proj-hero">
+      <p class="label">Tour</p>
+      <h1>A tour of Evans</h1>
+      <p class="lede">Three workspaces, one live model. What follows is what each part does and how to drive it.</p>
+    </section>
+
+    <section class="proj-section" id="workspaces">
+      <div class="card prose">
+        <h2>Three workspaces</h2>
+        <p>The workspaces sit on a rail down the left, on <kbd>Ctrl+1</kbd>, <kbd>Ctrl+2</kbd> and <kbd>Ctrl+3</kbd>. Switching keeps everything alive, so a running console session, a half-built diagram and a configured analysis are all still there when you come back.</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Workspace</th><th>What's in it</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Analyse</strong></td><td>The current control system: responses, margins, stability, design, lessons</td></tr>
+            <tr><td><strong>Model</strong></td><td>The block-diagram editor, its palette, inspector, scope and solver</td></tr>
+            <tr><td><strong>Console</strong></td><td>Command window, workspace variables, figures and scripts</td></tr>
+          </tbody>
+        </table></div>
+        <p>A context bar across the top of Analyse shows what is loaded and whether it works:</p>
+<pre><code>G(s)  = 4 / (s² + 1.2s + 4)
+K₂(s) = 2 · (s + 0.5) / s     ● stable    PM 60.0°   GM 11.9 dB   [Edit model ▾]</code></pre>
+        <p>It gives the factored transfer functions, an internal-stability verdict and the headline margins. An undefined quantity shows as an em dash with a tooltip explaining why, so a phase margin that does not exist reads differently from <code>nan</code>. The architecture diagram and block editor open in a panel behind <kbd>Ctrl+\</kbd>.</p>
+      </div>
+    </section>
+
+    <section class="proj-section" id="panes">
+      <div class="card prose">
+        <h2>The pane grid</h2>
+        <p>The analysis grid holds one, two or four panes, with seventeen contents each, all reading the same live architecture, so one edit moves every visible view at once. A fresh 2×2 opens on step response, Bode, root locus and metrics, the four views you want side by side when tuning a controller.</p>
+        <p>Each pane remembers which system it shows (plant, open loop, closed loop, sensitivity) when you change what it draws, so the plant's Bode plot becomes the plant's step response. The bigger workflows are pane contents too: the time analysis with its signal pairs and parameter sweep, and the frequency analysis with templates and overlays.</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th colspan="2">Pane contents</th></tr></thead>
+          <tbody>
+            <tr><td>Step · Impulse · Ramp</td><td>Bode · Nyquist · Nichols</td></tr>
+            <tr><td>Pole-zero map · Root locus</td><td>Step metrics · Minimum-phase split</td></tr>
+            <tr><td>System overview · Time analysis · Frequency analysis</td><td>Stability &amp; Routh · Performance · Design · Modern control</td></tr>
+          </tbody>
+        </table></div>
+        <p>Every plot reads out the point under the mouse: ω and |L| on a Bode plot, t and y on a step, ω on a Nyquist curve, K on a root locus. Phase axes tick at multiples of 90° (45° zoomed in) and dB axes at multiples of 20. Margins, crossover, peak and settling are marked by default. Bode plots carry the classical straight-line asymptotes, and hovering one gives its slope and end points.</p>
+        <p>The minimum-phase split is chapter 4's G(s) = G<sub>allpass</sub>(s)·G<sub>mp</sub>(s). Right-half-plane zeros are mirrored into the left half-plane, G<sub>allpass</sub> carries all the extra phase lag at unit gain, and |G| = |G<sub>mp</sub>| everywhere. At the prompt it is <code>Gap, Gmp = mpsplit(G)</code>.</p>
+      </div>
+    </section>
+
+    <section class="proj-section" id="console">
+      <div class="card prose">
+        <h2>The command window</h2>
+        <p>@@n_commands@@ MATLAB-shaped commands in ten groups (<code>tf</code>, <code>feedback</code>, <code>step</code>, <code>bode</code>, <code>margin</code>, <code>stepinfo</code>, <code>rlocus</code>, <code>lqr</code>, <code>place</code>, <code>c2d</code>, <code>pidtune</code> and more), with a workspace browser, history, tab completion and a script editor. The <a href="commands.html">command reference</a> lists every one.</p>
+        <p><code>s</code> is the Laplace variable, so <code>G = 1/(s**2 + 2*s + 1)</code> works. The console shares live references with the GUI: setting a block at the prompt changes what every pane analyses.</p>
+<pre><code>G = 1/(s**2 + 2*s + 1)
+T = feedback(G, 1)
+stepinfo(T)
+bode(G)</code></pre>
+        <p>The prompt is Python: commas between list elements, 0-based indexing, <code>**</code> for powers. The Script tab is where MATLAB runs as written.</p>
+      </div>
+    </section>
+
+    <section class="proj-section" id="scripts">
+      <div class="card prose">
+        <h2>Scripts</h2>
+        <p>Paste a <code>.m</code> file into the Script tab and it runs as MATLAB. <em>Auto</em> picks the language from the text, and the selector beside Run overrides it. <a href="matlab.html">MATLAB compatibility</a> lists what scripts can use.</p>
+        <p>Run starts from a clean slate. It clears the transcript and the previous run's figures first, and offers to save any figures that were never saved, as <code>figure_1.png</code>, <code>figure_2.png</code> and so on. Lines typed at the prompt still append.</p>
+        <p>The editor highlights MATLAB, numbers its lines and completes names on <kbd>Tab</kbd> (variables, builtins, <code>.m</code> files in the folder). <code>%%</code> splits it into sections: <kbd>Ctrl+Enter</kbd> runs the one under the cursor, <kbd>Ctrl+Shift+Enter</kbd> runs it and moves on.</p>
+        <p>Click the gutter for a breakpoint. <kbd>F5</kbd> runs or continues, <kbd>F10</kbd> steps and <kbd>F11</kbd> steps into your functions; while paused, the prompt (<code>K&gt;&gt;</code>) and the workspace see the paused scope. Stop, <kbd>Shift+F5</kbd> or <kbd>Ctrl+C</kbd> interrupts anything, <code>while true</code> included.</p>
+      </div>
+    </section>
+
+    <section class="proj-section" id="live">
+      <div class="card prose">
+        <h2>Live scripts</h2>
+        <p>The Live tab holds code cells and text cells, and output and figures stay under the cell that made them. Text takes <code>$…$</code> and <code>$$…$$</code> LaTeX, drawn in place, and <code>{{Kp}}</code> shows a workspace value.</p>
+        <p>It opens MATLAB's <code>.mlx</code> files and plain-text live <code>.m</code> files, and saves the latter. <em>Export report</em> writes a <code>.tex</code> with its figures and builds the PDF if a TeX engine (tectonic, MiKTeX, TeX Live) is installed, or an HTML page if not.</p>
+      </div>
+    </section>
+
+    <section class="proj-section" id="figures">
+      <div class="card prose">
+        <h2>Figures</h2>
+        <p>Figures sit under the command window. <em>Split</em> shows two side by side, older on the left. <em>Undock</em> moves one into a window of its own, where it keeps panning, zooming and reading out, and <em>Dock</em> or closing that window brings it back. <em>Save…</em> or a right-click writes PNG, SVG or the data as CSV.</p>
+        <p>The History tab beside the workspace keeps commands between sessions, and File ▸ Open recent lists the last scripts and models.</p>
+      </div>
+    </section>
+
+    <section class="proj-section" id="simulator">
+      <div class="card prose">
+        <h2>The simulator</h2>
+        <p>The Model workspace is a block-diagram simulator: @@n_blocks@@ block types (see the <a href="blocks.html">block reference</a>), hierarchical subsystems, a drag-and-drop canvas with undo, RK4, RK45 and Euler solvers, scopes, and a properties inspector that leaves the diagram visible. <code>linearize()</code> pulls a state-space model out of a nonlinear diagram.</p>
+        <ul>
+          <li>Wire two blocks by dragging between ports, or by clicking one and then the other.</li>
+          <li>Drag with the middle mouse button to pan.</li>
+          <li>A dragged block snaps into line with its neighbours' centres and edges; hold <kbd>Alt</kbd> to place it freely.</li>
+          <li>The scope opens on <code>r.out</code> and <code>G.out</code>.</li>
+          <li>Once the blocks are placed, the palette folds away to a strip (<kbd>Ctrl+B</kbd>).</li>
+        </ul>
+        <p>A PID block's <em>Tune…</em>, from the right-click menu or the inspector, opens a small tuner on the plant that block sees, linearised from the diagram with the loop cut at the PID, and writes the gains back as one undoable step.</p>
+        <p>Discrete blocks sample and hold: they read their inputs at a sample hit and hold their outputs until the next one, so a 50 Hz controller changes its output 50 times a second, and a discrete block breaks an algebraic loop the way it does in real hardware.</p>
+      </div>
+    </section>
+
+    <section class="proj-section" id="apps">
+      <div class="card prose">
+        <h2>The design apps</h2>
+        <p>Three apps dock beside the analysis they edit, opened from the Apps menu or the prompt:</p>
+        <div class="data-grid">
+          <div class="data-grid__item">
+            <div class="data-grid__label">LTI Viewer · <code>ltiview</code></div>
+            <div class="data-grid__value">Any set of systems, eight response types, and a right-click menu to add characteristics. It only offers the ones that mean something for the response on screen; a rise time has nowhere to go on a Nyquist plot.</div>
+          </div>
+          <div class="data-grid__item">
+            <div class="data-grid__label">Control System Designer · <code>sisotool</code></div>
+            <div class="data-grid__value">Drag a closed-loop pole along the root locus and the Bode plot and step response follow. You can also ask for the gain that gives ζ = 0.5, or 16% overshoot.</div>
+          </div>
+          <div class="data-grid__item">
+            <div class="data-grid__label">PID Tuner · <code>pidtuner</code></div>
+            <div class="data-grid__value">Response time and transient behaviour on two sliders, with the plant, the current loop and the tuned loop overlaid (K₁ and H included).</div>
+          </div>
+        </div>
+        <p style="margin-top: var(--space-4)">The PID tuner does not search for gains. At the target crossover the controller's required magnitude and phase are both fixed, so a PI's two parameters follow directly and a PID spends its third on the classical <code>Ti = 4·Td</code>. The achieved margin is therefore exact: <code>margin(C·G)</code> returns the requested ωc and φm to 1e-14. When a structure cannot meet a target, the tuner refuses and gives the reason.</p>
+      </div>
+    </section>
+
+    <section class="proj-section" id="snapshots">
+      <div class="card prose">
+        <h2>Snapshots and layout</h2>
+        <p>A snapshot bar above the analysis area saves the whole architecture under a name and restores it from anywhere. <em>Compare</em> sends every stored design to the LTI Viewer at once.</p>
+        <p>Window geometry, workspace, dock layout and pane arrangement are remembered between runs, and View ▸ Reset layout puts them back. View ▸ Theme picks Day, Night or the system setting. The window fits a 1280 × 720 screen and is tested at 1366 × 768 and 1920 × 1080 as well.</p>
+      </div>
+    </section>
+
+    <section class="proj-section" id="lessons">
+      <div class="card prose">
+        <h2>Lessons</h2>
+        <p>The Lessons menu loads one worked example per chapter, and each one checks its own claims against the model on screen: change the plant and the ticks turn into crosses. The <a href="lessons.html">lessons page</a> has all @@n_lessons@@, with every claim measured.</p>
+      </div>
+    </section>

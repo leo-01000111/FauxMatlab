@@ -1,0 +1,53 @@
+name: Site
+
+# The documentation and download site, served at www.leongorecki.eu/evans/.
+# Every pull request builds it, so a change that breaks a generated page
+# (a command without its group, a lesson claim that no longer holds) fails
+# before it merges; only main deploys.
+#
+# Deploying needs the repository's Pages source set to "GitHub Actions"
+# (Settings ▸ Pages ▸ Build and deployment ▸ Source).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      # The reference pages are read out of the code, so the build needs
+      # Evans's own dependencies. It never imports Qt, so no display libraries.
+      - run: pip install -e .
+      - run: python site/build.py
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site/_build
+
+  deploy:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
