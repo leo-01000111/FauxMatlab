@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import iconset
+from .cedric import CedricButton
 from .design import NORMAL, TIGHT
 
 
@@ -73,6 +74,7 @@ class NavigationRail(QFrame):
     """A narrow column of destinations down the left edge."""
 
     changed = Signal(object)          # Workspace
+    help_requested = Signal()
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -105,6 +107,13 @@ class NavigationRail(QFrame):
             column.addWidget(button)
 
         column.addStretch()
+
+        # The rail is on screen whatever you are doing, so the way to help
+        # lives at its foot.
+        self.cedric = CedricButton()
+        self.cedric.clicked.connect(self.help_requested)
+        column.addWidget(self.cedric)
+
         self._group.idClicked.connect(self._on_clicked)
         self.set_current(Workspace.ANALYSE)
 

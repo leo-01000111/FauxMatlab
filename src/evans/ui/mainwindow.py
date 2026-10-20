@@ -70,7 +70,7 @@ from ..core.tf_utils import (
     second_order,
     unity,
 )
-from . import persist, theme, winframe
+from . import help, persist, theme, winframe
 from .apps import ControlSystemDesigner, LTIViewer, PIDTuner, SnapshotBar
 from .block_editor import BlockEditor
 from .console import ConsolePanel, FigureArea
@@ -204,6 +204,7 @@ class MainWindow(QMainWindow):
         self._stack = WorkspaceStack()
         self.setCentralWidget(self._stack)
         self._stack.changed.connect(self._on_workspace_changed)
+        self._stack.rail.help_requested.connect(help.open_help)
 
         self._stack.add_page(Workspace.ANALYSE, self._build_analyse())
         # The Simulink tab becomes the Model workspace outright: it is a
@@ -975,6 +976,9 @@ class MainWindow(QMainWindow):
 
         # Help menu
         help_menu = mb.addMenu("&Help")
+        help_menu.addAction(QAction("Documentation", self, shortcut="F1",
+                                     triggered=lambda: help.open_help()))
+        help_menu.addSeparator()
         help_menu.addAction(QAction("About", self,
                                      triggered=self._show_about))
 
