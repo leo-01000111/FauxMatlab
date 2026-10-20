@@ -265,12 +265,53 @@ def allmargin(sys) -> dict[str, float]:
     }
 
 
-def bandwidth(sys):
+def bandwidth(sys, dbdrop: float = -3.0) -> float:
     """
-    −3 dB bandwidth in rad/s of the unity-feedback closed loop
-    ``feedback(sys, 1)``, so ``sys`` is the open loop ``L``.
+    Bandwidth of ``sys`` itself in rad/s, as MATLAB defines it: the first
+    frequency at which the gain falls ``dbdrop`` dB (default −3) below the
+    DC gain. ``inf`` if it never falls that far, ``nan`` if the DC gain is
+    infinite or zero (an integrator, a differentiator). For a closed-loop
+    bandwidth, pass the closed loop: ``bandwidth(feedback(L, 1))``.
     """
-    return _freq.bode(sys).bw_3dB
+    dbdrop = float(dbdrop)
+    if not dbdrop < 0:
+        raise ValueError("bandwidth: dbdrop must be negative, e.g. -3.")
+    if not isinstance(sys, ctl.LTI):           # a plain gain
+        sys = ctl.tf(float(sys), 1)
+    with np.errstate(all="ignore"):
+        dc = abs(complex(np.ravel(ctl.dcgain(sys))[0]))
+    if not np.isfinite(dc) or dc == 0.0:
+        return float("nan")
+    target = dc * 10 ** (dbdrop / 20)
+    dt = sys.dt if ctl.isdtime(sys, strict=True) else None
+    w_max = math.pi / dt if dt else None
+
+    def gain(w: float) -> float:
+        return float(abs(np.ravel(sys(1j * w if dt is None
+                                      else np.exp(1j * w * dt)))[0]))
+
+    # Bracket the first crossing on a dense log grid spanning every pole and
+    # zero, then refine it; a grid alone would be accurate to its spacing.
+    corners = np.abs(np.concatenate([ctl.poles(sys), ctl.zeros(sys)]))
+    corners = corners[corners > 0]
+    lo = (corners.min() if corners.size else 1.0) / 1e3
+    hi = w_max or (corners.max() if corners.size else 1.0) * 1e3
+    if lo >= hi:
+        lo = hi / 1e6
+    omega = np.logspace(np.log10(lo), np.log10(hi), 4000)
+    if dt:
+        omega = omega[omega <= w_max]
+    mags = np.array([gain(w) for w in omega])
+    below = np.nonzero(mags < target)[0]
+    if not below.size:
+        return float("inf")
+    i = int(below[0])
+    if i == 0:
+        return float(omega[0])
+    from scipy.optimize import brentq
+
+    return float(brentq(lambda w: gain(w) - target, omega[i - 1], omega[i],
+                        xtol=1e-14, rtol=1e-12))
 
 
 def routh(sys_or_coeffs, K=None):
