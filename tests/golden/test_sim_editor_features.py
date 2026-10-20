@@ -472,3 +472,88 @@ def test_the_folded_state_is_remembered(app, shown_tab):
     again = SimTab()
     assert not again.palette_visible
     again.deleteLater()
+
+
+# ──────────────────────────────────────────────────────────────
+#  The toolbar keeps Open and Save; arranging floats over the canvas
+# ──────────────────────────────────────────────────────────────
+
+def _tab(app, width):
+    from evans.ui.sim.sim_tab import SimTab
+
+    tab = SimTab()
+    tab.resize(width, 600)
+    tab.show()
+    for _ in range(10):
+        app.processEvents()
+    return tab
+
+
+def _texts(tab):
+    return [a.text() for a in tab._toolbar.actions() if a.text()]
+
+
+def test_open_and_save_come_first_and_survive_a_narrow_window(app):
+    from evans.ui.sim.arrange import hidden_actions
+
+    tab = _tab(app, 700)
+    texts = _texts(tab)
+    assert texts.index("Open…") < texts.index("Undo")
+    assert texts.index("Save…") < texts.index("Linearise")
+    hidden = hidden_actions(tab._toolbar)
+    assert "Open" not in hidden and "Save" not in hidden
+    tab.deleteLater()
+
+
+def test_a_cut_toolbar_says_so_and_names_what_it_hides(app):
+    from evans.ui.sim.arrange import hidden_actions
+
+    tab = _tab(app, 520)
+    app.processEvents()
+    tab._update_overflow_hint()
+    hidden = hidden_actions(tab._toolbar)
+    assert hidden, "520 px should not fit the whole toolbar"
+    assert tab._overflow.isVisible()
+    assert tab._overflow.text() == "More"
+    tip = tab._overflow.toolTip()
+    assert tip.startswith("Not enough room for:")
+    assert all(name in tip for name in hidden)
+    tab.resize(2400, 600)
+    for _ in range(10):
+        app.processEvents()
+    tab._update_overflow_hint()
+    assert not hidden_actions(tab._toolbar)
+    tab.deleteLater()
+
+
+def test_fit_align_and_space_live_in_the_corner_panel(app):
+    from evans.ui.sim.arrange import HOVER, REST
+
+    tab = _tab(app, 1200)
+    texts = _texts(tab)
+    for gone in ("Fit", "Align row", "Align column", "Space"):
+        assert gone not in texts
+    panel = tab._arrange
+    assert set(panel.buttons) == {"fit", "row", "column", "space"}
+    canvas = tab._canvas
+    vp = canvas.viewport().geometry()
+    # Top-right corner of the visible canvas, inside it.
+    assert panel.geometry().right() <= vp.right()
+    assert panel.geometry().top() >= vp.top()
+    assert panel.geometry().right() > vp.center().x()
+    assert panel.opacity == pytest.approx(REST)
+    from PySide6.QtCore import QEvent, QPointF
+    from PySide6.QtGui import QEnterEvent
+    panel.enterEvent(QEnterEvent(QPointF(5, 5), QPointF(5, 5), QPointF(5, 5)))
+    assert panel.opacity == pytest.approx(HOVER)
+    panel.leaveEvent(QEvent(QEvent.Leave))
+    assert panel.opacity == pytest.approx(REST)
+    # The buttons still do their jobs.
+    calls = []
+    canvas.fit_all = lambda: calls.append("fit")
+    panel.buttons["fit"].click()
+    tab.resize(900, 600)
+    for _ in range(5):
+        app.processEvents()
+    assert panel.geometry().right() <= canvas.viewport().geometry().right()
+    tab.deleteLater()

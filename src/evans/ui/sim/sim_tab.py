@@ -10,7 +10,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QSettings, QSize, Qt, QThread, Signal
+from PySide6.QtCore import (
+    QEvent,
+    QObject,
+    QSettings,
+    QSize,
+    Qt,
+    QThread,
+    QTimer,
+    Signal,
+)
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -19,10 +28,13 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QProgressBar,
+    QProxyStyle,
     QPushButton,
     QSizePolicy,
     QSplitter,
+    QStyle,
     QToolBar,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -31,9 +43,10 @@ from ...sim.compile import CompileError
 from ...sim.linearize import LinearizationError, linearize, steady_state
 from ...sim.model import ModelError, PortRef, SimModel
 from ...sim.solver import FIXED_STEP, SimulationError, simulate
-from .. import iconset
+from .. import iconset, theme
 from ..design import NORMAL, TIGHT
 from ..guard import GuardedPanel, guard
+from .arrange import ArrangePanel, hidden_actions
 from .canvas import SimCanvas
 from .inspector import BlockInspector
 from .palette import STRIP_WIDTH, PaletteDock
@@ -66,6 +79,18 @@ class _Worker(QObject):
             self.failed.emit(str(exc))
         except Exception as exc:                       # noqa: BLE001
             self.failed.emit(f"{type(exc).__name__}: {exc}")
+
+
+class _OverflowStyle(QProxyStyle):
+    """The toolbar's style, with room for a labelled "More" button."""
+
+    #: Wide enough for "MORE" in the sign font, with its padding.
+    EXTENT = 64
+
+    def pixelMetric(self, metric, option=None, widget=None):  # noqa: N802
+        if metric == QStyle.PM_ToolBarExtensionExtent:
+            return self.EXTENT
+        return super().pixelMetric(metric, option, widget)
 
 
 def _labelled(text: str, control: QWidget) -> QWidget:
@@ -129,6 +154,8 @@ class SimTab(QWidget, GuardedPanel):
         centre = QSplitter(Qt.Vertical)
         self._canvas = SimCanvas()
         centre.addWidget(self._canvas)
+        self._arrange = ArrangePanel(self._canvas, self._align,
+                                     self._distribute)
         self._scope = ScopeWidget()
         centre.addWidget(self._scope)
         centre.setStretchFactor(0, 3)
@@ -209,6 +236,19 @@ class SimTab(QWidget, GuardedPanel):
             lambda checked: self.set_palette_visible(checked))
         bar.addSeparator()
 
+        # ── file ──
+        # Near the start: a toolbar that runs out of room hides its *last*
+        # entries, and at the end these were the ones a narrow window lost.
+        for label, icon, slot, tip in (
+            ("Open…", "open", self.open_model, "Open a .fmdl model"),
+            ("Save…", "save", self.save_model, "Save this model as .fmdl"),
+        ):
+            action = bar.addAction(label)
+            iconset.bind(action, icon)
+            action.setToolTip(tip)
+            action.triggered.connect(slot)
+        bar.addSeparator()
+
         # ── run ──
         self._run_btn = QPushButton("Run")
         iconset.bind(self._run_btn, "run")
@@ -255,7 +295,9 @@ class SimTab(QWidget, GuardedPanel):
         bar.addWidget(_labelled("Step", self._step))
         bar.addSeparator()
 
-        # ── history and canvas navigation ──
+        # ── history ──
+        # Fit, Align and Space are not here: they are the arrange panel over
+        # the canvas's corner (see arrange.py).
         undo = bar.addAction("Undo")
         iconset.bind(undo, "undo")
         undo.setToolTip("Undo (Ctrl+Z)")
@@ -266,25 +308,6 @@ class SimTab(QWidget, GuardedPanel):
         redo.setToolTip("Redo (Ctrl+Y)")
         redo.setShortcut("Ctrl+Y")
         redo.triggered.connect(lambda: self._canvas.undo_stack.redo())
-        fit = bar.addAction("Fit")
-        iconset.bind(fit, "fit")
-        fit.setToolTip("Fit the whole diagram in view")
-        fit.triggered.connect(lambda: self._canvas.fit_all())
-        bar.addSeparator()
-
-        for label, icon, tip, slot in (
-            ("Align row", "align-row", "Align the selected blocks on one row",
-             lambda: self._align("y")),
-            ("Align column", "align-column",
-             "Align the selected blocks in one column",
-             lambda: self._align("x")),
-            ("Space", "distribute", "Space the selected blocks evenly across",
-             lambda: self._distribute("x")),
-        ):
-            action = bar.addAction(label)
-            iconset.bind(action, icon)
-            action.setToolTip(tip)
-            action.triggered.connect(slot)
         bar.addSeparator()
 
         # ── subsystem navigation ──
@@ -304,16 +327,6 @@ class SimTab(QWidget, GuardedPanel):
         iconset.bind(lin, "linearise")
         lin.setToolTip("Linearise the model and send it to the analysis tabs")
         lin.triggered.connect(self.linearise)
-        bar.addSeparator()
-
-        for label, icon, slot, tip in (
-            ("Open…", "open", self.open_model, "Open a .fmdl model"),
-            ("Save…", "save", self.save_model, "Save this model as .fmdl"),
-        ):
-            action = bar.addAction(label)
-            iconset.bind(action, icon)
-            action.setToolTip(tip)
-            action.triggered.connect(slot)
 
         # The progress bar lives outside the toolbar: it appears and vanishes,
         # and a toolbar that reflows every time a simulation starts is worse
@@ -329,7 +342,55 @@ class SimTab(QWidget, GuardedPanel):
         row.addWidget(bar, stretch=1)
         row.addWidget(self._progress)
         self._toolbar = bar
+        self._style_overflow(bar)
         return wrapper
+
+    def _style_overflow(self, bar: QToolBar) -> None:
+        """
+        Make the toolbar's overflow button impossible to miss.
+
+        Qt shows a 10-pixel "»" when entries do not fit, which read as
+        decoration: Open and Save went missing on a narrow window with no
+        sign they existed. It becomes a labelled "More" button in the
+        highlight colour, and its tooltip names what is hidden.
+        """
+        # Qt lays the overflow button out in a slot as wide as the style's
+        # PM_ToolBarExtensionExtent, about 12 px; a labelled button in that
+        # slot is cut off. The toolbar gets a style that asks for more.
+        # No base style passed: QProxyStyle takes ownership of a base it is
+        # given, and handed the application's own style it freed that style
+        # a second time at exit (an access violation after every clean run).
+        # Without one it follows the application style and owns nothing.
+        self._toolbar_style = _OverflowStyle()
+        self._toolbar_style.setParent(bar)
+        bar.setStyle(self._toolbar_style)
+        self._overflow = bar.findChild(QToolButton, "qt_toolbar_ext_button")
+        if self._overflow is None:
+            return
+        t = theme.tokens()
+        self._overflow.setText("More")
+        self._overflow.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        self._overflow.setStyleSheet(
+            f"QToolButton {{ background: {t.signal}; color: {t.on_signal}; "
+            f"font-weight: 700; padding: 2px 8px; border: none; }}")
+        bar.installEventFilter(self)
+        self._update_overflow_hint()
+
+    def _update_overflow_hint(self) -> None:
+        if getattr(self, "_overflow", None) is None:
+            return
+        hidden = hidden_actions(self._toolbar)
+        self._overflow.setToolTip(
+            "Not enough room for: " + ", ".join(hidden)
+            + ". Click to reach them, or widen the window." if hidden
+            else "")
+
+    def eventFilter(self, obj, event) -> bool:     # noqa: N802 (Qt API)
+        if obj is getattr(self, "_toolbar", None) and \
+                event.type() in (QEvent.Resize, QEvent.Show,
+                                 QEvent.LayoutRequest):
+            QTimer.singleShot(0, self._update_overflow_hint)
+        return super().eventFilter(obj, event)
 
     # ── the palette ─────────────────────────────────────────────
 

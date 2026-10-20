@@ -61,7 +61,9 @@ def test_the_rail_and_toolbars_carry_icons(app):
     tab = SimTab()
     actions = [a for a in tab._toolbar.actions() if a.text()]
     with_icons = [a.text() for a in actions if not a.icon().isNull()]
-    assert {"Blocks", "Undo", "Redo", "Fit", "Linearise"} <= set(with_icons)
+    assert {"Blocks", "Open…", "Save…", "Undo", "Redo",
+            "Linearise"} <= set(with_icons)
+    assert all(not b.icon().isNull() for b in tab._arrange.buttons.values())
     assert not tab._run_btn.icon().isNull()
     assert isinstance(tab._run_btn.icon(), QIcon)
     rail.deleteLater()
