@@ -1,8 +1,10 @@
 """
 The command window.
 ===================
-A transcript above, one input line below. History on ↑/↓, completion on Tab,
-Shift+Return for a continuation line.
+A transcript above, one input line below. History on ↑/↓, Shift+Return for
+a continuation line. Completions pop up as a name is typed (Up/Down pick,
+Tab or Return accept, Escape closes — ↑/↓ are the popup's while it shows);
+Tab completes on demand, Ctrl+Space lists everything that fits.
 
 The input is a single line by default rather than a free-form editor, because
 a REPL's value is that Return means "run this now". Multi-line blocks are
@@ -30,7 +32,8 @@ from PySide6.QtWidgets import (
 
 from ...console.interpreter import Interpreter, Result
 from .. import theme
-from ..code.completer import Completer, completion_candidates
+from ..code.completion import code_request, completion_candidates
+from ..code.popup import CompletionController
 
 PROMPT = ">> "
 CONTINUATION = ".. "
@@ -48,16 +51,10 @@ class _InputLine(QLineEdit):
     #: Ctrl+C with nothing selected.
     interrupt = Signal()
 
-    #: Set by the console: while its popup is open, keys go to it.
-    completer: Completer | None = None
-
     def keyPressEvent(self, event: QKeyEvent) -> None:
+        # While the completion popup shows, its controller (an event filter)
+        # takes the keys it needs before they get here.
         key = event.key()
-        if self.completer is not None and self.completer.is_open() and key in (
-                Qt.Key_Return, Qt.Key_Enter, Qt.Key_Escape, Qt.Key_Tab,
-                Qt.Key_Backtab):
-            event.ignore()
-            return
         if event.matches(QKeySequence.Copy) and not self.hasSelectedText():
             self.interrupt.emit()
             return
@@ -148,8 +145,7 @@ class ConsoleWidget(QWidget):
         self._input.history_move.connect(self._recall)
         self._input.complete.connect(self._complete)
         self._input.interrupt.connect(self._interrupt)
-        self._completer = Completer(self._input, self.candidates)
-        self._input.completer = self._completer
+        self._completer = CompletionController(self._input, self.request)
         row.addWidget(self._input, stretch=1)
         # Sized by its label, like the workspace's "Clear all": a pixel cap
         # does not know the button font is the wide uppercase sign face.
@@ -368,7 +364,15 @@ class ConsoleWidget(QWidget):
     def candidates(self, prefix: str) -> list[str]:
         """What Tab offers for ``prefix`` at this prompt."""
         return completion_candidates(prefix, self.interpreter,
-                                     folder=self.folder, language="python")
+                                     folder=self.folder, language="console")
+
+    def request(self, before: str):
+        """What the popup offers after ``before``: Python, MATLAB's names."""
+        return code_request(before, "console", self.interpreter, self.folder)
+
+    @property
+    def completer(self) -> CompletionController:
+        return self._completer
 
     def _complete(self) -> None:
         """

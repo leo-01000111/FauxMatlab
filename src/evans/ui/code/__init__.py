@@ -5,20 +5,27 @@ Reusable pieces — the Script tab uses all of them, and any other editor of
 MATLAB or Python text (a live script, a lesson's snippet) can take them:
 
 * :class:`MatlabHighlighter` — a ``QSyntaxHighlighter`` for MATLAB or Python.
-* :class:`Completer` — Tab completion with a popup, on a ``QPlainTextEdit``
-  or a ``QLineEdit``; :func:`completion_candidates` is what it offers.
+* :class:`CompletionController` — the completion popup on a
+  ``QPlainTextEdit`` or a ``QLineEdit``, fed by :func:`code_request` (MATLAB,
+  Python) or :func:`latex_request`; :class:`Completer` is the same popup fed
+  by a plain list of names, as :func:`completion_candidates` makes.
 * :func:`split_sections` — ``%%`` cells, and the source to run one.
 * :class:`CodeEditor` — a ``QPlainTextEdit`` with all of the above, plus
   line numbers, breakpoints and error / paused-line highlights.
 """
 
 from .completer import Completer, completion_candidates, matlab_builtins
+from .completion import Completion, Request, code_request, rank, warm_up
 from .editor import CodeEditor
 from .highlighter import MATLAB_KEYWORDS, MatlabHighlighter, tokenize_line
+from .latex import latex_request
+from .popup import CompletionController, CompletionPopup
 from .sections import Section, section_at, section_source, split_sections
 
 __all__ = [
-    "MATLAB_KEYWORDS", "CodeEditor", "Completer", "MatlabHighlighter",
-    "Section", "completion_candidates", "matlab_builtins", "section_at",
-    "section_source", "split_sections", "tokenize_line",
+    "MATLAB_KEYWORDS", "CodeEditor", "Completer", "Completion",
+    "CompletionController", "CompletionPopup", "MatlabHighlighter",
+    "Request", "Section", "code_request", "completion_candidates",
+    "latex_request", "matlab_builtins", "rank", "section_at",
+    "section_source", "split_sections", "tokenize_line", "warm_up",
 ]

@@ -226,6 +226,7 @@ def _check_ui(report: Report, say) -> None:
 
         window.hide()
         _check_pdf_view(report, say)
+        _check_completion(report, say)
     except Exception as exc:                                    # noqa: BLE001
         report.record(False, f"UI raised {type(exc).__name__}: {exc}")
         say(f"      FAILED: {exc}")
@@ -262,6 +263,28 @@ def _check_pdf_view(report: Report, say) -> None:
         say(f"      {'PDF preview':28s} {'clean' if ok else 'FAILED'}")
         preview.pdf.close()
         preview.deleteLater()
+
+
+def _check_completion(report: Report, say) -> None:
+    r"""
+    The completion popup has what it shows: call signatures, descriptions
+    read from docstrings (a build run with ``-OO`` would strip them) and the
+    LaTeX list.
+    """
+    from .ui.code import code_request, latex_request, rank, warm_up
+
+    warm_up(wait=True)
+    items = {c.text: c.resolved()
+             for c in code_request("st", "matlab").items(True)}
+    step, linspace = items.get("step"), items.get("linspace")
+    tex = latex_request(r"\fr")
+    ok = (step is not None and step.signature == "step(sys, t)"
+          and linspace is not None and bool(linspace.detail)
+          and bool(items.get("feedback") and items["feedback"].detail)
+          and tex is not None
+          and rank(tex.prefix, tex.items(True))[0].text == r"\frac")
+    report.record(ok, "completion: signatures, descriptions or LaTeX missing")
+    say(f"      {'code completion':28s} {'clean' if ok else 'FAILED'}")
 
 
 def main(argv: list[str] | None = None) -> int:

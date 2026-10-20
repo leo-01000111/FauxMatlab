@@ -82,6 +82,9 @@ from ...console.live.report import (
 )
 from ...console.live.template import ReportTemplate, resolve_template
 from .. import iconset, theme
+from ..code.completion import code_request
+from ..code.latex import labels_in, latex_request
+from ..code.popup import CompletionController
 from ..design import NORMAL, TIGHT
 from . import report_template
 from .figure_view import FigureView
@@ -381,6 +384,11 @@ class CodeCellWidget(CellWidget):
     def sync_to_cell(self) -> None:
         self.cell.source = self.editor.toPlainText()
 
+    def set_completion(self, request) -> None:
+        """MATLAB completion in the cell: ``request(text before cursor)``."""
+        self.completer = CompletionController(self.editor, request,
+                                              tab_completes=True)
+
     def refresh(self, evaluate=None) -> None:
         output = self.cell.output
         text = output.text if output else ""
@@ -533,6 +541,12 @@ class TextCellWidget(CellWidget):
 
     def sync_to_cell(self) -> None:
         self.cell.source = self.editor.toPlainText()
+
+    def set_completion(self, labels) -> None:
+        r"""LaTeX completion in the markup; ``labels()`` for ``\ref{``."""
+        self.completer = CompletionController(
+            self.editor, lambda before: latex_request(before, labels),
+            tab_completes=True)
 
     def refresh(self, evaluate=None) -> None:
         if evaluate is not None:
@@ -726,8 +740,10 @@ class LiveScriptEditor(QWidget):
         if cell.is_code:
             widget = CodeCellWidget(cell)
             widget.figure_requested.connect(self.figure_requested)
+            widget.set_completion(self._code_request)
         else:
             widget = TextCellWidget(cell, evaluate=self._evaluator())
+            widget.set_completion(self.reference_labels)
         widget.action.connect(self._on_action)
         return widget
 
@@ -748,6 +764,24 @@ class LiveScriptEditor(QWidget):
             self._current = self.document.cells[0] if self.document.cells \
                 else None
         self._mark_current()
+
+    def _code_request(self, before: str):
+        return code_request(before, "matlab", self.interpreter, self.folder)
+
+    def reference_labels(self) -> list[str]:
+        r"""
+        What ``\ref{`` can name: every drawn figure's label (its own or
+        the automatic ``fig:<n>``), labels given to figures not drawn yet,
+        and ``\label{…}`` in the text cells.
+        """
+        self._sync()
+        labels = list(self.document.figure_labels().values())
+        for cell in self.document.code_cells():
+            labels += [m.label.strip() for m in cell.figure_meta
+                       if m.label.strip()]
+        labels += labels_in(c.source for c in self.document.cells
+                            if not c.is_code)
+        return list(dict.fromkeys(labels))
 
     def widget_for(self, cell: Cell) -> CellWidget:
         for widget in self._widgets:

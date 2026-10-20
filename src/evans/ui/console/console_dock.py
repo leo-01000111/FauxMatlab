@@ -38,8 +38,9 @@ from .. import iconset
 from ..code import (
     CodeEditor,
     MatlabHighlighter,
-    completion_candidates,
+    code_request,
     section_source,
+    warm_up,
 )
 from ..design import TIGHT, EmptyState
 from .console_widget import ConsoleWidget
@@ -597,6 +598,23 @@ class ScriptEditor(QWidget):
     def set_completion_source(self, source) -> None:
         self._editor.set_completion_source(source)
 
+    def set_completion(self, request) -> None:
+        """The completion popup, offering ``request(text before cursor)``."""
+        self._editor.set_completion(request)
+
+    def completion_language(self) -> str:
+        """
+        :meth:`language`, for completing while typing: *Auto* reads the
+        whole text, so its answer is kept until the line count changes.
+        """
+        if self._language.currentData() != "auto":
+            return self._language.currentData()
+        lines = self._editor.blockCount()
+        cached = getattr(self, "_completion_language", None)
+        if cached is None or cached[0] != lines:
+            self._completion_language = (lines, self.language())
+        return self._completion_language[1]
+
     def language(self) -> str:
         """The language the next run will use: 'matlab' or 'python'."""
         chosen = self._language.currentData()
@@ -740,10 +758,11 @@ class ConsolePanel(QWidget):
         self.editor.run_requested.connect(self._run_script)
         self.editor.section_requested.connect(self._run_section)
         self.editor.debug_requested.connect(self._debug)
-        self.editor.set_completion_source(
-            lambda prefix: completion_candidates(
-                prefix, self.interpreter, folder=self._folder(),
-                language=self.editor.language()))
+        self.editor.set_completion(
+            lambda before: code_request(
+                before, self.editor.completion_language(), self.interpreter,
+                self._folder()))
+        warm_up()          # the fixed completion lists, in the background
         self.editor.code.breakpoints_changed.connect(self._set_breakpoints)
         self._tabs.addTab(self.editor, "Script")
 

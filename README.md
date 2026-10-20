@@ -131,8 +131,16 @@ Run starts from a clean slate. It clears the transcript and the previous run's f
 first, and offers to save any figures that were never saved, as `figure_1.png`,
 `figure_2.png` and so on. Lines typed at the prompt still append.
 
-The editor highlights MATLAB, numbers its lines and completes names on Tab (variables,
-builtins, `.m` files in the folder). `%%` splits it into sections: Ctrl+Enter runs the one
+The editor highlights MATLAB, numbers its lines and completes as you type, the way an
+IDE does: a popup lists the workspace's variables (and their attributes after a `.`), the
+commands with their calls (`step(sys, t)`, `lqr(A, B, Q, R)`), MATLAB's or Python's
+builtins and keywords, and `.m` files in the folder, each with a line on what it is.
+Up/Down pick, Tab or Enter accept, Escape closes, Ctrl+Space opens it on demand; with it
+closed, Tab completes or indents. The prompt and live-script cells have the same popup,
+and a text cell completes LaTeX: `\frac`, `\alpha`, `\begin{align}` with its `\end`, and
+inside `\ref{` the figure labels the script defines.
+
+`%%` splits a script into sections: Ctrl+Enter runs the one
 under the cursor, Ctrl+Shift+Enter runs it and moves on. Click the gutter for a
 breakpoint. F5 runs or continues, F10 steps and F11 steps into your functions; while
 paused, the prompt (`K>>`) and the workspace see the paused scope. Stop, Shift+F5 or
@@ -256,7 +264,7 @@ a crossover above the plant's phase budget is impossible for it.
 pytest
 ```
 
-1290 tests, plus `ruff check .`. Most are golden tests: analytic values worked out by hand
+1328 tests, plus `ruff check .`. Most are golden tests: analytic values worked out by hand
 or by an independent route, rather than snapshots of whatever the code printed first. The
 numeric signal solver and the symbolic one check each other, and `python-control` is a
 third opinion.

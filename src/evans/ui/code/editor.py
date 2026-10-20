@@ -6,8 +6,10 @@ a breakpoint on that line; the gutter also marks the line a debugger is
 paused on. The line a run failed on is tinted until the text is edited.
 ``%%`` lines get a rule above them, so the cells read as cells.
 
-Keys: Tab completes the word before the cursor (or indents when there is
-none); Ctrl+Enter asks for the current section to run, Ctrl+Shift+Enter
+Keys: a completion popup opens as a name is typed (Ctrl+Space opens it at
+once; Up/Down pick, Tab or Return accept, Escape closes). With it closed,
+Tab completes the word before the cursor, or indents when there is none or
+lines are selected. Ctrl+Enter asks for the current section to run, Ctrl+Shift+Enter
 to run it and move to the next.
 """
 
@@ -21,7 +23,9 @@ from PySide6.QtWidgets import QPlainTextEdit, QTextEdit, QWidget
 
 from .. import theme
 from .completer import Completer
+from .completion import Request
 from .highlighter import MatlabHighlighter, is_section_header
+from .popup import CompletionController
 from .sections import Section, section_at, split_sections
 
 INDENT = "    "
@@ -59,7 +63,7 @@ class CodeEditor(QPlainTextEdit):
         self.setFont(theme.data_font(10))
         self.setLineWrapMode(QPlainTextEdit.NoWrap)
         self.highlighter = MatlabHighlighter(self.document(), language)
-        self.completer: Completer | None = None
+        self.completer: CompletionController | None = None
         self._breakpoints: set[int] = set()
         self._error_line: int | None = None
         self._current_line: int | None = None
@@ -78,8 +82,23 @@ class CodeEditor(QPlainTextEdit):
 
     def set_completion_source(self,
                               source: Callable[[str], list[str]]) -> None:
-        """Turn on Tab completion, offering ``source(prefix)``."""
-        self.completer = Completer(self, source)
+        """Turn on Tab completion, offering the names ``source(prefix)``."""
+        self._set_completer(Completer(self, source))
+
+    def set_completion(self,
+                       request: Callable[[str], Request | None]) -> None:
+        """
+        Turn on the completion popup: ``request(text before the cursor)``
+        says what to offer (see :func:`.completion.code_request`).
+        """
+        self._set_completer(CompletionController(self, request))
+
+    def _set_completer(self, completer: CompletionController) -> None:
+        if self.completer is not None:
+            self.completer.close()
+            self.removeEventFilter(self.completer)
+            self.viewport().removeEventFilter(self.completer)
+        self.completer = completer
 
     def set_language(self, language: str) -> None:
         self.highlighter.set_language(language)
@@ -292,11 +311,6 @@ class CodeEditor(QPlainTextEdit):
 
     def keyPressEvent(self, event) -> None:            # noqa: N802 (Qt API)
         key, mods = event.key(), event.modifiers()
-        if self.completer is not None and self.completer.is_open() and key in (
-                Qt.Key_Return, Qt.Key_Enter, Qt.Key_Escape, Qt.Key_Tab,
-                Qt.Key_Backtab):
-            event.ignore()
-            return
         if key in (Qt.Key_Return, Qt.Key_Enter) and mods & Qt.ControlModifier:
             self.run_section_requested.emit(bool(mods & Qt.ShiftModifier))
             return
