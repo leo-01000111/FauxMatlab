@@ -60,6 +60,8 @@ class SimCanvas(QGraphicsView):
         self._rubber_wire = None
         #: Dashed alignment lines shown while a block is being dragged.
         self._guides: list = []
+        #: Where a middle-button pan last was, in view pixels; None if none.
+        self._pan_from = None
 
         self._scene.selectionChanged.connect(self._on_selection)
         theme.notifier().changed.connect(lambda *_: self._scene.update())
@@ -249,6 +251,13 @@ class SimCanvas(QGraphicsView):
         instead of completing it, so nothing ever connected and every
         abandoned attempt left a dashed line on the canvas.
         """
+        if event.button() == Qt.MiddleButton:
+            # Middle-drag pans, as in Simulink — over a block or a wire too,
+            # and without disturbing a wire that is half drawn.
+            self._pan_from = event.position()
+            self.viewport().setCursor(Qt.ClosedHandCursor)
+            event.accept()
+            return
         item = self.itemAt(event.position().toPoint())
         if event.button() != Qt.LeftButton:
             super().mousePressEvent(event)
@@ -306,6 +315,14 @@ class SimCanvas(QGraphicsView):
                     candidate.set_highlight(on)
 
     def mouseMoveEvent(self, event) -> None:
+        if self._pan_from is not None:
+            delta = event.position() - self._pan_from
+            self._pan_from = event.position()
+            h, v = self.horizontalScrollBar(), self.verticalScrollBar()
+            h.setValue(h.value() - round(delta.x()))
+            v.setValue(v.value() - round(delta.y()))
+            event.accept()
+            return
         if self._rubber_wire is not None and self._pending_port is not None:
             path = QPainterPath(self._pending_port.scene_pos())
             path.lineTo(self.mapToScene(event.position().toPoint()))
@@ -315,6 +332,11 @@ class SimCanvas(QGraphicsView):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event) -> None:
+        if event.button() == Qt.MiddleButton and self._pan_from is not None:
+            self._pan_from = None
+            self.viewport().unsetCursor()
+            event.accept()
+            return
         if self._pending_port is not None:
             target = self.itemAt(event.position().toPoint())
             if isinstance(target, PortItem) and target is not self._pending_port:

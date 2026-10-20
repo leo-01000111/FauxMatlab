@@ -563,3 +563,32 @@ def test_abandoned_attempts_do_not_litter_the_canvas(wiring):
 
     assert _rubber_bands(wiring) == 0
     assert len(wiring.model.connections) == 0
+
+
+def test_middle_drag_pans_the_canvas(canvas, app):
+    from PySide6.QtCore import QPointF, Qt
+    from PySide6.QtGui import QMouseEvent
+
+    canvas.resize(400, 300)
+    canvas.show()
+    app.processEvents()
+    port = next(iter(next(iter(canvas._blocks.values())).ports.values()))
+    canvas._start_wire(port)                    # a wire half drawn
+
+    def send(kind, x, y, button, buttons):
+        event = QMouseEvent(kind, QPointF(x, y), QPointF(x, y), button,
+                            buttons, Qt.NoModifier)
+        QApplication.sendEvent(canvas.viewport(), event)
+
+    h, v = canvas.horizontalScrollBar(), canvas.verticalScrollBar()
+    before = (h.value(), v.value())
+    send(QMouseEvent.MouseButtonPress, 200, 150, Qt.MiddleButton,
+         Qt.MiddleButton)
+    send(QMouseEvent.MouseMove, 150, 110, Qt.NoButton, Qt.MiddleButton)
+    send(QMouseEvent.MouseButtonRelease, 150, 110, Qt.MiddleButton,
+         Qt.NoButton)
+    # Dragging left and up shows what was right and below.
+    assert (h.value(), v.value()) == (before[0] + 50, before[1] + 40)
+    assert canvas._pending_port is port         # the wire is still armed
+    canvas._cancel_wire()
+    canvas.hide()
