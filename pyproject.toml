@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,7 +8,8 @@ dynamic = ["version"]
 description = "A control-systems workbench: classical and modern control, plus a working block-diagram simulator."
 readme = "README.md"
 requires-python = ">=3.12"
-license = { text = "Proprietary" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Leon Gorecki" }]
 
 # Pinned to the versions the 432 tests were verified against. numpy 2.x
@@ -45,9 +46,10 @@ py-modules = ["app"]
 [tool.setuptools.packages.find]
 include = ["fakematlab*"]
 
-# The bundled typefaces (Archivo, Martian Mono) and their OFL licences.
+# The bundled typefaces (Archivo, Martian Mono) and their OFL licences, and
+# the icon set (SVGs drawn in currentColor, plus the Windows app.ico).
 [tool.setuptools.package-data]
-"fakematlab.ui" = ["fonts/*"]
+"fakematlab.ui" = ["fonts/*", "icons/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -85,6 +87,6 @@ ignore = [
 # That ordering is the whole point, so the imports cannot go at the top.
 "app.py" = ["E402"]
 # A sectioned diagnostic script: each section imports what it exercises.
-"debug_runner.py" = ["E402"]
+"tools/debug_runner.py" = ["E402"]
 # Tests deliberately import inside functions to keep the core/UI split honest.
 "tests/**" = ["E402"]

@@ -8,14 +8,40 @@ System Toolbox that two courses actually use — **CLACO** (classical, frequency
 and **DYBAC** (modern, state-space) — built so that every number it shows can be traced
 back to something exact.
 
+**Just want to use it?** Download `FauxMatlab-windows.zip` from the
+[latest release](https://github.com/leo-01000111/FauxMatlab/releases/latest), unzip it
+anywhere and run `FauxMatlab.exe`. Nothing else to install.
+
+## Quick start
+
+From source, on Windows, macOS or Linux, with Python 3.12 or newer:
+
+```bash
+git clone https://github.com/leo-01000111/FauxMatlab.git
+cd FauxMatlab
+python -m venv .venv
+```
+
+Activate the environment — `.venv\Scripts\activate` on Windows,
+`source .venv/bin/activate` elsewhere — then:
+
 ```bash
 pip install -e ".[dev]"
 python app.py
 ```
 
-Requires Python 3.12+. The import package is `fakematlab`; the repository is `FauxMatlab`.
+| To… | Run |
+| --- | --- |
+| check the install (headless self-test; exit code = failures) | `python app.py --check` |
+| run the test suite | `pytest -q` |
+| build the standalone Windows app into `dist/FauxMatlab/` | `pyinstaller --clean --noconfirm packaging/fauxmatlab.spec` |
 
-`python app.py --check` runs a headless self-test and exits with the number of failures.
+On Linux, PySide6 needs the usual Qt/X11 runtime libraries; the CI workflow
+(`.github/workflows/ci.yml`) lists the exact apt packages. Exporting a live script as a
+**PDF** needs a TeX engine — MiKTeX, TeX Live or tectonic; without one the report is
+written as HTML.
+
+The import package is `fakematlab`; the repository is `FauxMatlab`.
 
 ---
 
@@ -197,7 +223,7 @@ rather than merely inaccurate.
 pytest
 ```
 
-1049 tests, plus `ruff check .`. They are mostly *golden* tests: analytic values computed by
+1171 tests, plus `ruff check .`. They are mostly *golden* tests: analytic values computed by
 hand or by an independent route, not snapshots of whatever the code printed first. The
 numeric signal solver and the symbolic one check each other; `python-control` acts as a
 third opinion.
@@ -223,7 +249,7 @@ Several are there to pin down a bug that was genuinely hard to see:
   can demand more window height at 1280 px. Invisible to any check that measures at one
   width.
 
-Run `python debug_runner.py` for a headless end-to-end sweep (176 checks) that builds every
+Run `python tools/debug_runner.py` for a headless end-to-end sweep (176 checks) that builds every
 tab and exercises every core path without a display.
 
 ---
@@ -255,15 +281,17 @@ means the numbers agree with the theory, not merely that nothing raised.
 
 Two plans, both complete.
 
-[`PLAN.md`](PLAN.md) — the engine, in eight phases: correctness, the classical half, modern
+[`docs/PLAN.md`](docs/PLAN.md) — the engine, in eight phases: correctness, the classical half, modern
 control, the simulator, the command window, the apps, the course lessons, packaging.
 
-[`UI-PLAN.md`](UI-PLAN.md) — the interface, in eight more. The application had grown to
+[`docs/UI-PLAN.md`](docs/UI-PLAN.md) — the interface, in eight more. The application had grown to
 28 modules and 8 tabs while keeping the layout of a 6-tab viewer, and its minimum window
 size had reached **2038 × 643** — wider than a 1920 monitor, because the Simulink toolbar
 was one unbreakable row and a tab bar is as wide as its widest tab. That plan's status
-table records what is done, what is partial, and the two items left: retrofitting the
-classic analysis tabs onto the shared design system, and a bundled icon set.
+table records what is done, what is partial, and the one item left: retrofitting the
+classic analysis tabs onto the shared design system. The icon set is in: 53
+pictograms in `fakematlab/ui/icons/`, drawn in the theme's ink
+([contact sheet](docs/icons-sheet.png)).
 
 Both files record what was deliberately **not** built, and why. The one worth repeating:
 there is no Python Function block, because a block that executes arbitrary text from a
@@ -293,3 +321,10 @@ No dependency on **slycot**. Four routines that would normally need it — `minr
 modal canonical form, and `d2c` — are implemented directly (SVD staircase, Lyapunov solve,
 eigendecomposition with real 2×2 blocks, matrix logarithm) so that a clean
 `pip install` is all it takes.
+
+---
+
+## License
+
+[MIT](LICENSE). The bundled typefaces (Archivo, Martian Mono) keep their own SIL Open
+Font License, shipped beside them in `fakematlab/ui/fonts/`.

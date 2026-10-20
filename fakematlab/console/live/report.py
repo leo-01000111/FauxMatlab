@@ -123,10 +123,10 @@ def tex_error(log: str, lines: int = 15) -> str:
     for i, line in enumerate(text):
         if line.startswith("! "):
             tail = text[i:i + 8]
-            return "\n".join(l for l in tail if l.strip())
+            return "\n".join(row for row in tail if row.strip())
     for i, line in enumerate(text):
         if "did not succeed" in line:
-            return "\n".join(l for l in text[i:i + 6] if l.strip())
+            return "\n".join(row for row in text[i:i + 6] if row.strip())
     return "\n".join(text[-lines:])
 
 

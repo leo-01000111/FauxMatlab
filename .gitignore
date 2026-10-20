@@ -36,3 +36,6 @@ COURSE MATERIAL/
 # ── Local scratch ───────────────────────────────────────────────
 scratch/
 *.log
+
+# ── Claude Code session state ───────────────────────────────────
+.claude/
