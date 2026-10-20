@@ -3649,7 +3649,56 @@ def _play(data: np.ndarray, rate: float) -> bool:
         _PLAYERS.append((sink, buffer))
         return True
     except Exception:                                    # noqa: BLE001
+        pass
+    return _play_winsound(data, rate)
+
+
+def _play_winsound(data: np.ndarray, rate: float) -> bool:
+    """
+    The last resort on Windows: the standard library's winsound.
+
+    The packaged app has neither sounddevice (not a dependency) nor Qt
+    Multimedia (left out of the bundle for its size), so sound() was silent
+    there. winsound plays a .wav file asynchronously and lets Windows
+    resample any rate. The file must outlive the call, so each sound gets
+    its own temporary file, removed when Evans exits.
+    """
+    if sys.platform != "win32":
         return False
+    try:
+        import atexit
+        import tempfile
+        import winsound
+    except ImportError:
+        return False
+    try:
+        handle, path = tempfile.mkstemp(prefix="evans-sound-", suffix=".wav")
+        os.close(handle)
+        _write_audio(path, data, int(round(rate)), 16)
+        winsound.PlaySound(path, winsound.SND_FILENAME | winsound.SND_ASYNC
+                           | winsound.SND_NODEFAULT)
+    except (OSError, RuntimeError, ValueError):
+        return False
+    if not _SOUND_FILES:
+        atexit.register(_remove_sound_files)
+    _SOUND_FILES.append(path)
+    return True
+
+
+_SOUND_FILES: list[str] = []
+
+
+def _remove_sound_files() -> None:
+    try:
+        import winsound
+        winsound.PlaySound(None, 0)               # stop, release the file
+    except Exception:                               # noqa: BLE001
+        pass
+    for path in _SOUND_FILES:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
 
 
 # ── .mat files ───────────────────────────────────────────────────
