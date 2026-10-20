@@ -62,6 +62,13 @@ WM_NCLBUTTONDOWN = 0x00A1
 WM_NCLBUTTONUP = 0x00A2
 WM_NCLBUTTONDBLCLK = 0x00A3
 WM_NCMOUSELEAVE = 0x02A2
+WM_NCRBUTTONUP = 0x00A5
+WM_SYSCOMMAND = 0x0112
+
+SC_SIZE, SC_MOVE, SC_MINIMIZE = 0xF000, 0xF010, 0xF020
+SC_MAXIMIZE, SC_CLOSE, SC_RESTORE = 0xF030, 0xF060, 0xF120
+MF_BYCOMMAND, MF_ENABLED, MF_GRAYED = 0x0000, 0x0000, 0x0001
+TPM_RIGHTBUTTON, TPM_RETURNCMD = 0x0002, 0x0100
 
 HTCLIENT = 1
 HTCAPTION = 2
@@ -99,7 +106,19 @@ LRESULT = ctypes.c_ssize_t
 #: straight back to Qt without leaving this set lookup.
 HANDLED = frozenset((WM_NCCALCSIZE, WM_NCHITTEST, WM_NCMOUSEMOVE,
                      WM_NCLBUTTONDOWN, WM_NCLBUTTONUP, WM_NCLBUTTONDBLCLK,
-                     WM_NCMOUSELEAVE))
+                     WM_NCMOUSELEAVE, WM_NCRBUTTONUP))
+
+
+def system_menu_states(maximized: bool) -> dict[int, bool]:
+    """
+    Which system-menu commands are on, as Windows itself would set them.
+
+    The caption that used to show this menu on right-click is gone, so the
+    menu is shown by hand, and its items have to be enabled by hand too.
+    """
+    return {SC_RESTORE: maximized, SC_MOVE: not maximized,
+            SC_SIZE: not maximized, SC_MINIMIZE: True,
+            SC_MAXIMIZE: not maximized, SC_CLOSE: True}
 
 
 class NCCALCSIZE_PARAMS(ctypes.Structure):  # noqa: N801 (Win32 name)
@@ -213,6 +232,27 @@ class _Win32:
         self.GetSystemMetrics = user32.GetSystemMetrics
         self.GetSystemMetrics.argtypes = [ctypes.c_int]
         self.GetSystemMetrics.restype = ctypes.c_int
+
+        self.GetSystemMenu = user32.GetSystemMenu
+        self.GetSystemMenu.argtypes = [wintypes.HWND, wintypes.BOOL]
+        self.GetSystemMenu.restype = wintypes.HMENU
+
+        self.EnableMenuItem = user32.EnableMenuItem
+        self.EnableMenuItem.argtypes = [wintypes.HMENU, wintypes.UINT,
+                                        wintypes.UINT]
+        self.EnableMenuItem.restype = wintypes.BOOL
+
+        self.TrackPopupMenu = user32.TrackPopupMenu
+        self.TrackPopupMenu.argtypes = [wintypes.HMENU, wintypes.UINT,
+                                        ctypes.c_int, ctypes.c_int,
+                                        ctypes.c_int, wintypes.HWND,
+                                        ctypes.c_void_p]
+        self.TrackPopupMenu.restype = wintypes.BOOL     # the command id here
+
+        self.PostMessageW = user32.PostMessageW
+        self.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT,
+                                      wintypes.WPARAM, wintypes.LPARAM]
+        self.PostMessageW.restype = wintypes.BOOL
 
         self.MonitorFromWindow = user32.MonitorFromWindow
         self.MonitorFromWindow.argtypes = [wintypes.HWND, wintypes.DWORD]
@@ -351,6 +391,12 @@ class NativeFrame:
         if kind == WM_NCHITTEST:
             return self._hit_test(api, hwnd, msg.wParam, msg.lParam)
 
+        if kind == WM_NCRBUTTONUP:
+            if msg.wParam != HTCAPTION:
+                return False, 0
+            self._system_menu(api, hwnd, *_signed_point(msg.lParam))
+            return True, 0
+
         button = self._bar.maximize_button
         on_max = msg.wParam == HTMAXBUTTON
         if kind == WM_NCMOUSEMOVE:
@@ -380,6 +426,28 @@ class NativeFrame:
             if clicked:
                 button.click()
         return True, 0
+
+    def _system_menu(self, api: _Win32, hwnd, x: int, y: int) -> None:
+        """
+        Right-click on the bar: the window's own system menu, at the cursor.
+
+        Windows shows it for a right-click on a caption, and this bar is a
+        caption to Windows (HTCAPTION), but with the real caption gone the
+        menu no longer appeared. Shown and carried out by hand, as Chromium
+        and Windows Terminal do.
+        """
+        menu = api.GetSystemMenu(hwnd, False)
+        if not menu:
+            return
+        for command, on in system_menu_states(
+                bool(api.IsZoomed(hwnd))).items():
+            api.EnableMenuItem(menu, command,
+                               MF_BYCOMMAND | (MF_ENABLED if on
+                                               else MF_GRAYED))
+        command = api.TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON,
+                                     x, y, 0, hwnd, None)
+        if command:
+            api.PostMessageW(hwnd, WM_SYSCOMMAND, command, 0)
 
     def _calc_size(self, api: _Win32, hwnd, wparam, lparam):
         if not wparam:

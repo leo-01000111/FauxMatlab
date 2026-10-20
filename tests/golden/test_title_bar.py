@@ -389,3 +389,31 @@ def test_the_window_title_is_said_once(win):
                                                      QApplication.applicationName())
     assert win.windowTitle() == "Evans — Classical & Modern Control"
     assert win.windowTitle().count("Evans") == 1
+
+
+def test_the_system_menu_is_enabled_like_windows_does():
+    normal = winframe.system_menu_states(maximized=False)
+    assert normal[winframe.SC_MOVE] and normal[winframe.SC_SIZE]
+    assert normal[winframe.SC_MAXIMIZE] and not normal[winframe.SC_RESTORE]
+    full = winframe.system_menu_states(maximized=True)
+    assert full[winframe.SC_RESTORE] and not full[winframe.SC_MAXIMIZE]
+    assert not full[winframe.SC_MOVE] and not full[winframe.SC_SIZE]
+    assert full[winframe.SC_CLOSE] and full[winframe.SC_MINIMIZE]
+
+
+def test_right_click_on_the_caption_opens_the_system_menu(win, monkeypatch):
+    frame = winframe.NativeFrame(win, win.title_bar)
+    frame.enabled = True
+    shown = []
+    monkeypatch.setattr(frame, "_system_menu",
+                        lambda api, hwnd, x, y: shown.append((x, y)))
+    frame._api = object()
+    msg = wintypes.MSG()
+    msg.message = winframe.WM_NCRBUTTONUP
+    msg.wParam = winframe.HTCAPTION
+    msg.lParam = (200 << 16) | 120
+    assert frame.handle(ctypes.addressof(msg)) == (True, 0)
+    assert shown == [(120, 200)]
+    msg.wParam = winframe.HTCLIENT                 # a menu, a button: not ours
+    assert frame.handle(ctypes.addressof(msg)) == (False, 0)
+    assert len(shown) == 1
