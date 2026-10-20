@@ -200,18 +200,47 @@ def test_the_main_window_offers_a_theme_menu(app, recorded):
     arch = CourseArchitecture(G=second_order(K=1.0, zeta=0.5, wn=2.0),
                               K2=unity(), K1=unity(), H=unity())
     win = MainWindow(arch)
+    before = theme.saved_mode()
     try:
         actions = win._theme_actions
         assert set(actions) == set(theme.Mode)
+        current = theme.tokens()
+
+        # "Go back and save work": nothing changes, the old choice stays ticked.
+        win._ask_theme_restart = lambda mode: False
         actions[theme.Mode.NIGHT].trigger()
-        assert theme.tokens() is theme.NIGHT
-        assert actions[theme.Mode.NIGHT].isChecked()
-        assert not actions[theme.Mode.DAY].isChecked()
-        assert theme.NIGHT.ground in recorded.styleSheet()
+        assert theme.tokens() is current
+        assert actions[theme.mode()].isChecked()
+        assert theme.saved_mode() is before
+
+        # "Restart": saved for the next start, applied by relaunching, and the
+        # running window is not restyled in place.
+        launched = []
+        win._ask_theme_restart = lambda mode: True
+        win._start_detached = lambda program, args: launched.append(
+            (program, args)) or True
+        win._restart_quits = []
+        from PySide6.QtWidgets import QApplication
+        quit_calls = []
+        real_quit = QApplication.quit
+        QApplication.quit = lambda *a: quit_calls.append(1)
+        try:
+            actions[theme.Mode.NIGHT].trigger()
+        finally:
+            QApplication.quit = real_quit
+        assert theme.saved_mode() is theme.Mode.NIGHT
+        assert theme.tokens() is current
+        assert launched and quit_calls
     finally:
-        theme_qt.choose(theme.Mode.DAY)       # the menu persisted Night: undo it
+        theme.save_mode(before)
         win.close()
         win.deleteLater()
+
+
+def test_the_os_scheme_does_not_restyle_a_running_app(app, recorded):
+    before = theme.tokens()
+    theme_qt._on_os_scheme_changed()
+    assert theme.tokens() is before
 
 
 def test_plot_colours_follow_a_theme_chosen_before_any_plot():

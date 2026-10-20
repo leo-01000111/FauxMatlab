@@ -267,6 +267,19 @@ def saved_mode() -> Mode:
         return Mode.SYSTEM
 
 
+def save_mode(m: Mode) -> None:
+    """
+    Remember a theme for the next start without switching to it now.
+
+    The menu goes through this and a restart: switching live restyles every
+    widget in place, and dragging a splitter right after that could hang the
+    application.
+    """
+    settings = QSettings()
+    settings.setValue(_SETTINGS_KEY, Mode(m).value)
+    settings.sync()
+
+
 def set_mode(m: Mode, *, persist: bool = True) -> Tokens:
     """
     Switch theme. Updates the current tokens and emits ``changed``; whoever

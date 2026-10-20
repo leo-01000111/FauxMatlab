@@ -570,7 +570,17 @@ def restyle(t: theme.Tokens | None = None) -> None:
         _state["applying"] = False
 
 
+#: Whether a change of the OS light/dark setting restyles the running app.
+#: Off: in System mode the OS scheme is read at start-up, and a change while
+#: Evans runs applies from the next start, the same rule as the Theme menu.
+#: Restyling every live widget in place could leave the window hanging when a
+#: splitter was dragged straight afterwards.
+FOLLOW_OS_LIVE = False
+
+
 def _on_os_scheme_changed(*_ignored) -> None:
+    if not FOLLOW_OS_LIVE:
+        return
     if _state["applying"] or theme.mode() is not theme.Mode.SYSTEM:
         return
     theme.set_mode(theme.Mode.SYSTEM, persist=False)

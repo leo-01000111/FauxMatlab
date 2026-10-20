@@ -34,10 +34,12 @@ turns that off, and everywhere else the caption is the system's own.
 from __future__ import annotations
 
 import json
+import os
+import sys
 from pathlib import Path
 
 import control as ctl
-from PySide6.QtCore import QSettings, Qt, QTimer
+from PySide6.QtCore import QProcess, QSettings, Qt, QTimer
 from PySide6.QtGui import QAction, QActionGroup
 from PySide6.QtWidgets import (
     QApplication,
@@ -68,7 +70,7 @@ from ..core.tf_utils import (
     second_order,
     unity,
 )
-from . import persist, theme, theme_qt, winframe
+from . import persist, theme, winframe
 from .apps import ControlSystemDesigner, LTIViewer, PIDTuner, SnapshotBar
 from .block_editor import BlockEditor
 from .console import ConsolePanel, FigureArea
@@ -754,11 +756,86 @@ class MainWindow(QMainWindow):
             action = QAction(text, self, checkable=True, statusTip=tip)
             action.setChecked(theme.mode() is mode)
             action.triggered.connect(
-                lambda _checked=False, m=mode: theme_qt.choose(m))
+                lambda _checked=False, m=mode: self.choose_theme(m))
             group.addAction(action)
             menu.addAction(action)
             self._theme_actions[mode] = action
         return menu
+
+    def choose_theme(self, mode: theme.Mode) -> bool:
+        """
+        A theme picked from the menu: saved, then applied by a restart.
+
+        The theme is not switched in place any more. Restyling every live
+        widget and then dragging a splitter could hang the window, so the
+        choice goes through a restart, after the user has had the chance to
+        save their work. Returns whether a restart was started.
+        """
+        if mode is theme.mode():
+            return False
+        if not self._ask_theme_restart(mode):
+            self._theme_actions[theme.mode()].setChecked(True)
+            return False
+        theme.save_mode(mode)
+        return self._restart()
+
+    def _ask_theme_restart(self, mode: theme.Mode) -> bool:
+        """True for Restart. A method so tests can answer it."""
+        t = theme.tokens()
+        name = {theme.Mode.SYSTEM: "System", theme.Mode.DAY: "Day",
+                theme.Mode.NIGHT: "Night"}[mode]
+        box = QMessageBox(self)
+        box.setWindowTitle("Change theme")
+        box.setTextFormat(Qt.RichText)
+        # Weight and colour set outright: the variable sign font ignored a
+        # plain <b>, and this is the one phrase the dialog exists to say.
+        box.setText(f"Changing to the {name} theme requires "
+                    f'<span style="font-weight:800; color:{t.signal};">'
+                    f"an app restart</span>.")
+        box.setInformativeText(
+            "Evans will close and open again. Unsaved models, scripts and "
+            "figures are not kept, so save anything you need first.")
+        restart = box.addButton("Restart", QMessageBox.AcceptRole)
+        back = box.addButton("Go back and save work", QMessageBox.RejectRole)
+        restart.setStyleSheet(
+            f"QPushButton {{ background: {t.lamp_go}; color: #ffffff; "
+            f"border: none; padding: 6px 16px; font-weight: 600; }}")
+        back.setStyleSheet(
+            f"QPushButton {{ background: {t.hold}; color: {t.on_hold}; "
+            f"border: none; padding: 6px 16px; font-weight: 600; }}")
+        for button in (restart, back):
+            # The uppercase sign font sets "BACK AND" so tight it reads as
+            # one word; a little more room between words.
+            font = button.font()
+            font.setWordSpacing(4)
+            button.setFont(font)
+        box.setDefaultButton(back)
+        box.setEscapeButton(back)
+        box.exec()
+        return box.clickedButton() is restart
+
+    def _restart(self) -> bool:
+        """Start a new Evans with the same arguments, then close this one."""
+        if getattr(sys, "frozen", False):         # Evans.exe
+            program, args = sys.executable, sys.argv[1:]
+        else:                                     # python app.py / evans
+            program = sys.executable
+            args = [os.path.abspath(sys.argv[0]), *sys.argv[1:]]
+        if not self._start_detached(program, args):
+            QMessageBox.warning(
+                self, "Change theme",
+                "Evans could not start a new window. The theme is saved and "
+                "applies the next time you open Evans.")
+            return False
+        self.close()
+        QApplication.instance().quit()
+        return True
+
+    @staticmethod
+    def _start_detached(program: str, args: list[str]) -> bool:
+        """A method so tests can stop the real relaunch."""
+        ok = QProcess.startDetached(program, args, os.getcwd())
+        return bool(ok[0] if isinstance(ok, tuple) else ok)
 
     def _build_menus(self) -> None:
         mb = self.menuBar()
