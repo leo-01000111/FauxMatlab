@@ -8,9 +8,24 @@ use, CLACO (classical, frequency domain) and DYBAC (modern, state space). Every 
 shows can be traced back to something exact. It is named after Walter R. Evans, who
 invented the root locus.
 
-To use it without Python, download `Evans-windows.zip` from the
-[latest release](https://github.com/leo-01000111/evans/releases/latest), unzip it
-anywhere and run `Evans.exe`. There is nothing else to install.
+## Install
+
+On Windows you don't need Python. Both downloads are on the
+[latest release](https://github.com/leo-01000111/evans/releases/latest) page.
+
+**Installer (recommended).** Download `Evans-Setup-<version>.exe` and run it. It installs
+for your account only, into `%LOCALAPPDATA%\Programs\Evans`, so it doesn't need
+administrator rights. You get a Start-menu entry (a desktop shortcut if you tick the box),
+`.fmdl` models open in Evans when you double-click them, and Evans shows up in
+*Apps & features* so you can uninstall it there. To upgrade, run a newer installer over
+the old one. Uninstalling leaves your settings (theme, layout, recent files) in place.
+
+The installer isn't code-signed yet, so Windows SmartScreen will say "Windows protected
+your PC" the first time you run it. Click **More info**, then **Run anyway**.
+
+**Portable zip.** Download `Evans-windows.zip`, unzip it anywhere (a USB stick works) and
+run `Evans.exe`. Nothing gets installed and nothing is registered with Windows. To remove
+it, delete the folder.
 
 ## Quick start
 
@@ -35,6 +50,7 @@ python app.py
 | check the install (headless self-test; exit code = failures) | `python app.py --check` |
 | run the test suite | `pytest -q` |
 | build the standalone Windows app into `dist/Evans/` | `pyinstaller --clean --noconfirm packaging/evans.spec` |
+| then build the installer into `dist/` (needs [Inno Setup 6](https://jrsoftware.org/isinfo.php)) | `iscc packaging\evans.iss` |
 
 On Linux, PySide6 needs the usual Qt/X11 runtime libraries; the CI workflow
 (`.github/workflows/ci.yml`) lists the exact apt packages. Exporting a live script as a
