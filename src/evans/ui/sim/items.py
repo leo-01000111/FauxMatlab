@@ -514,7 +514,10 @@ def _manhattan(a: QPointF, b: QPointF) -> QPainterPath:
     """Orthogonal route from an output port to an input port."""
     path = QPainterPath(a)
     stub = 18.0
-    if b.x() - a.x() > 2 * stub:
+    # Any wire that goes rightwards takes the direct route, however short:
+    # blocks 30 px apart used to get the feedback detour below, which drew
+    # a loop between two neighbours on the demo model.
+    if b.x() - a.x() > 4.0:
         mid = (a.x() + b.x()) / 2
         path.lineTo(mid, a.y())
         path.lineTo(mid, b.y())

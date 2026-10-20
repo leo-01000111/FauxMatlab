@@ -442,7 +442,9 @@ def test_collapsing_the_palette_hides_it_and_widens_the_canvas(app, shown_tab):
     for _ in range(5):
         app.processEvents()
     assert not tab._palette.isVisible()
-    assert tab._palette_dock.width() <= STRIP_WIDTH + 2
+    # Folded means gone: no strip is left behind to take canvas width.
+    assert not tab._palette_dock.isVisible()
+    assert tab._splitter.sizes()[0] == STRIP_WIDTH == 0
     assert tab._canvas.width() > canvas_before
     assert not tab._palette_action.isChecked()
 
@@ -459,12 +461,18 @@ def test_the_palette_can_be_expanded_again(app, shown_tab):
     assert tab._palette_dock.width() == pytest.approx(width, abs=4)
 
 
-def test_toolbar_action_and_strip_button_both_toggle(app, shown_tab):
+def test_the_blocks_button_is_the_one_toggle(app, shown_tab):
+    from PySide6.QtWidgets import QToolButton
+
     tab = shown_tab
     tab._palette_action.trigger()
     assert not tab.palette_visible
-    tab._palette_dock._button.click()
+    tab._palette_action.trigger()
     assert tab.palette_visible
+    # The « » strip button that duplicated it is gone.
+    assert not [b for b in tab._palette_dock.findChildren(QToolButton)
+                if b.text() in ("«", "»")]
+    assert not hasattr(tab._palette_dock, "_button")
 
 
 def test_the_folded_state_is_remembered(app, shown_tab):

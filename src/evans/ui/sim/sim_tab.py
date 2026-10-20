@@ -419,6 +419,7 @@ class SimTab(QWidget, GuardedPanel):
                 self._splitter.setSizes(
                     [STRIP_WIDTH, sizes[1] + give, sizes[2]])
             else:
+                # A hidden palette reports 0; it gets back its old width.
                 take = max(self._palette_width - sizes[0], 0)
                 self._splitter.setSizes(
                     [sizes[0] + take, max(sizes[1] - take, 0), sizes[2]])
@@ -672,10 +673,12 @@ def course_loop() -> SimModel:
     type stays in the palette for models that want a named view.
     """
     m = SimModel("course loop")
-    m.add("Step", "r", x=-320, y=0, step_time=0.0)
-    m.add("Sum", "e", x=-180, y=0, signs="+-")
-    m.add("PID", "K2", x=-40, y=0, Kp=2.0, Ki=1.0)
-    m.add("TransferFcn", "G", x=120, y=0, num="1", den="1, 1, 0")
+    # 220 px between centres: a block is 110 wide, so every wire has 110 px
+    # of its own and the feedback path a clear run underneath.
+    m.add("Step", "r", x=-330, y=0, step_time=0.0)
+    m.add("Sum", "e", x=-110, y=0, signs="+-")
+    m.add("PID", "K2", x=110, y=0, Kp=2.0, Ki=1.0)
+    m.add("TransferFcn", "G", x=330, y=0, num="1", den="1, 1, 0")
 
     m.connect("r", "e.in1")
     m.connect("e", "K2")

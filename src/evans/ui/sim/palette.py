@@ -9,8 +9,6 @@ from PySide6.QtGui import QBrush, QColor, QDrag
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLineEdit,
-    QSizePolicy,
-    QToolButton,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -99,21 +97,23 @@ class BlockPalette(QWidget):
             self.block_chosen.emit(type_name)
 
 
-#: Width of the strip that stays behind when the palette is folded away.
-STRIP_WIDTH = 22
+#: Width the palette leaves behind when folded away: none. It used to leave
+#: a 22 px strip with a « » button, which did what the toolbar's Blocks
+#: button (Ctrl+B) already does and cost canvas width for it.
+STRIP_WIDTH = 0
 #: The palette's widest, matching what the splitter used to cap it at.
 EXPANDED_MAX = 280
 
 
 class PaletteDock(QWidget):
     """
-    A :class:`BlockPalette` that can be folded down to a thin strip.
+    A :class:`BlockPalette` that folds away completely.
 
     Once the blocks are placed the library is dead weight: it costs a quarter
     of the canvas's width for nothing. Folding the *whole* palette — rather
     than collapsing its categories, which leaves the search box and the tree
-    frame in the way — gives that width back, and the strip that remains is
-    one click from bringing it back.
+    frame in the way — gives that width back. The toolbar's Blocks button,
+    which shows the state as checked or not, brings it back.
     """
 
     toggled = Signal(bool)                 # True when collapsed
@@ -128,14 +128,6 @@ class PaletteDock(QWidget):
         row.setSpacing(0)
         row.addWidget(self.palette, stretch=1)
 
-        self._button = QToolButton()
-        self._button.setAutoRaise(True)
-        self._button.setFixedWidth(STRIP_WIDTH)
-        self._button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
-        self._button.clicked.connect(
-            lambda: self.set_collapsed(not self._collapsed))
-        row.addWidget(self._button)
-
         # A preferred width, not a floor: a fixed minimum here once stopped the
         # whole window being narrowed.
         self.setMinimumWidth(0)
@@ -147,7 +139,7 @@ class PaletteDock(QWidget):
         return self._collapsed
 
     def set_collapsed(self, collapsed: bool) -> None:
-        """Fold or unfold the palette; the strip stays either way."""
+        """Fold the palette away, or bring it back."""
         if collapsed == self._collapsed:
             return
         self._collapsed = collapsed
@@ -156,14 +148,10 @@ class PaletteDock(QWidget):
 
     def _refresh(self) -> None:
         self.palette.setVisible(not self._collapsed)
-        if self._collapsed:
-            self.setMaximumWidth(STRIP_WIDTH)
-            self._button.setText("»")
-            self._button.setToolTip("Show the block palette (Ctrl+B)")
-        else:
-            self.setMaximumWidth(EXPANDED_MAX)
-            self._button.setText("«")
-            self._button.setToolTip("Hide the block palette (Ctrl+B)")
+        # Hidden outright when folded, so the splitter gives the canvas all
+        # of it, handle included.
+        self.setVisible(not self._collapsed)
+        self.setMaximumWidth(STRIP_WIDTH if self._collapsed else EXPANDED_MAX)
 
 
 class _DraggableTree(QTreeWidget):
