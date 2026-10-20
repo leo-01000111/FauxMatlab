@@ -2,6 +2,9 @@
 Evans — a classical and modern control workbench.
 
     evans            open the window          (python app.py from a checkout)
+    evans FILE       open the window with FILE: a .fmdl model on the Model
+                     canvas, a script in the Console (what double-clicking a
+                     file associated with Evans sends)
     evans --check    run the headless self-test and exit
     evans --version  print the version and exit
 
@@ -12,6 +15,7 @@ code is the number of failed checks.
 
 import os
 import sys
+from pathlib import Path
 
 # Force pyqtgraph to use PySide6 BEFORE it (or anything else) loads Qt DLLs.
 # With PyQt5/PyQt6/PySide6 all installed, pyqtgraph defaults to PyQt5 which
@@ -62,6 +66,19 @@ def _claim_taskbar_identity() -> None:
         set_id(APP_USER_MODEL_ID)
     except (AttributeError, OSError):       # very old Windows: keep default
         pass
+
+
+def _file_arguments(argv: list[str]) -> list[Path]:
+    """
+    The files named on the command line, in order.
+
+    Anything starting with ``-`` is an option, ours or Qt's, and is skipped.
+    Pass the arguments after Qt has taken its own (``app.arguments()``), so
+    the value of a Qt option such as ``-style fusion`` is gone too. Whether
+    each file exists is left to the window, which says so in the status bar
+    rather than failing the launch.
+    """
+    return [Path(arg) for arg in argv if arg and not arg.startswith("-")]
 
 
 def main() -> None:
@@ -125,6 +142,10 @@ def main() -> None:
     win = MainWindow(arch)
     win.show()
     win.raise_()
+
+    # `Evans.exe model.fmdl`: the file association, or a drop on the exe.
+    for path in _file_arguments(app.arguments()[1:]):
+        win.open_recent(path)
 
     sys.exit(app.exec())
 

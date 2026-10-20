@@ -113,6 +113,28 @@ jobs:
           path: dist/Evans
           retention-days: 14
 
+      # The installer wraps the same folder that just passed its self-test.
+      # The runner image usually ships Inno Setup; install it if not. The
+      # script reads the version from src/evans/__init__.py itself.
+      - name: Build the installer
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup --no-progress -y
+            if ($LASTEXITCODE -ne 0) { throw "could not install Inno Setup" }
+          }
+          & $iscc packaging/evans.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed (exit $LASTEXITCODE)" }
+          $setup = Get-ChildItem dist/Evans-Setup-*.exe | Select-Object -First 1
+          "SETUP=$($setup.FullName)" >> $env:GITHUB_ENV
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Evans-Setup
+          path: dist/Evans-Setup-*.exe
+          retention-days: 14
+
       - name: Zip the build
         if: startsWith(github.ref, 'refs/tags/')
         shell: pwsh
@@ -124,5 +146,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: >
-          gh release create "${{ github.ref_name }}" Evans-windows.zip
+          gh release create "${{ github.ref_name }}" "$env:SETUP" Evans-windows.zip
           --title "Evans ${{ github.ref_name }}" --generate-notes
