@@ -318,3 +318,59 @@ def test_when_every_engine_fails_html_is_written_and_the_error_shown(
     assert title == "PDF build failed"
     assert "! Undefined control sequence." in text and "noise" not in text
     assert "RuntimeError: boom" in text
+
+
+# ──────────────────────────────────────────────────────────────
+#  Save: the button saves, to the same file, in its own format
+# ──────────────────────────────────────────────────────────────
+
+def test_the_save_button_saves_to_the_file_it_came_from(app, editor, tmp_path):
+    """Qt's clicked(False) used to arrive as the path and the click did nothing."""
+    from evans.console.live import save as save_doc
+
+    path = tmp_path / "lab.mlx"
+    save_doc(LiveDocument([Cell.code("a = 1")]), path)
+    editor.open(path)
+    editor.widget_for(editor.document.cells[0]).editor.setPlainText("a = 2")
+    asked = []
+    editor._ask_save_path = lambda *a: asked.append(a) or ""
+    editor.save_button.click()                     # what the toolbar does
+    app.processEvents()
+    assert not asked, "Save on a file that has a home must not ask where"
+    assert path.exists()
+    assert "a = 2" in "".join(c.source for c in load(path).cells)
+    assert editor.path.suffix == ".mlx"            # it stayed an .mlx
+
+
+def test_saving_a_new_script_goes_to_save_as_with_both_formats(
+        app, editor, tmp_path):
+    editor.set_document(LiveDocument([Cell.code("b = 3")]))
+    seen = []
+
+    def ask(title, default, filters):
+        seen.append(filters)
+        return str(tmp_path / "fresh")             # no extension typed
+
+    editor._ask_save_path = ask
+    written = editor.save()
+    assert "(*.mlx)" in seen[0] and "(*.m)" in seen[0]
+    assert written == tmp_path / "fresh.mlx" and written.exists()
+
+
+def test_mlx_warns_before_dropping_captions_and_can_keep_them_as_m(
+        app, editor, tmp_path):
+    doc = LiveDocument([Cell.code("plot([0 1], [0 1])")])
+    editor.set_document(doc)
+    editor.run_all()
+    _settle(app)
+    cell = editor.document.code_cells()[0]
+    cell.meta(0).caption = "A straight line"
+    choices = []
+    editor._ask_mlx_loss = lambda path: choices.append(path) or "m"
+    written = editor.save(tmp_path / "lines.mlx")
+    assert choices, "saving captions to .mlx must warn first"
+    assert written == tmp_path / "lines.m"
+    assert "A straight line" in written.read_text(encoding="utf-8")
+    editor._ask_mlx_loss = lambda path: "cancel"
+    assert editor.save(tmp_path / "other.mlx") is None
+    assert not (tmp_path / "other.mlx").exists()

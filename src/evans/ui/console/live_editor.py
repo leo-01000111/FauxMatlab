@@ -618,6 +618,9 @@ class LiveScriptEditor(QWidget):
         self.pdf_finished.connect(self._on_pdf_finished)
         QShortcut(QKeySequence("Ctrl+Shift+Return"), self,
                   activated=self.run_all)
+        save = QShortcut(QKeySequence.Save, self)
+        save.setContext(Qt.WidgetWithChildrenShortcut)
+        save.activated.connect(lambda: self.save())
         preview = QShortcut(QKeySequence(PREVIEW_SHORTCUT), self)
         preview.setContext(Qt.WidgetWithChildrenShortcut)
         preview.activated.connect(self.preview_button.toggle)
@@ -643,20 +646,35 @@ class LiveScriptEditor(QWidget):
                self.run_to_here)
         button("Run cell", "Run the selected code cell (Ctrl+Enter)",
                self.run_current)
-        row.addSpacing(12)
+        row.addSpacing(8)   # group gaps: 8 px keeps the row in the 1280 budget
         button("+ Code", "Insert a code cell below the selected one",
                lambda: self.add_cell(CellKind.CODE))
         button("+ Text", "Insert a text cell below the selected one",
                lambda: self.add_cell(CellKind.TEXT))
-        row.addSpacing(12)
+        row.addSpacing(8)
         # Open and Save stay words: this row sets the Live tab's minimum
         # width, and two more icons put the window over its 1280 px budget.
-        button("Open…", "Open a live script (.mlx or .m)", self.open)
-        button("Save…", "Save as a plain-text live script (.m)", self.save)
+        # "Open", not "Open…": the Save split button's arrow took the few
+        # pixels this row had left in the 1280 px budget.
+        button("Open", "Open a live script (.mlx or .m)…",
+               lambda: self.open())
+        # Save is a split button: the click saves to the file it came from,
+        # in its own format; the arrow is Save as…, with either format.
+        self.save_button = QToolButton()
+        self.save_button.setText("Save")
+        self.save_button.setToolTip(
+            "Save to the same file, in its format (Ctrl+S). The arrow: "
+            "Save as… a MATLAB .mlx or a plain-text .m")
+        self.save_button.setPopupMode(QToolButton.MenuButtonPopup)
+        self.save_button.clicked.connect(lambda: self.save())
+        save_menu = QMenu(self.save_button)
+        save_menu.addAction("Save", lambda: self.save())
+        save_menu.addAction("Save as…", lambda: self.save_as())
+        self.save_button.setMenu(save_menu)
+        row.addWidget(self.save_button)
         export = QPushButton("Export")
         iconset.bind(export, "export")
         menu = QMenu(export)
-        menu.addAction("Save as MATLAB .mlx…", self.export_mlx)
         menu.addAction("Export report (LaTeX / PDF)…", self.export_report)
         menu.addAction("Report template…", self.edit_template)
         export.setMenu(menu)
@@ -973,31 +991,93 @@ class LiveScriptEditor(QWidget):
         self.set_document(document)
         return True
 
+    #: Save as… filters, by format. The current file's format comes first.
+    SAVE_FILTERS = {".mlx": "MATLAB live scripts (*.mlx)",
+                    ".m": "Plain-text live scripts (*.m)"}
+
     def save(self, path: str | Path | None = None) -> Path | None:
-        """Save in the native format: a plain-text live script (.m)."""
+        """
+        Save: to ``path`` if given, else to the file this script came from,
+        in that file's own format (.mlx stays .mlx). A script never saved
+        goes to Save as…. Returns the file written, or None.
+
+        The toolbar button used to be connected straight to this method, so
+        Qt's ``clicked(False)`` arrived as the path, looked empty, and the
+        click returned without saving anything.
+        """
+        if isinstance(path, bool):          # a signal's argument, not a path
+            path = None
         self._sync()
         if path is None:
-            default = self.path if self.path and self.path.suffix == ".m" \
-                else Path(self._default_path(".m"))
-            path = self._ask_save_path(
-                "Save live script", str(default),
-                "Plain-text live scripts (*.m);;All files (*)")
+            if self.path is None:
+                return self.save_as()
+            path = self.path
+        return self._write(Path(path))
+
+    def save_as(self, fmt: str | None = None) -> Path | None:
+        """Ask where, offering both formats, starting from the current one."""
+        self._sync()
+        fmt = fmt or (self.path.suffix.lower() if self.path
+                      and self.path.suffix.lower() in self.SAVE_FILTERS
+                      else ".mlx")
+        order = [fmt] + [f for f in self.SAVE_FILTERS if f != fmt]
+        filters = ";;".join(self.SAVE_FILTERS[f] for f in order)
+        path = self._ask_save_path("Save live script as",
+                                   self._default_path(fmt), filters)
         if not path:
             return None
-        written = save(self.document, Path(path))
-        self._show_path(written)
-        return written
+        path = Path(path)
+        if path.suffix.lower() not in self.SAVE_FILTERS:
+            path = path.with_suffix(fmt)
+        return self._write(path)
 
     def export_mlx(self, path: str | Path | None = None) -> Path | None:
-        self._sync()
-        path = path or self._ask_save_path(
-            "Save as MATLAB live script", self._default_path(".mlx"),
-            "MATLAB live scripts (*.mlx)")
-        if not path:
+        """Save as a MATLAB .mlx (kept for scripts and tests that call it)."""
+        if isinstance(path, bool):
+            path = None
+        return self._write(Path(path)) if path else self.save_as(".mlx")
+
+    def _write(self, path: Path) -> Path | None:
+        """Write the file, after warning when .mlx would drop Evans's extras."""
+        if path.suffix.lower() == ".mlx" and self._mlx_would_lose():
+            choice = self._ask_mlx_loss(path)
+            if choice == "cancel":
+                return None
+            if choice == "m":
+                path = path.with_suffix(".m")
+        try:
+            written = save(self.document, path)
+        except OSError as exc:
+            self._inform("Could not save", str(exc), warning=True)
             return None
-        written = save(self.document, Path(path))
         self._show_path(written)
+        self._status.setText(f"Saved {written.name}")
         return written
+
+    def _mlx_would_lose(self) -> bool:
+        """Captions, labels or a report template: things .mlx cannot hold."""
+        if self.document.template is not None:
+            return True
+        return any(not meta.empty for cell in self.document.code_cells()
+                   for meta in getattr(cell, "figure_meta", []))
+
+    def _ask_mlx_loss(self, path: Path) -> str:
+        """'mlx', 'm' or 'cancel'. A method so tests can answer it."""
+        box = QMessageBox(self)
+        box.setWindowTitle("Save as .mlx")
+        box.setText(f"{path.name} is a MATLAB live script, which has no place "
+                    f"for figure captions, figure labels or this script's "
+                    f"report template. Saving it as .mlx drops them.")
+        box.setInformativeText("A plain-text .m live script keeps everything "
+                               "and opens in Evans the same way.")
+        as_mlx = box.addButton("Save as .mlx anyway", QMessageBox.AcceptRole)
+        as_m = box.addButton("Save as .m instead", QMessageBox.ActionRole)
+        box.addButton(QMessageBox.Cancel)
+        box.setDefaultButton(as_m)
+        box.exec()
+        clicked = box.clickedButton()
+        return "mlx" if clicked is as_mlx else "m" if clicked is as_m \
+            else "cancel"
 
     def export_report(self, path: str | Path | None = None) -> Path | None:
         """
