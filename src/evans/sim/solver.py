@@ -38,8 +38,91 @@ from .compile import CompiledModel, compile_model, describe_algebraic_loop
 from .model import PortRef, SimModel
 
 #: Solvers offered in the UI. Fixed-step ones are handled separately.
-VARIABLE_STEP = {"RK45", "LSODA", "Radau", "BDF", "DOP853"}
-FIXED_STEP = {"ode1", "ode4"}
+VARIABLE_STEP = {"RK45", "RK23", "LSODA", "Radau", "BDF", "DOP853"}
+FIXED_STEP = {"ode1", "ode2", "ode3", "ode4", "ode5"}
+
+# ── Simulink solver names ──
+# People arrive with Simulink's names in their fingers, so those are accepted
+# and mapped onto the nearest scipy method. Where the two are not the same
+# algorithm the comment says so; the result's ``solver`` field records both
+# names, so a run never claims to be something it was not.
+SIMULINK_ALIASES = {
+    # Dormand–Prince 4(5): the same pair of formulas as ode45.
+    "ode45": "RK45",
+    # Bogacki–Shampine 2(3): the same pair as ode23.
+    "ode23": "RK23",
+    # ode113 is a variable-order Adams–Bashforth–Moulton PECE code. DOP853 is
+    # a high-order *Runge–Kutta* method, so it is not the equivalent, however
+    # well it does at tight tolerances. LSODA is: in its non-stiff mode it
+    # runs a variable-order Adams method, and it switches to BDF by itself if
+    # the problem turns out to be stiff — a superset of what ode113 does.
+    "ode113": "LSODA",
+    # Variable-order NDF/BDF; scipy's BDF is the same family (it also uses
+    # the NDF modification).
+    "ode15s": "BDF",
+    # ode23s is a modified Rosenbrock (linearly implicit) method. scipy has no
+    # Rosenbrock solver; Radau IIA is a fully implicit Runge–Kutta method of
+    # order 5. It shares what matters about ode23s — one-step, L-stable, a
+    # Jacobian used every step — so it is the closest, just more accurate and
+    # more costly per step.
+    "ode23s": "Radau",
+    # ode23t is the trapezoidal rule: implicit, one-step, A-stable, for
+    # moderately stiff problems. Radau is the implicit one-step method scipy
+    # has. It damps very fast oscillations where the trapezoidal rule keeps
+    # them, so a lightly damped stiff mode can look more settled than in
+    # Simulink — still closer than BDF, a multistep method whose low orders
+    # damp harder.
+    "ode23t": "Radau",
+}
+
+#: Simulink names refused outright, with the reason shown to the user.
+UNSUPPORTED = {
+    "ode15i": ("ode15i solves fully implicit DAEs, f(t, y, y') = 0, and "
+               "Evans models are explicit ODEs (y' = f(t, y)), so there is "
+               "nothing for it to do here. Use ode15s for a stiff model."),
+}
+
+
+def solver_choices() -> list[str]:
+    """Every name ``simulate`` accepts, Simulink's first."""
+    return [*SIMULINK_ALIASES, *sorted(FIXED_STEP), *sorted(VARIABLE_STEP)]
+
+
+def resolve_solver(name: str) -> tuple[str, bool]:
+    """
+    Map a solver name onto ``(canonical, is_fixed)``.
+
+    ``canonical`` is the name the integrator dispatches on: a scipy method for
+    variable step, ``ode1``–``ode5`` for fixed step. The lookup ignores case,
+    because ``ODE45`` and ``rk45`` are obviously meant, and refusing them
+    would only teach people to retype.
+
+    An unknown name used to reach ``solve_ivp`` as ``method=…`` and fail with
+    scipy's ValueError — or, in a model without continuous states, never
+    reach it and run silently. Every name is now checked here, first.
+    """
+    key = str(name).strip()
+    lowered = key.lower()
+    if lowered in SIMULINK_ALIASES:
+        return SIMULINK_ALIASES[lowered], False
+    if lowered in FIXED_STEP:
+        return lowered, True
+    for variable in VARIABLE_STEP:
+        if lowered == variable.lower():
+            return variable, False
+    if lowered in UNSUPPORTED:
+        raise SimulationError(UNSUPPORTED[lowered])
+    raise SimulationError(
+        f"unknown solver {key!r}. Choose one of: "
+        f"{', '.join(solver_choices())}.")
+
+
+def _solver_label(requested: str, canonical: str) -> str:
+    """``"ode45 (RK45)"`` for an alias, just the name otherwise."""
+    asked = str(requested).strip().lower()
+    if asked in SIMULINK_ALIASES:
+        return f"{asked} ({canonical})"
+    return canonical
 
 
 class SimulationError(RuntimeError):
@@ -225,10 +308,15 @@ def simulate(model: SimModel | CompiledModel,
     """
     Run a model from ``t = 0`` to ``t_end``.
 
-    ``solver`` is one of ``RK45``, ``LSODA``, ``Radau``, ``BDF``, ``DOP853``
-    (variable step) or ``ode1``/``ode4`` (fixed step, for comparing against
-    hardware that will run a fixed-step controller).
+    ``solver`` is one of ``RK45``, ``RK23``, ``LSODA``, ``Radau``, ``BDF``,
+    ``DOP853`` (variable step), ``ode1``–``ode5`` (fixed step, for comparing
+    against hardware that will run a fixed-step controller), or a Simulink
+    name — ``ode45``, ``ode23``, ``ode113``, ``ode15s``, ``ode23s``,
+    ``ode23t`` — mapped by :func:`resolve_solver`.
     """
+    requested = solver
+    solver, _ = resolve_solver(solver)
+    solver_label = _solver_label(requested, solver)
     compiled = model if isinstance(model, CompiledModel) else compile_model(model)
     if t_end <= 0:
         raise SimulationError(f"t_end must be positive, got {t_end}")
@@ -320,7 +408,7 @@ def simulate(model: SimModel | CompiledModel,
             progress(t_now / t_end)
 
     result = _assemble(compiled, times, states, logged, run_warnings,
-                       solver, n_steps)
+                       solver_label, n_steps)
     return result
 
 
@@ -435,10 +523,60 @@ def _build_events(ev, compiled, xd):
     return [make(i) for i in range(count)]
 
 
-def _fixed_step(rhs, x, t0, t1, method, max_step, inner, record, xd):
+# ── fixed-step methods ──
+# Each explicit Runge–Kutta method is its Butcher tableau: nodes ``c``, the
+# strictly lower-triangular stage matrix ``A`` (row i is how stage i mixes the
+# earlier slopes), and weights ``b``. One loop below runs all of them, so a
+# new method is a new table entry, not a new branch.
+#
+# ode3 and ode5 are the higher-order halves of Simulink's embedded pairs
+# (Bogacki–Shampine 3(2), Dormand–Prince 5(4)). Both pairs are FSAL: their
+# last stage is the slope at the new point, used only for the error estimate,
+# so with a fixed step it is dropped and the weights stop one stage early.
+_TABLEAUS: dict[str, tuple[list[float], list[list[float]], list[float]]] = {
+    "ode1": ([0.0], [[]], [1.0]),                                   # Euler
+    "ode2": ([0.0, 1.0], [[], [1.0]], [1 / 2, 1 / 2]),              # Heun
+    "ode3": ([0.0, 1 / 2, 3 / 4],                        # Bogacki–Shampine
+             [[], [1 / 2], [0.0, 3 / 4]],
+             [2 / 9, 1 / 3, 4 / 9]),
+    "ode4": ([0.0, 1 / 2, 1 / 2, 1.0],                        # classical RK4
+             [[], [1 / 2], [0.0, 1 / 2], [0.0, 0.0, 1.0]],
+             [1 / 6, 1 / 3, 1 / 3, 1 / 6]),
+    "ode5": ([0.0, 1 / 5, 3 / 10, 4 / 5, 8 / 9, 1.0],           # Dormand–Prince
+             [[],
+              [1 / 5],
+              [3 / 40, 9 / 40],
+              [44 / 45, -56 / 15, 32 / 9],
+              [19372 / 6561, -25360 / 2187, 64448 / 6561, -212 / 729],
+              [9017 / 3168, -355 / 33, 46732 / 5247, 49 / 176,
+               -5103 / 18656]],
+             [35 / 384, 0.0, 500 / 1113, 125 / 192, -2187 / 6784, 11 / 84]),
+}
+
+
+def _rk_step(rhs, t, x, h, tableau):
+    """One explicit Runge–Kutta step of size ``h`` from ``(t, x)``."""
+    c, a, b = tableau
+    k: list[np.ndarray] = []
+    for ci, row in zip(c, a):
+        xi = x
+        for aij, kj in zip(row, k):
+            if aij:
+                xi = xi + (h * aij) * kj
+        k.append(rhs(t + ci * h, xi))
+    incr = np.zeros_like(x, dtype=float)
+    for bi, ki in zip(b, k):
+        if bi:
+            incr = incr + bi * ki
+    return x + h * incr
+
+
+def _fixed_step(rhs, x, t0, t1, method, max_step, inner, record, xd,
+                on_major_step=None):
     """
-    Euler (``ode1``) or classical RK4 (``ode4``), stepping exactly onto each
-    output point.
+    A fixed-step explicit Runge–Kutta method — ``ode1`` (Euler) to ``ode5``
+    (Dormand–Prince), see ``_TABLEAUS`` — stepping exactly onto each output
+    point.
 
     The step grid is built by subdividing each interval *between output times*
     rather than marching a uniform ``h`` and recording whatever state happens
@@ -446,7 +584,14 @@ def _fixed_step(rhs, x, t0, t1, method, max_step, inner, record, xd):
     instead introduces an O(h) sampling error that swamps the integrator's own
     accuracy — it made RK4 converge at first order, indistinguishable from
     Euler.
+
+    ``on_major_step(t, x)``, when given, is called after every completed step
+    with the new time and state. It is the hook for work that belongs between
+    steps rather than inside one — latching a mode at a zero crossing is what
+    it exists for — and on the last substep of an interval it gets the exact
+    output instant, not the drifted sum of the substeps.
     """
+    tableau = _TABLEAUS[method]
     h_max = max_step if max_step else (t1 - t0)
     edges = [t0, *[float(v) for v in inner if t0 < v < t1], t1]
     t, x_now = t0, x.copy()
@@ -457,17 +602,11 @@ def _fixed_step(rhs, x, t0, t1, method, max_step, inner, record, xd):
             continue
         n = max(int(np.ceil(span / max(h_max, 1e-15))), 1)
         h = span / n
-        for _ in range(n):
-            if method == "ode1":
-                x_now = x_now + h * rhs(t, x_now)
-            else:
-                k1 = rhs(t, x_now)
-                k2 = rhs(t + h / 2, x_now + h / 2 * k1)
-                k3 = rhs(t + h / 2, x_now + h / 2 * k2)
-                k4 = rhs(t + h, x_now + h * k3)
-                x_now = x_now + h / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
-            t += h
-        t = edge                                # kill accumulated drift
+        for i in range(n):
+            x_now = _rk_step(rhs, t, x_now, h, tableau)
+            t = edge if i == n - 1 else t + h   # kill accumulated drift
+            if on_major_step is not None:
+                on_major_step(t, x_now)
         if edge < t1:
             record(float(edge), x_now, xd)
     return x_now
