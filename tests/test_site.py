@@ -55,7 +55,19 @@ def test_hand_written_pages_link_only_to_pages_that_exist(tmp_path):
     pages = {file for file, *_ in build.PAGES}
     for file in pages:
         text = (tmp_path / file).read_text(encoding="utf-8")
-        for target in re.findall(r'href="([a-z]+\.html)', text):
+        for target in re.findall(r'href="([a-z-]+\.html)', text):
             assert target in pages, f"{file} links to missing {target}"
         for asset in re.findall(r'(?:src|href)="(assets/[^"#]+)"', text):
             assert (tmp_path / asset).is_file(), f"{file} uses missing {asset}"
+
+
+def test_patch_notes_cover_the_current_version_and_carry_the_issue_form(tmp_path):
+    from evans import __version__
+
+    build = _build_module()
+    build.build(tmp_path)
+    notes = (tmp_path / "patch-notes.html").read_text(encoding="utf-8")
+    assert f'id="v{__version__}"' in notes, "no patch notes for this version"
+    assert 'action="https://formspree.io/f/xppqgygl"' in notes
+    for file in ("index.html", "install.html"):
+        assert 'href="patch-notes.html#report"' in (tmp_path / file).read_text(encoding="utf-8")

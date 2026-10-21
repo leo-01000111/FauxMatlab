@@ -64,6 +64,9 @@ PAGES = [
      "lessons_page"),
     ("matlab.html", "MATLAB scripts", "MATLAB compatibility",
      "What a MATLAB script or live script can use in Evans.", "matlab.html"),
+    ("patch-notes.html", "Patch notes", "Patch notes",
+     "Every change to Evans since the first build, and a form to report an issue.",
+     "patch-notes.html"),
 ]
 
 TEMPLATE = """<!DOCTYPE html>
@@ -112,7 +115,7 @@ TEMPLATE = """<!DOCTYPE html>
     <div role="separator"><svg class="hp-marking" width="100%" height="28" aria-hidden="true" focusable="false"><defs><pattern id="hp-mk-evans" width="36" height="28" patternUnits="userSpaceOnUse"><rect class="edge" x="0.5" y="11.5" width="20" height="5" fill="currentColor" stroke-width="1"></rect></pattern></defs><rect x="0" y="0" width="100%" height="28" fill="url(#hp-mk-evans)"></rect></svg></div>
     <div class="site-footer__row">
       <p class="site-footer__copy data">Evans {version} · MIT licence · © Leon Górecki</p>
-      <p class="site-footer__links data"><a href="{repo}">GitHub</a> · <a href="{releases}">Releases</a> · <a href="{repo}/issues">Issues</a> · <a href="{home}">leongorecki.eu</a></p>
+      <p class="site-footer__links data"><a href="{repo}">GitHub</a> · <a href="{releases}">Releases</a> · <a href="patch-notes.html">Patch notes</a> · <a href="patch-notes.html#report">Report an issue</a> ·<a href="{home}">leongorecki.eu</a></p>
     </div>
     <p class="site-footer__note">MATLAB and Simulink are registered trademarks of The MathWorks, Inc. Evans is an independent project, not affiliated with or endorsed by MathWorks.</p>
   </footer>

@@ -18,7 +18,7 @@ That writes `site/_build/`. Open `site/_build/index.html`, or serve the folder w
 | --- | --- |
 | `build.py` | The page template, the navigation and the build |
 | `reference.py` | The generated pages: console commands, simulator blocks, lessons |
-| `pages/` | The hand-written pages (home, install, tour, MATLAB compatibility) as HTML fragments |
+| `pages/` | The hand-written pages (home, install, tour, MATLAB compatibility, patch notes) as HTML fragments |
 | `assets/` | `site.css`, plus `tokens.css`, `components.css`, `theme.js` and the fonts copied from the website's repository |
 
 The command, block and lesson pages are read out of the code (`api._GROUPS` and the
@@ -30,3 +30,8 @@ block and lesson is on it. In the hand-written pages, `@@version@@`, `@@n_comman
 
 `.github/workflows/pages.yml` builds the site on every push and pull request and deploys it
 from `main`, which needs the repository's Pages source set to **GitHub Actions**.
+
+The patch notes (`pages/patch-notes.html`) are written by hand: add a section with
+`id="v<version>"` when the version changes, or `tests/test_site.py` fails. Its issue form
+posts to Formspree (`assets/issue-form.js` sends it in the background and shows the answer
+under the button; without JavaScript it is a plain form post).

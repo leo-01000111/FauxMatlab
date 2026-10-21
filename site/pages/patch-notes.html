@@ -1,0 +1,227 @@
+    <section class="proj-hero">
+      <p class="label">Patch notes · v@@version@@</p>
+      <h1>What changed, and what's wrong</h1>
+      <p class="lede">Every change to Evans since the first commit, newest first. If something is broken, missing or confusing, tell me with the form at the bottom of the page; it goes straight to my inbox.</p>
+      <div class="cta">
+        <a class="hp-btn hp-btn--primary" href="#report"><span>Report an issue</span><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><g transform="rotate(90 12 12)" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="square" stroke-linejoin="miter"><path d="M3.5 12H18.5"></path><path d="M12 5.2L18.8 12L12 18.8"></path></g></svg></a>
+        <a class="hp-btn hp-btn--ghost" href="@@releases@@"><span>Latest release</span><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><g transform="rotate(315 12 12)" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="square" stroke-linejoin="miter"><path d="M3.5 12H18.5"></path><path d="M12 5.2L18.8 12L12 18.8"></path></g></svg></a>
+      </div>
+    </section>
+
+    <section class="proj-section">
+      <div class="card">
+        <h2>Versions</h2>
+        <dl class="ref-index">
+          <dt>Next</dt><dd><a href="#next">since 0.9.3</a></dd>
+          <dt>Released</dt><dd><a href="#v0.9.3">0.9.3</a><a href="#v0.9.2">0.9.2</a><a href="#v0.9.1">0.9.1</a><a href="#v0.9.0">0.9.0</a></dd>
+          <dt>Before 0.9</dt><dd><a href="#fauxmatlab">as FauxMatlab, Sep to Oct 2026</a></dd>
+          <dt>Feedback</dt><dd><a href="#report">report an issue</a></dd>
+        </dl>
+      </div>
+    </section>
+
+    <section class="proj-section" id="next">
+      <div class="card prose notes">
+        <h2>Next release · not yet released</h2>
+        <p class="muted">In the source on GitHub now, and in the next Windows build.</p>
+        <h3>New</h3>
+        <ul>
+          <li><strong>Completion everywhere you type code or LaTeX.</strong> One popup in the console prompt, the Script editor and both kinds of live-script cell. It opens as you type and narrows as you go; Up and Down pick, Tab or Enter accept, Escape closes, Ctrl+Space opens it on demand. Each row shows the call form (<code>step(sys, t)</code>, <code>lqr(A, B, Q, R)</code>) and a one-line description.</li>
+          <li>Candidates come from your workspace variables and their attributes, the console's commands, the MATLAB runtime's built-ins, Python keywords and the <code>.m</code> files in the folder.</li>
+          <li>In LaTeX text cells it completes commands after a backslash, closes <code>\begin{…}</code> with its <code>\end</code>, and offers your figure labels after <code>\ref{</code> and <code>\eqref{</code>.</li>
+          <li>Accepting a function inserts its brackets with the cursor between them, or after them if it takes no arguments.</li>
+          <li><strong>Cedric</strong>, the shrimp at the foot of the workspace rail, opens this documentation when clicked. So does Help ▸ Documentation (<kbd>F1</kbd>).</li>
+        </ul>
+        <h3>Fixed</h3>
+        <ul>
+          <li>Save on the Live tab did nothing. It now saves back to the file the script came from, in that file's format, so an <code>.mlx</code> stays an <code>.mlx</code>. A new script goes to Save as, which offers <code>.mlx</code> and <code>.m</code>, and warns before an <code>.mlx</code> would drop figure captions, labels or the report template.</li>
+          <li>The demo model drew loops between neighbouring blocks because they sat too close together. Forward wires now go straight, and the demo blocks are spaced out.</li>
+          <li>Folding the block palette left a thin strip behind with a second Blocks button. It now folds away completely.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="proj-section" id="v0.9.3">
+      <div class="card prose notes">
+        <h2>0.9.3 · 20 October 2026</h2>
+        <h3>New</h3>
+        <ul>
+          <li><strong>PDF preview for live scripts.</strong> Preview (<kbd>Ctrl+Alt+P</kbd>, next to Export) splits the Live tab: the script on the left, its PDF on the right. It rebuilds in the background when you run; the last good PDF and your scroll position stay put, and a failed build shows TeX's error line.</li>
+          <li><strong>Report templates.</strong> Page, font, title page, header and footer, numbering, whether code and output are shown, and extra preamble, taken from the script, your settings or the default. The preview and Export report both use it.</li>
+          <li>Every figure in a report is a proper figure with a caption and a label you can <code>\ref</code>. Text cells are LaTeX in the report, and the Markdown marks and <code>{{expr}}</code> placeholders still work.</li>
+        </ul>
+        <h3>Fixed</h3>
+        <ul>
+          <li><code>sound()</code> and <code>soundsc()</code> play in the Windows build. They used to say no audio output was available.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="proj-section" id="v0.9.2">
+      <div class="card prose notes">
+        <h2>0.9.2 · 20 October 2026</h2>
+        <h3>Fixed</h3>
+        <ul>
+          <li>Wiring on the Model canvas works again, by clicking port then port or by dragging. The preview wire was catching the second click.</li>
+          <li>Right-click on a wire or block selects it first, so Delete wire and Delete block act on the thing under the cursor.</li>
+          <li>Changing the theme could leave the window not responding. A theme change now asks to restart Evans, and applies on the next start.</li>
+          <li>Right-clicking the empty title bar opens the Windows system menu again.</li>
+        </ul>
+        <h3>Changed</h3>
+        <ul>
+          <li>The Model toolbar puts Open and Save first, so they never disappear when the window is narrow. Fit, Align and Space moved to a small panel in the canvas's corner, and hidden entries sit behind a labelled <strong>More</strong> button.</li>
+          <li>The Edit-model panel always shows the whole loop, fitted; it no longer zooms, pans or scrolls.</li>
+          <li>On this site, the Download button downloads the installer on Windows and points to running from source on macOS and Linux.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="proj-section" id="v0.9.1">
+      <div class="card prose notes">
+        <h2>0.9.1 · 20 October 2026</h2>
+        <h3>New</h3>
+        <ul>
+          <li><strong>A Windows installer</strong> beside the portable zip. It installs for your account only, needs no administrator rights, adds a Start-menu shortcut and an uninstaller, and opens <code>.fmdl</code> models on double-click.</li>
+          <li><strong>One title bar on Windows</strong>, with the menus, the window title and the window buttons in it. Snap, edge resizing and Snap Layouts work as usual. View ▸ Integrated title bar turns it off.</li>
+          <li><strong>This site</strong>, with the command, block and lesson pages generated from the code so they cannot drift from it.</li>
+          <li>Evans opens files given on the command line: models on the Model canvas, scripts in the Console.</li>
+          <li>The taskbar shows Evans's own icon, even when run from source.</li>
+        </ul>
+        <h3>Fixed</h3>
+        <ul>
+          <li><code>bandwidth(sys)</code> measured a closed loop around <code>sys</code> rather than <code>sys</code> itself. It now matches MATLAB, including the optional dB drop.</li>
+          <li>A maximised window leaves a 2-pixel gap at an auto-hiding taskbar, so the taskbar can still be revealed.</li>
+          <li>Windows 10 lost the top edge of the window frame; the title bar draws it now.</li>
+          <li>The window title no longer repeats itself.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="proj-section" id="v0.9.0">
+      <div class="card prose notes">
+        <h2>0.9.0 · 20 October 2026 · first public release</h2>
+        <p>The first release under the name Evans, after Walter R. Evans, who invented the root locus. Before this it was a private project called FauxMatlab; models and settings saved under that name still open.</p>
+        <h3>New since the last private build</h3>
+        <ul>
+          <li><strong>The Holding Point icon set</strong> on the workspace rail, the Model toolbar, the run controls, the figure controls and the pane picker, drawn in the current theme.</li>
+          <li>Middle-button drag pans the Model canvas, as in Simulink.</li>
+          <li>MIT licence, and a quick start in the README from clone to running app.</li>
+        </ul>
+        <h3>Fixed</h3>
+        <ul>
+          <li>Re-running a script numbers its figures from 1 again, as MATLAB does after <code>close all</code>. Split keeps the newer figure on the right, and Move swaps the two shown figures instead of emptying a side.</li>
+          <li>On the Live tab the Console's figure strip is hidden, since live scripts draw their figures inline; "Open in window" pops one out larger.</li>
+          <li>PDF report export works with MiKTeX. It also looks in MiKTeX's and TeX Live's default folders, tries the next engine if one fails, and shows TeX's own error line.</li>
+          <li>Several fixes for current numpy, scipy and PySide6, including SVG figure export and algebraic loops that the solver had wrongly reported as not converging.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="proj-section" id="fauxmatlab">
+      <div class="card prose notes">
+        <h2>Before 0.9 · as FauxMatlab</h2>
+        <p class="muted">Private builds, September and October 2026. Everything here is part of 0.9.0.</p>
+
+        <h3>16 October · MATLAB scripts and live scripts</h3>
+        <ul>
+          <li><strong>The Script tab runs MATLAB as written</strong>: matrices, 1-based indexing with <code>end</code>, ranges, control flow, local functions, cells, structs, command syntax and <code>[y, t] = step(G)</code>. Errors name the MATLAB line. The language is detected, and a selector beside Run overrides it.</li>
+          <li>Function files on the path, <code>cd</code> and <code>addpath</code>; <code>fft</code>, filters, <code>freqz</code>, <code>findpeaks</code>; <code>audioread</code>, <code>audiowrite</code> and <code>sound</code>; <code>ode45</code> and friends, <code>fzero</code>, <code>fminsearch</code>; <code>save</code> and <code>load</code>; <code>subplot</code>, <code>stem</code>, <code>stairs</code>, <code>bar</code> and histograms.</li>
+          <li><strong>The Live tab</strong>: cells of MATLAB and formatted text with <code>$math$</code>, opening and saving <code>.mlx</code> and MATLAB's plain-text live <code>.m</code>, with LaTeX, PDF and HTML report export.</li>
+          <li><strong>A real script editor</strong>: highlighting, line numbers, click-to-toggle breakpoints, <code>%%</code> sections run with <kbd>Ctrl+Enter</kbd>, Stop (<kbd>Shift+F5</kbd>), and a debugger with continue, step and step in (<kbd>F5</kbd>, <kbd>F10</kbd>, <kbd>F11</kbd>) whose paused scope you can inspect at the <code>K&gt;&gt;</code> prompt.</li>
+          <li>A command history panel kept across sessions, File ▸ Open recent, and figure export as PNG, SVG or CSV of the plotted data.</li>
+          <li><code>step(G, t)</code>, <code>bode(G, w)</code> and the rest accept MATLAB's time and frequency grids, and ignore line-style strings like <code>'r--'</code>.</li>
+          <li>Figures can be undocked or shown two side by side; running a script clears the previous run first, offering to save unsaved figures.</li>
+        </ul>
+
+        <h3>3 to 5 October · Day and Night</h3>
+        <ul>
+          <li>The app takes on the design system of leongorecki.eu: concrete Day and asphalt Night themes, Archivo and Martian Mono, square frames, sign-yellow highlights. Status is always a lamp beside a word, never colour alone.</li>
+          <li>Plots, block diagrams and the simulator canvas follow the theme, and plots already on screen recolour when it changes.</li>
+        </ul>
+
+        <h3>24 to 30 September · panes and the simulator</h3>
+        <ul>
+          <li>Analyse is panes only: the Time and Frequency workflows became pane kinds, and each pane keeps its source (G, L, T or S).</li>
+          <li>Plots got a hover readout everywhere, phase ticks at multiples of 45° and 90°, margins and peaks marked by default, and classical Bode asymptotes.</li>
+          <li>The minimum-phase split <code>G = G_allpass · G_mp</code>, as a pane and as <code>mpsplit</code> at the prompt.</li>
+          <li>Simulator: alignment snapping with guides, Tune… on PID blocks against the linearised loop, and a collapsible block palette (<kbd>Ctrl+B</kbd>).</li>
+          <li>The PID Tuner plots the plant on its own beside the loops, and tunes in the real loop including the sensor and feedforward.</li>
+        </ul>
+
+        <h3>23 to 24 September · the interface rework</h3>
+        <ul>
+          <li>Eight tabs became three workspaces on a rail: <strong>Analyse</strong>, <strong>Model</strong> and <strong>Console</strong> (<kbd>Ctrl+1</kbd>, <kbd>Ctrl+2</kbd>, <kbd>Ctrl+3</kbd>). Switching keeps everything as you left it.</li>
+          <li>A pane grid of one, two or four views of the same live model, opening on step, Bode, root locus and metrics.</li>
+          <li>A context bar showing the loaded model, factorised, with its stability and margins. Undefined quantities show a dash with the reason, not <code>nan</code>.</li>
+          <li>The LTI Viewer, Control System Designer and PID Tuner became docks beside the analysis instead of separate windows.</li>
+          <li>A block inspector beside the diagram, bigger port targets, rubber-band selection, align and distribute.</li>
+          <li>The window fits a 1280×720 screen (it used to need 2038 pixels of width) and remembers its layout. View ▸ Reset layout starts over.</li>
+          <li>Fixed: clicking one port and then another did nothing on the simulator canvas; only dragging worked.</li>
+        </ul>
+
+        <h3>23 September · the first build</h3>
+        <ul>
+          <li>Classical and modern control over one live model, a block-diagram simulator, and a MATLAB-shaped command window with a workspace browser and docked figures.</li>
+          <li>Closed loops solved exactly from the block diagram, so hidden modes survive and the stability report can name them. Discrete blocks sample and hold.</li>
+          <li>The LTI Viewer, a Control System Designer where you drag a pole along the root locus, and a PID Tuner that solves for exact margins and says why when it cannot.</li>
+          <li>Lessons, one per course chapter, whose claims are measured from the loaded model and checked by the test suite.</li>
+          <li><code>--check</code>, a headless self-test, and the first Windows build.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="proj-section" id="report">
+      <div class="card prose">
+        <h2>Report an issue</h2>
+        <p>A bug, a MATLAB script that does not run, a missing command, or an idea. The more of the steps you can give, the faster it gets fixed. Leave an email if you would like a reply. You can also <a href="@@repo@@/issues/new">open an issue on GitHub</a>.</p>
+        <form class="issue-form" action="https://formspree.io/f/xppqgygl" method="POST" data-issue-form>
+          <input type="hidden" name="_subject" value="Evans issue report" />
+          <div class="issue-form__row">
+            <label class="issue-form__field">
+              <span class="issue-form__label">Kind</span>
+              <select name="kind" required>
+                <option value="Bug">Something is broken</option>
+                <option value="MATLAB compatibility">A MATLAB script or command does not work</option>
+                <option value="Feature request">An idea or a missing feature</option>
+                <option value="Docs">These docs are wrong or unclear</option>
+                <option value="Other">Something else</option>
+              </select>
+            </label>
+            <label class="issue-form__field">
+              <span class="issue-form__label">Evans version</span>
+              <input type="text" name="version" value="@@version@@" autocomplete="off" />
+            </label>
+            <label class="issue-form__field">
+              <span class="issue-form__label">Running on</span>
+              <select name="platform">
+                <option>Windows, installer</option>
+                <option>Windows, portable zip</option>
+                <option>Windows, from source</option>
+                <option>macOS, from source</option>
+                <option>Linux, from source</option>
+                <option>Other</option>
+              </select>
+            </label>
+          </div>
+          <label class="issue-form__field">
+            <span class="issue-form__label">Summary</span>
+            <input type="text" name="summary" required maxlength="140" placeholder="bode(G) draws nothing when G has a pole at zero" />
+          </label>
+          <label class="issue-form__field">
+            <span class="issue-form__label">What happened</span>
+            <textarea name="details" rows="7" required placeholder="What you did, what you expected, and what happened instead. Paste the script or the error if there is one."></textarea>
+          </label>
+          <label class="issue-form__field">
+            <span class="issue-form__label">Email <span class="muted">(optional, for a reply)</span></span>
+            <input type="email" name="email" autocomplete="email" />
+          </label>
+          <input type="text" name="_gotcha" class="issue-form__trap" tabindex="-1" autocomplete="off" aria-hidden="true" />
+          <div class="issue-form__foot">
+            <button class="hp-btn hp-btn--primary" type="submit"><span>Send report</span></button>
+            <p class="issue-form__status" role="status" aria-live="polite"></p>
+          </div>
+        </form>
+        <p class="small muted">Reports are sent by email through Formspree.</p>
+      </div>
+    </section>
+    <script src="assets/issue-form.js" defer></script>
