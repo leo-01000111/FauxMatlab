@@ -116,6 +116,19 @@ td.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; whit
 .skip-link { position: absolute; left: 8px; top: -60px; background: var(--plate); color: var(--on-plate); padding: 8px 12px; z-index: 10; }
 .skip-link:focus { top: 8px; }
 
+/* ——— Install: one column per system ——— */
+.os-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-4); align-items: stretch; }
+.os-grid .card h2 + h3 { margin-top: var(--space-2); }
+.os-grid .card h3 { font-size: 1.1rem; }
+/* A column is too narrow to scroll a command sideways in: wrap it instead.
+   Only the display wraps; copying still gives the command as written. */
+.os-grid pre { font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Three columns need about 300 px each. Below that the systems stack: a
+   two-column step would leave the third alone on its row. */
+@media (max-width: 1060px) {
+  .os-grid { grid-template-columns: 1fr; }
+}
 @media (max-width: 860px) {
   .hero-top, .shot-pair { grid-template-columns: 1fr; }
 }
