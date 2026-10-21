@@ -164,7 +164,9 @@ The ch5 2-DOF diagram is the spine of the course and must stay one click away. B
 saved `Model` file that the generic engine loads — not a hard-coded class. Prevents the
 codebase from forking into "fixed" and "free-form" halves.
 
-**D4 — MATLAB compatibility is aliases, not a language.**
+**D4 — MATLAB compatibility is aliases, not a language.** *(Superseded: the Script tab
+gained a MATLAB translator in Phase 8, and since 0.9.6 the console prompt runs MATLAB
+through it too — MATLAB is the default language everywhere, Python the fallback.)*
 No `.m` parser. A Python REPL with a preloaded namespace where `tf`, `step`, `bode`, `margin`,
 `lqr`, `place`, `c2d`, `stepinfo` behave MATLAB-shaped. Course snippets mostly transcribe;
 nobody maintains a parser. If `.m` support is wanted later it's an additive Phase 8.

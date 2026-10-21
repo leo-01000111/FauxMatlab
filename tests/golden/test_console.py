@@ -283,7 +283,7 @@ def test_caret_is_explained_at_run_time(it):
 
 def test_unknown_name_suggests_help(it):
     result = _run_expect_error(it, "nosuchthing")
-    assert "help_fm()" in result.hint
+    assert "help_fm" in result.hint
 
 
 def test_a_case_slip_is_named(it):
@@ -336,7 +336,7 @@ def test_completion_walks_attributes(it):
 # ──────────────────────────────────────────────────────────────
 
 def test_a_script_runs_statement_by_statement(it):
-    results = it.run_script("a = 1\nb = a + 1\nb * 2")
+    results = it.run_script("a = 1\nb = a + 1\nb * 2", "python")
     assert len(results) == 3
     assert results[-1].value == 4
 
@@ -351,3 +351,105 @@ def test_a_script_stops_at_the_failing_statement(it):
     assert results[1].error
     assert it.namespace["a"] == 1
     assert "c" not in it.namespace
+
+
+# ──────────────────────────────────────────────────────────────
+#  The prompt speaks MATLAB
+# ──────────────────────────────────────────────────────────────
+
+def _command(interpreter, *lines):
+    results = [interpreter.command(line) for line in lines]
+    failed = [r for r in results if r.error]
+    assert not failed, f"{failed[0].source!r} → {failed[0].error}"
+    return results[-1]
+
+
+def test_the_prompt_reads_a_matlab_matrix(it):
+    result = _command(it, "K = 1", "T = 10", "sys = tf(K, [T 1])")
+    assert "sys =" in result.output
+    np.testing.assert_allclose(it.namespace["sys"].den[0][0], [10, 1])
+
+
+def test_the_prompt_uses_matlab_powers_and_indexing(it):
+    _command(it, "G = 1/(s^2 + 1);", "x = [1 -2 3];")
+    assert _command(it, "x(end)").output.strip() == "ans = 3"
+    np.testing.assert_allclose(np.sort(np.abs(it.namespace["G"].poles())),
+                               [1, 1])
+
+
+def test_a_bare_variable_echoes_under_its_own_name(it):
+    _command(it, "K = 4;")
+    assert _command(it, "K").output.strip() == "K = 4"
+    assert "ans" not in it.namespace
+
+
+def test_a_semicolon_silences_the_prompt(it):
+    assert _command(it, "y = 2;").output == ""
+
+
+def test_a_matlab_loop_runs_on_one_line(it):
+    assert _command(it, "for k = 1:3, disp(k), end").output.split() == [
+        "1", "2", "3"]
+
+
+@pytest.mark.parametrize("line", [
+    "import math", "y = 2**3", "def f(x): return x", "x = [10, 20]; x[0]",
+])
+def test_python_still_runs_at_the_prompt(it, line):
+    assert it.command(line).ok
+
+
+def test_an_unknown_name_is_reported_the_matlab_way(it):
+    result = it.command("nonesuch")
+    assert result.error == ("Error: Unrecognized function or variable "
+                            "'nonesuch'.")
+
+
+def test_help_fm_prints_at_the_prompt(it):
+    output = _command(it, "help_fm").output
+    assert "Build" in output and not output.startswith("ans")
+
+
+@pytest.mark.parametrize("source, expected", [
+    ("for k = 1:3", True),
+    ("if x > 0\n  y = 1", True),
+    ("A = [1 2", True),
+    ("for k = 1:3\n  disp(k)\nend", False),
+    ("x = 1", False),
+    ("x = ", False),
+])
+def test_an_open_block_waits_for_its_end(source, expected):
+    from evans.console.matlab import incomplete
+    assert incomplete(source) is expected
+
+
+@pytest.fixture(scope="module")
+def app():
+    pytest.importorskip("PySide6", reason="Qt not available")
+    from PySide6.QtWidgets import QApplication
+    return QApplication.instance() or QApplication([])
+
+
+def test_the_widget_collects_a_block_until_end(app, sink):
+    from evans.ui.console.console_widget import ConsoleWidget
+
+    widget = ConsoleWidget(Interpreter())
+    for line in ("total = 0;", "for k = 1:4", "total = total + k;"):
+        widget._submit(line)
+    assert "total" in widget.interpreter.namespace
+    assert widget.interpreter.namespace["total"] == 0
+    widget._submit("end")
+    assert widget.interpreter.namespace["total"] == 10
+    widget.deleteLater()
+
+
+def test_escape_drops_an_unfinished_block(app, sink):
+    from evans.ui.console.console_widget import PROMPT, ConsoleWidget
+
+    widget = ConsoleWidget(Interpreter())
+    widget._submit("for k = 1:3")
+    widget._cancel()
+    assert widget._prompt.text() == PROMPT
+    widget._submit("z = 5;")
+    assert widget.interpreter.namespace["z"] == 5
+    widget.deleteLater()

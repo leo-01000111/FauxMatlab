@@ -45,12 +45,12 @@ K₂(s) = 2 · (s + 0.5) / s     ● stable    PM 60.0°   GM 11.9 dB   [Edit mo
       <div class="card prose">
         <h2>The command window</h2>
         <p>@@n_commands@@ MATLAB-shaped commands in ten groups (<code>tf</code>, <code>feedback</code>, <code>step</code>, <code>bode</code>, <code>margin</code>, <code>stepinfo</code>, <code>rlocus</code>, <code>lqr</code>, <code>place</code>, <code>c2d</code>, <code>pidtune</code> and more), with a workspace browser, history, tab completion and a script editor. The <a href="commands.html">command reference</a> lists every one.</p>
-        <p><code>s</code> is the Laplace variable, so <code>G = 1/(s**2 + 2*s + 1)</code> works. The console shares live references with the GUI: setting a block at the prompt changes what every pane analyses.</p>
-<pre><code>G = 1/(s**2 + 2*s + 1)
+        <p><code>s</code> is the Laplace variable, so <code>G = 1/(s^2 + 2*s + 1)</code> works. The console shares live references with the GUI: setting a block at the prompt changes what every pane analyses.</p>
+<pre><code>G = 1/(s^2 + 2*s + 1)
 T = feedback(G, 1)
 stepinfo(T)
 bode(G)</code></pre>
-        <p>The prompt is Python: commas between list elements, 0-based indexing, <code>**</code> for powers. The Script tab is where MATLAB runs as written.</p>
+        <p>The prompt speaks MATLAB, like the Script tab: <code>[1 2 1]</code>, <code>^</code> for powers, 1-based indexing. Python still runs there for whoever types it.</p>
       </div>
     </section>
 

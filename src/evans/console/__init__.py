@@ -1,11 +1,13 @@
 """
-The command window: a Python REPL wearing MATLAB's vocabulary.
+The command window: MATLAB, translated to Python as it is typed.
 
-Decision D4 from the plan: **aliases, not a language.** There is no ``.m``
-parser. What there is instead is a namespace where ``tf``, ``step``, ``bode``,
-``margin``, ``lqr``, ``c2d`` and ``stepinfo`` behave the way a MATLAB user
-expects, so a snippet from the course transcribes almost directly and nobody
-has to maintain a parser for a language this tool does not need to speak.
+A namespace where ``tf``, ``step``, ``bode``, ``margin``, ``lqr``, ``c2d`` and
+``stepinfo`` behave the way a MATLAB user expects (:mod:`.api`), and a
+translator (:mod:`.matlab`) that reads MATLAB's syntax into calls on it — so a
+snippet from the course runs as written, at the prompt or in a script.
+
+Decision D4 once kept the prompt Python. MATLAB is now the default
+everywhere; Python still runs wherever it is typed.
 """
 
 from .api import build_namespace, describe_api

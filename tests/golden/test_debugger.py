@@ -308,7 +308,7 @@ def test_a_breakpoint_pauses_steps_and_continues(panel):
     def at_breakpoint():
         log["line"] = panel.editor.code.current_line
         log["prompt"] = panel.console._prompt.text()
-        log["paused_a"] = panel.execute("a").value
+        log["paused_a"] = panel.execute("a").output.strip()
         log["step_enabled"] = panel.editor._step_button.isEnabled()
         panel._debug(STEP)
         _later(50, after_step)
@@ -324,7 +324,7 @@ def test_a_breakpoint_pauses_steps_and_continues(panel):
 
     assert log["line"] == 2
     assert log["prompt"].startswith("K>>")
-    assert log["paused_a"] == 1
+    assert log["paused_a"] == "a = 1"
     assert log["step_enabled"]
     assert log["stepped_to"] == 3 and log["b"] == 2
     assert panel.interpreter.namespace["d"] == 6

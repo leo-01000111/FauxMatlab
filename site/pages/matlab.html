@@ -1,7 +1,7 @@
     <section class="proj-hero">
       <p class="label">MATLAB compatibility</p>
       <h1>Running MATLAB scripts</h1>
-      <p class="lede">The console prompt is Python, but the Script tab runs MATLAB scripts as written, and the Live tab opens MATLAB live scripts. This page lists what a script can use. It covers what two control courses need, not the whole MATLAB language.</p>
+      <p class="lede">The console prompt and the Script tab run MATLAB as written, and the Live tab opens MATLAB live scripts. This page lists what MATLAB code can use. It covers what two control courses need, not the whole MATLAB language.</p>
     </section>
 
     <section class="proj-section" id="language">
@@ -58,7 +58,8 @@
     <section class="proj-section" id="prompt">
       <div class="card prose">
         <h2>At the prompt</h2>
-        <p>Lines typed at the console prompt are Python. The command names are MATLAB's, so a snippet usually needs only commas added: <code>G = tf([1], [1, 2, 1])</code>. Powers are <code>**</code>, indexing is 0-based, and <code>s</code> is the Laplace variable.</p>
+        <p>Lines typed at the console prompt are MATLAB, read by the same translator as a script: <code>sys = tf(K, [T 1])</code>, <code>s^2</code> and <code>x(end)</code> work as written, and <code>s</code> is the Laplace variable. A <code>for</code>, <code>if</code> or <code>while</code> stays open until its <code>end</code> (Escape drops it).</p>
+        <p>Python still works at the prompt. A line with <code>import</code>, <code>def</code>, <code>**</code> or a block's <code>:</code> runs as Python, and so does a line only Python can read, such as <code>x[0]</code>.</p>
       </div>
     </section>
 

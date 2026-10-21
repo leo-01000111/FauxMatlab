@@ -146,10 +146,10 @@ def test_the_console_and_the_tabs_share_one_architecture(app, win):
 
 
 def test_an_error_is_shown_without_stopping_the_session(app, win):
-    result = win._console.execute("1/0")
+    result = win._console.execute("undefined_thing + 1")
     _settle(app)
     assert result.error
-    assert "ZeroDivisionError" in win._console.console._transcript.toPlainText()
+    assert "Unrecognized function or variable 'undefined_thing'" in         win._console.console._transcript.toPlainText()
     assert win._console.execute("ok = 1").ok
 
 

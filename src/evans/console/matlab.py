@@ -1,11 +1,12 @@
 """
 MATLAB scripts, translated to Python.
 =====================================
-Decision D4 kept the *console* Python: a prompt is typed line by line, and
-silently guessing at ``[1 -2]`` there would make a dialect that works until
-it doesn't. A pasted course script is different — it is already written, it
-is valid MATLAB, and asking someone to hand-convert forty lines before they
-can run them is the dead end D4 warned about. So the Script tab translates.
+MATLAB is the app's language: the console prompt and the Script tab both
+run what is typed through this translator. (Decision D4 once kept the prompt
+Python, for fear of guessing at ``[1 -2]``; but the lexer below reads that
+by MATLAB's own spacing rule, so there is nothing to guess.) Python still
+runs — :func:`plainly_python` spots it at the prompt, and
+:func:`looks_like_matlab` in a script.
 
 This module is the front half: a lexer and a recursive-descent parser for the
 part of MATLAB that control-course scripts use, emitting Python that calls the
@@ -135,12 +136,58 @@ def looks_like_matlab(source: str) -> bool:
     python = sum(bool(p.search(source)) for p in _PYTHON_MARKERS)
     if matlab != python:
         return matlab > python
+    # A tie is MATLAB's, the app's language — unless only Python reads it.
+    try:
+        translate(source)
+        return True
+    except MatlabSyntaxError:
+        return not _parses_as_python(source)
+
+
+#: Spellings MATLAB has no use for — a line with one is meant as Python.
+_PYTHON_ONLY = (
+    re.compile(r"^\s*(def|import|from|class|elif|with|lambda|async|await)\b",
+               re.M),
+    re.compile(r"^\s*(if|for|while|else|try|except|finally)\b.*:\s*(#.*)?$",
+               re.M),
+    re.compile(r"\*\*"),
+    re.compile(r"\bprint\s*\("),
+)
+
+
+def plainly_python(source: str) -> bool:
+    """
+    Whether a prompt line is Python rather than MATLAB.
+
+    The prompt speaks MATLAB, but Python still works there for whoever
+    types it: a line that parses as Python and uses something only Python
+    has — ``import``, ``def``, a block's ``:``, ``**`` — runs as Python.
+    """
+    return any(p.search(source) for p in _PYTHON_ONLY) \
+        and _parses_as_python(source)
+
+
+def incomplete(source: str) -> bool:
+    """
+    Whether ``source`` is the start of a MATLAB statement still being typed:
+    a block not yet closed with ``end``, or a bracket not yet closed. The
+    prompt keeps collecting lines until it is whole.
+    """
+    try:
+        translate(source)
+    except MatlabSyntaxError as exc:
+        return "never closed" in exc.message \
+            or exc.message.startswith("unclosed")
+    return False
+
+
+def _parses_as_python(source: str) -> bool:
     import ast
     try:
         ast.parse(source)
-        return False
-    except SyntaxError:
         return True
+    except SyntaxError:
+        return False
 
 
 # ──────────────────────────────────────────────────────────────
@@ -1307,6 +1354,13 @@ class _Emitter:
                           s.line)
             else:
                 self._put(i, f"{_py_name(e.name)}", s.line)
+            return
+        if isinstance(e, _Name):
+            # Assigned before this script (at the prompt, say) or a function:
+            # only the runtime knows which, and so whether it echoes as
+            # ``x = …`` or runs and echoes ``ans = …``.
+            self._put(i, f"{_RT}.bare({e.name!r}, globals(), locals(), "
+                         f"{s.echo})", s.line)
             return
         self._put(i, f"{_RT}.statement({self.expr(e, nargout=0)}, "
                      f"{s.echo})", s.line)

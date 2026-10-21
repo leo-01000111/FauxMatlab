@@ -6,10 +6,13 @@ a continuation line. Completions pop up as a name is typed (Up/Down pick,
 Tab or Return accept, Escape closes — ↑/↓ are the popup's while it shows);
 Tab completes on demand, Ctrl+Space lists everything that fits.
 
+What is typed is MATLAB (Python still runs; see ``Interpreter.command``).
+
 The input is a single line by default rather than a free-form editor, because
 a REPL's value is that Return means "run this now". Multi-line blocks are
-still possible — Shift+Return extends the buffer, and a line ending in ``:``
-does so automatically — but the common case stays one keystroke.
+still possible — Shift+Return extends the buffer; a MATLAB ``for`` or ``if``
+keeps it open until its ``end``, a Python line ending in ``:`` until the body
+is entered; Escape drops it — but the common case stays one keystroke.
 """
 
 from __future__ import annotations
@@ -31,6 +34,7 @@ from PySide6.QtWidgets import (
 )
 
 from ...console.interpreter import Interpreter, Result
+from ...console.matlab import incomplete
 from .. import theme
 from ..code.completion import code_request, completion_candidates
 from ..code.popup import CompletionController
@@ -50,6 +54,8 @@ class _InputLine(QLineEdit):
     complete = Signal()
     #: Ctrl+C with nothing selected.
     interrupt = Signal()
+    #: Escape, which drops an unfinished block.
+    cancelled = Signal()
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         # While the completion popup shows, its controller (an event filter)
@@ -73,6 +79,9 @@ class _InputLine(QLineEdit):
             return
         if key == Qt.Key_Tab:
             self.complete.emit()
+            return
+        if key == Qt.Key_Escape:
+            self.cancelled.emit()
             return
         super().keyPressEvent(event)
 
@@ -139,12 +148,13 @@ class ConsoleWidget(QWidget):
         self._input = _InputLine()
         self._input.setFont(theme.data_font(10))
         self._input.setPlaceholderText(
-            "G = tf([1], [1, 2, 1])       — help_fm() lists the commands")
+            "G = tf(1, [1 2 1])       — help_fm lists the commands")
         self._input.submitted.connect(self._submit)
         self._input.continued.connect(self._extend)
         self._input.history_move.connect(self._recall)
         self._input.complete.connect(self._complete)
         self._input.interrupt.connect(self._interrupt)
+        self._input.cancelled.connect(self._cancel)
         self._completer = CompletionController(self._input, self.request)
         row.addWidget(self._input, stretch=1)
         # Sized by its label, like the workspace's "Clear all": a pixel cap
@@ -234,30 +244,40 @@ class ConsoleWidget(QWidget):
         if self.busy:
             self._busy_note()
             return
+        source = "\n".join(self._pending + [text])
+        # A MATLAB block runs once its 'end' arrives, a bracket once it
+        # closes; a Python block opener (a trailing ':') waits for its body.
+        if incomplete(source) or (not self._pending
+                                  and text.rstrip().endswith(":")):
+            self._extend(text)
+            return
+        echoed = bool(self._pending)
+        if echoed:
+            self._echo(CONTINUATION + text, "prompt")
         self._input.clear()
-        if self._pending:
-            self._pending.append(text)
-            source = "\n".join(self._pending)
-            self._pending = []
-            self._prompt.setText(DEBUG_PROMPT if self.interpreter.tracer.paused
-                                 else PROMPT)
-        else:
-            source = text
-            # A block opener would fail on its own, so keep collecting.
-            if text.rstrip().endswith(":"):
-                self._extend(text)
-                return
-        self.execute(source)
+        self._end_block()
+        self.execute(source, echoed=echoed)
 
     def _extend(self, text: str) -> None:
+        self._echo((CONTINUATION if self._pending else self._prompt.text())
+                   + text, "prompt")
         self._pending.append(text)
         self._input.clear()
         self._prompt.setText(CONTINUATION)
-        self._echo("\n".join(
-            (PROMPT if i == 0 else CONTINUATION) + line
-            for i, line in enumerate(self._pending)), "prompt")
 
-    def execute(self, source: str) -> Result:
+    def _end_block(self) -> None:
+        self._pending = []
+        self._prompt.setText(DEBUG_PROMPT if self.interpreter.tracer.paused
+                             else PROMPT)
+
+    def _cancel(self) -> None:
+        """Escape: drop the lines of an unfinished block."""
+        if self._pending:
+            self._end_block()
+            self._input.clear()
+            self.note("(block cancelled)")
+
+    def execute(self, source: str, *, echoed: bool = False) -> Result:
         """
         Run a command and show what it produced.
 
@@ -269,11 +289,13 @@ class ConsoleWidget(QWidget):
             self._busy_note()
             return Result(source, error="Busy: something is already running.")
         paused = self.interpreter.tracer.paused is not None
-        if not self._pending:
-            self._echo((DEBUG_PROMPT if paused else PROMPT) + source,
-                       "prompt")
+        if not echoed:
+            first = DEBUG_PROMPT if paused else PROMPT
+            self._echo("\n".join(
+                (CONTINUATION if i else first) + line
+                for i, line in enumerate(source.splitlines())), "prompt")
         with self.running():
-            result = self.interpreter.run(source)
+            result = self.interpreter.command(source)
         shown = result.display()
         if shown:
             self._echo(shown, "error" if result.error else "output")
@@ -345,8 +367,8 @@ class ConsoleWidget(QWidget):
 
     def _banner(self) -> None:
         self._echo(
-            "Evans console — Python with MATLAB's vocabulary.\n"
-            "help_fm() lists the commands.  's' is the Laplace variable.\n",
+            "Evans console — MATLAB. (Python works here too.)\n"
+            "help_fm lists the commands.  's' is the Laplace variable.\n",
             "note")
 
     # ── history and completion ──────────────────────────────────

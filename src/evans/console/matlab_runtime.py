@@ -1137,6 +1137,23 @@ class Runtime:
         else:
             print(f"{name} = {text}")
 
+    def bare(self, name: str, glob: dict, loc: dict, echo: bool) -> None:
+        """
+        A name alone as a statement. A variable shows itself, ``x = 5``, as
+        in MATLAB; a function runs and its result becomes ``ans``.
+        """
+        target = self.lookup(name, glob, loc)
+        scope = loc if name in loc else glob
+        if not _is_function(target) and scope.get(name) is target \
+                and target is not self.base.get(name, object()):
+            if echo:
+                self.show(name, target)
+            return
+        if _is_function(target):
+            self.statement(self.call(target, (), nargout=0), echo)
+        else:
+            self.statement(target, echo)
+
     def statement(self, value, echo: bool) -> None:
         if value is None:
             return

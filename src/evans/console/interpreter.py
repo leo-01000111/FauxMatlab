@@ -7,17 +7,16 @@ happened: printed output, the value of a trailing expression, or a traceback.
 Deliberately separate from any widget, so the same engine runs the console,
 the script editor and the tests.
 
-MATLAB habits that are tolerated
---------------------------------
+The prompt speaks MATLAB: :meth:`Interpreter.command` translates what is
+typed, as the Script tab translates a script. Python still runs — a line only
+Python means or only Python can read goes to :meth:`Interpreter.run`, which
+is plain Python with two MATLAB habits tolerated:
+
 * ``%`` as a comment — rewritten to ``#`` when the line is not valid Python.
 * A trailing ``;`` — stripped, and taken to mean "do not echo the value",
   exactly as MATLAB uses it.
-* ``ans`` — bound to the last unassigned result.
 
-Habits that are **not** silently accepted are the ones where guessing would
-change the meaning: ``[1 2 3]`` without commas, ``^`` for powers, ``end`` in
-an index. Each produces a message saying what to write instead. Quietly
-rewriting those would make the console a dialect that works until it doesn't.
+``ans`` is bound to the last unassigned result either way.
 """
 
 from __future__ import annotations
@@ -166,6 +165,50 @@ class Interpreter:
         result.output = buffer.getvalue()
         return result
 
+    def command(self, source: str) -> Result:
+        """
+        Run what was typed at the prompt — MATLAB, as the Script tab runs it.
+
+        Python still works: a line that is plainly Python (``import``,
+        ``def``, ``**``), or that only Python can read (``x[0]``), runs as
+        Python through :meth:`run`. What neither reads is reported in the
+        language it looks like.
+        """
+        from .matlab import (
+            MatlabSyntaxError,
+            looks_like_matlab,
+            plainly_python,
+            translate,
+        )
+        source = source.rstrip()
+        if not source.strip():
+            return Result(source)
+        if plainly_python(source):
+            return self.run(source)
+        try:
+            chunks = translate(source)
+        except MatlabSyntaxError as exc:
+            if _parses(self._prepare(source)[0]) \
+                    or not looks_like_matlab(source):
+                return self.run(source)
+            self.history.append(source)
+            multi = "\n" in source
+            return Result(source, error="Error: " + (str(exc) if multi
+                                                     else exc.message),
+                          line=exc.line)
+        self.history.append(source)
+        results: list[Result] = []
+        with self.tracer.active(self.namespace):
+            self._run_matlab(source, None, results.append, False,
+                             chunks=chunks, prompt=True)
+        merged = Result(source)
+        merged.output = "".join(r.output for r in results)
+        for r in results:
+            if r.error:
+                merged.error, merged.hint, merged.line = r.error, r.hint, \
+                    r.line
+        return merged
+
     def drain_output(self) -> str:
         """
         What the statement now running has printed so far, taken out of its
@@ -242,12 +285,19 @@ class Interpreter:
             return self._run_matlab(source, folder, on_result, debuggable)
 
     def _run_matlab(self, source: str, folder: str | None, on_result,
-                    debuggable: bool) -> list[Result]:
+                    debuggable: bool, *, chunks=None,
+                    prompt: bool = False) -> list[Result]:
+        """
+        ``chunks`` is the translation when the caller has one already;
+        ``prompt`` marks a typed command: it runs in the paused scope while
+        the debugger holds one, and is already in the history.
+        """
         from .matlab import MatlabSyntaxError, translate
         from .matlab_runtime import ScriptReturn
 
         try:
-            chunks = translate(source)
+            if chunks is None:
+                chunks = translate(source)
         except MatlabSyntaxError as exc:
             lines = source.splitlines()
             text = lines[exc.line - 1].strip() if 0 < exc.line <= len(
@@ -265,18 +315,26 @@ class Interpreter:
         previous = set_figure_sink(lambda spec: runtime.figures.collect(spec))
         line_maps: dict[str, list[int]] = {}
         results: list[Result] = []
+        paused = self.tracer.paused if prompt else None
+        glob = paused.frame.f_globals if paused else self.namespace
+        loc = paused.scope if paused else glob
 
         def done(result: Result) -> None:
             results.append(result)
             if on_result is not None:
                 on_result(result)
 
+        def where(line: int) -> str:
+            # One typed line needs no line number; a script or block does.
+            return "Error: " if prompt and "\n" not in source \
+                else f"Error in line {line}: "
+
         try:
             for k, chunk in enumerate(chunks):
                 filename = f"<matlab:{k}>"
                 line_maps[filename] = chunk.lines
                 result = Result(chunk.matlab)
-                if not chunk.function:
+                if not chunk.function and not prompt:
                     self.history.append(chunk.matlab)
                 buffer = io.StringIO()
                 self._buffers.append(buffer)
@@ -287,7 +345,7 @@ class Interpreter:
                                       quiet=chunk.function)
                     with self.tracer.active(self.namespace), \
                             redirect_stdout(buffer), redirect_stderr(buffer):
-                        exec(code, self.namespace)
+                        exec(code, glob, loc)
                 except ScriptReturn:
                     result.output = buffer.getvalue()
                     done(result)
@@ -310,8 +368,7 @@ class Interpreter:
                 except BaseException as exc:            # noqa: BLE001
                     result.output = buffer.getvalue()
                     line = _matlab_line(exc, line_maps) or chunk.first
-                    result.error = (f"Error in line {line}: "
-                                    f"{_matlab_message(exc)}")
+                    result.error = where(line) + _matlab_message(exc)
                     result.line = line
                     if not _is_matlab_error(exc):
                         result.hint = _runtime_hint(exc, self.namespace)
@@ -319,6 +376,8 @@ class Interpreter:
                     break
                 finally:
                     self._buffers.remove(buffer)
+                    if paused is not None and loc is not glob:
+                        write_back(paused.frame)
                 result.output = buffer.getvalue()
                 if not chunk.function:
                     done(result)
@@ -481,7 +540,7 @@ def _runtime_hint(exc: BaseException, namespace: dict[str, Any]) -> str:
                      if n.lower() == name.lower() and n != name]
             if close:
                 return f"  → did you mean '{close[0]}'? Names are case-sensitive."
-            return (f"  → '{name}' is not defined. help_fm() lists the "
+            return (f"  → '{name}' is not defined. help_fm lists the "
                     f"available commands.")
     if isinstance(exc, TypeError):
         message = str(exc)

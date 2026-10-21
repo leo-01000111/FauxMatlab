@@ -126,10 +126,11 @@ def test_python_scripts_offer_python_keywords_and_builtins(app, interp):
     assert "end" not in _names(code_request("en", "python", interp), 3)
 
 
-def test_the_console_offers_python_and_matlab_vocabulary(app, interp):
+def test_the_console_offers_matlab_keywords_and_python_builtins(app, interp):
     names = _names(code_request("lin", "console", interp))
     assert "linspace" in names
-    assert "lambda" in _names(code_request("lam", "console", interp))
+    assert "otherwise" in _names(code_request("othe", "console", interp))
+    assert "print" in _names(code_request("pri", "console", interp))
 
 
 def test_attributes_of_workspace_objects(app, interp):

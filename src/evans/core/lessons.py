@@ -192,7 +192,7 @@ def _ch2_satellite() -> Lesson:
                   expected=1.0, tol=1e-6,
                   why="s² + 1 = 0"),
         ),
-        console=("G = 1/s**2", "T = feedback(G, 1)", "pole(T)", "step(T)"),
+        console=("G = 1/s^2", "T = feedback(G, 1)", "pole(T)", "step(T)"),
     )
 
 
@@ -492,7 +492,7 @@ def _ch6_margins() -> Lesson:
                   expected=1.0, mode="at_most", tol=0.0,
                   why="‖S‖∞ ≥ 1 whenever the loop has relative degree ≥ 1"),
         ),
-        console=("L = 2/(s+1)**3", "margin(L)", "allmargin(L)", "nyquist(L)"),
+        console=("L = 2/(s+1)^3", "margin(L)", "allmargin(L)", "nyquist(L)"),
     )
 
 
@@ -612,7 +612,7 @@ def _ch8_ziegler_nichols() -> Lesson:
                   _zn_phase_margin, expected=45.0, mode="at_most", tol=0.0,
                   why="compare with the 60° the PID Tuner defaults to"),
         ),
-        console=("G = 1/(s+1)**3", "zn(G, 'ultimate', 'PID')",
+        console=("G = 1/(s+1)^3", "zn(G, 'ultimate', 'PID')",
                  "C = pidtune(G, 'pid')", "C.tuning.describe()"),
     )
 

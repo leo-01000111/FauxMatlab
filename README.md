@@ -117,10 +117,11 @@ the left half-plane, G_allpass = ñ⁺/ñ⁻ carries all the extra phase lag at 
 Sixty MATLAB-shaped commands in ten groups (`tf`, `feedback`, `step`, `bode`, `margin`,
 `stepinfo`, `rlocus`, `lqr`, `place`, `c2d`, `pidtune` and more), with a workspace browser,
 history, tab completion and a script editor. `s` is the Laplace variable, so
-`G = 1/(s**2 + 2*s + 1)` works. The console shares live references with the GUI: setting
+`G = 1/(s^2 + 2*s + 1)` works. The console shares live references with the GUI: setting
 a block at the prompt changes what every pane analyses.
 
-The prompt is Python, but the Script tab runs MATLAB scripts as written. Paste a `.m` file
+The prompt and the Script tab both run MATLAB as written; Python still works at the prompt
+(a line with `import`, `def` or `**` runs as Python). Paste a `.m` file into the Script tab
 and it translates `[1 -2 3]` matrices, `^` and `'`, 1-based indexing with `end`, `a:b:c`,
 `if`/`for`/`while`/`switch`/`try` blocks, local functions, cells, structs and struct
 arrays, `hold on`/`grid on`/`close all`, and `[y, t] = step(G)`, which returns MATLAB's
@@ -267,7 +268,7 @@ a crossover above the plant's phase budget is impossible for it.
 pytest
 ```
 
-1364 tests, plus `ruff check .`. Most are golden tests: analytic values worked out by hand
+1383 tests, plus `ruff check .`. Most are golden tests: analytic values worked out by hand
 or by an independent route, rather than snapshots of whatever the code printed first. The
 numeric signal solver and the symbolic one check each other, and `python-control` is a
 third opinion.

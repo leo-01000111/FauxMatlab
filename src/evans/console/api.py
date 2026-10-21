@@ -7,13 +7,11 @@ version behaves — including the small things that make transcription work:
 ``margin`` returns ``(Gm, Pm, Wcg, Wcp)`` with ``Gm`` in absolute units,
 ``damp`` prints a table, and the plotting commands draw instead of returning.
 
-What this is not
-----------------
-Not a MATLAB interpreter. There is no ``.m`` parser, no ``end`` keyword, no
-1-based indexing — the language is Python. The names are a vocabulary, so that
-``G = tf([1],[1 2 1])`` needs only its commas added rather than a rewrite.
-That was decision D4, taken because a half-working parser is worse than an
-honest Python prompt.
+The language
+------------
+These are Python functions. MATLAB syntax — ``[1 2 1]``, ``s^2``, ``x(end)``
+— is read by the translator in :mod:`.matlab`, which the console and the
+Script tab both run; Python reaches the same names directly.
 """
 
 from __future__ import annotations
@@ -46,7 +44,7 @@ def tf(num, den=None, dt=None):
     Transfer function. ``tf([1], [1, 2, 1])``, or ``tf('s')`` for the variable.
 
     ``tf('s')`` returns the Laplace variable so an expression can be written
-    the way it is written on paper: ``G = 1/(s**2 + 2*s + 1)``.
+    the way it is written on paper: ``G = 1/(s^2 + 2*s + 1)``.
     """
     if isinstance(num, str):
         if num.strip() == "s":
@@ -888,7 +886,7 @@ def build_namespace(extra: dict[str, Any] | None = None) -> dict[str, Any]:
         "eye": np.eye, "diag": np.diag, "sqrt": np.sqrt, "exp": np.exp,
         "abs": np.abs, "real": np.real, "imag": np.imag,
         "roots": np.roots, "poly": np.poly, "conv": np.convolve,
-        "help_fm": describe_api,
+        "help_fm": help_fm,
     }
     for names in _GROUPS.values():
         for name in names:
@@ -904,19 +902,24 @@ def command_names() -> set[str]:
     return set(build_namespace())
 
 
+def help_fm() -> None:
+    """Print the console's commands, grouped."""
+    print(describe_api())
+
+
 def describe_api() -> str:
-    """The help text ``help_fm()`` prints."""
-    lines = ["Evans console — MATLAB-shaped commands over Python.", ""]
+    """The help text ``help_fm`` prints."""
+    lines = ["Evans console — MATLAB, with these commands.", ""]
     for group, names in _GROUPS.items():
         lines.append(f"  {group:12s} {'  '.join(names)}")
     lines += [
         "",
-        "  's' is the Laplace variable:  G = 1/(s**2 + 2*s + 1)",
+        "  's' is the Laplace variable:  G = 1/(s^2 + 2*s + 1)",
         "  numpy is 'np', python-control is 'ctl' — anything not aliased is",
         "  still reachable rather than out of bounds.",
         "",
-        "  This is Python, not MATLAB: commas between list elements, 0-based",
-        "  indexing, ** for powers.",
+        "  Python works at the prompt too: a line with import, def or ** runs",
+        "  as Python, and so does one only Python can read, like x[0].",
     ]
     return "\n".join(lines)
 

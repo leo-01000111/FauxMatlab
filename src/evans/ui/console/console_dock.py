@@ -484,9 +484,9 @@ class ScriptEditor(QWidget):
     breakpoint; F5 continues, F10 steps, F11 steps in, Shift+F5 stops).
     Still no project model.
 
-    It takes MATLAB or Python. *Auto* decides from the text, so a pasted
-    ``.m`` file runs as MATLAB; the selector is there for the rare script
-    that reads as both.
+    It takes MATLAB or Python. *Auto* decides from the text, and a script
+    that reads as both (or as nothing yet) is MATLAB, the app's language;
+    the selector is there to say otherwise.
     """
 
     #: (source, language) — language is "matlab" or "python".
@@ -579,7 +579,7 @@ class ScriptEditor(QWidget):
         self._editor = CodeEditor()
         self._editor.run_section_requested.connect(self.run_section)
         self._editor.setPlaceholderText(
-            "% MATLAB or Python — paste a .m script and press Run.\n"
+            "% MATLAB (or Python) — paste a .m script and press Run.\n"
             "s = tf('s');\n"
             "G = 1/((s+1)*(0.5*s+1));\n"
             "T = feedback(pid(2, 1)*G, 1);\n"
@@ -621,7 +621,7 @@ class ScriptEditor(QWidget):
         if chosen != "auto":
             return chosen
         text = self._editor.toPlainText()
-        return "matlab" if text.strip() and looks_like_matlab(text) \
+        return "matlab" if not text.strip() or looks_like_matlab(text) \
             else "python"
 
     def set_language(self, key: str) -> None:

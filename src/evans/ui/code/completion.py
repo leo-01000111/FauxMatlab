@@ -494,7 +494,7 @@ PROFILES = {
     "matlab": ("workspace", "keywords", "library", "commands", "files"),
     # A Python script.
     "python": ("workspace", "keywords", "commands", "builtins"),
-    # The console prompt: Python, with MATLAB's vocabulary.
+    # The console prompt: MATLAB first, Python's builtins still offered.
     "console": ("workspace", "keywords", "commands", "library", "builtins",
                 "files"),
 }
@@ -503,7 +503,7 @@ PROFILES = {
 def code_items(profile: str, interpreter=None, folder=None, *,
                wait: bool = True) -> list[Completion]:
     """Every name ``profile`` completes from, best source first, once each."""
-    language = "matlab" if profile == "matlab" else "python"
+    language = "matlab" if profile in ("matlab", "console") else "python"
     groups = []
     for source in PROFILES[profile]:
         if source == "workspace":
@@ -535,7 +535,7 @@ def code_request(before: str, profile: str = "matlab", interpreter=None,
     in MATLAB or Python code; ``None`` in a string, a comment or a number.
     """
     line = before.rpartition("\n")[2]
-    language = "matlab" if profile == "matlab" else "python"
+    language = "matlab" if profile in ("matlab", "console") else "python"
     word = word_before(line)
     if word[:1].isdigit() or in_string_or_comment(line, language):
         return None

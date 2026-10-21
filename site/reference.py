@@ -131,9 +131,8 @@ def commands_page() -> tuple[str, dict]:
     parts = [
         _hero("Reference · generated from the code", "Console commands",
               f"Every command the console installs, {count} in "
-              f"{len(groups)} groups. The prompt is Python, so arguments take "
-              "commas and powers are <code>**</code>; <code>s</code> is the "
-              "Laplace variable. This page is built from "
+              f"{len(groups)} groups. The prompt speaks MATLAB, as the Script "
+              "tab does; <code>s</code> is the Laplace variable. This page is built from "
               "<code>evans/console/api.py</code> and its docstrings."),
         _card("Index", f'<dl class="ref-index">{index}</dl>'),
         _card("Always available", (
@@ -143,10 +142,10 @@ def commands_page() -> tuple[str, dict]:
             "<code>j</code>, and numpy's <code>linspace</code>, "
             "<code>logspace</code>, <code>zeros</code>, <code>ones</code>, "
             "<code>eye</code>, <code>roots</code>, <code>poly</code> and "
-            "<code>conv</code>. <code>help_fm()</code> prints the grouped "
+            "<code>conv</code>. <code>help_fm</code> prints the grouped "
             "list at the prompt.</p>"
-            "<pre><code>G = 1/(s**2 + 2*s + 1)\nstepinfo(G)\n"
-            "Gm, Pm, Wcg, Wcp = margin(G)\nbode(G)</code></pre>")),
+            "<pre><code>G = 1/(s^2 + 2*s + 1)\nstepinfo(G)\n"
+            "[Gm, Pm, Wcg, Wcp] = margin(G)\nbode(G)</code></pre>")),
     ]
     missing = []
     for group, names in groups.items():
