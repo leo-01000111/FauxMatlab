@@ -12,20 +12,19 @@
       <div class="card">
         <h2>Versions</h2>
         <dl class="ref-index">
-          <dt>Next</dt><dd><a href="#next">since 0.9.3</a></dd>
-          <dt>Released</dt><dd><a href="#v0.9.3">0.9.3</a><a href="#v0.9.2">0.9.2</a><a href="#v0.9.1">0.9.1</a><a href="#v0.9.0">0.9.0</a></dd>
+          <dt>Released</dt><dd><a href="#v0.9.4">0.9.4</a><a href="#v0.9.3">0.9.3</a><a href="#v0.9.2">0.9.2</a><a href="#v0.9.1">0.9.1</a><a href="#v0.9.0">0.9.0</a></dd>
           <dt>Before 0.9</dt><dd><a href="#fauxmatlab">as FauxMatlab, Sep to Oct 2026</a></dd>
           <dt>Feedback</dt><dd><a href="#report">report an issue</a></dd>
         </dl>
       </div>
     </section>
 
-    <section class="proj-section" id="next">
+    <section class="proj-section" id="v0.9.4">
       <div class="card prose notes">
-        <h2>Next release · not yet released</h2>
-        <p class="muted">In the source on GitHub now, and in the next Windows build.</p>
+        <h2>0.9.4 · 21 October 2026</h2>
         <h3>New</h3>
         <ul>
+          <li><strong>Automatic updates.</strong> Once a day, a few seconds after launch, Evans checks GitHub for a newer release and offers Update now, Update when I close Evans, or Later. The installer is checked against its published SHA-256 before it runs. Help ▸ Check for updates asks on demand, and the same menu turns the daily check off. This is the last version you need to install by hand.</li>
           <li><strong>Completion everywhere you type code or LaTeX.</strong> One popup in the console prompt, the Script editor and both kinds of live-script cell. It opens as you type and narrows as you go; Up and Down pick, Tab or Enter accept, Escape closes, Ctrl+Space opens it on demand. Each row shows the call form (<code>step(sys, t)</code>, <code>lqr(A, B, Q, R)</code>) and a one-line description.</li>
           <li>Candidates come from your workspace variables and their attributes, the console's commands, the MATLAB runtime's built-ins, Python keywords and the <code>.m</code> files in the folder.</li>
           <li>In LaTeX text cells it completes commands after a backslash, closes <code>\begin{…}</code> with its <code>\end</code>, and offers your figure labels after <code>\ref{</code> and <code>\eqref{</code>.</li>
