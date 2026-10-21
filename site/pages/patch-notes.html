@@ -12,10 +12,35 @@
       <div class="card">
         <h2>Versions</h2>
         <dl class="ref-index">
-          <dt>Released</dt><dd><a href="#v0.9.5">0.9.5</a><a href="#v0.9.4">0.9.4</a><a href="#v0.9.3">0.9.3</a><a href="#v0.9.2">0.9.2</a><a href="#v0.9.1">0.9.1</a><a href="#v0.9.0">0.9.0</a></dd>
+          <dt>Released</dt><dd><a href="#v0.9.6">0.9.6</a><a href="#v0.9.5">0.9.5</a><a href="#v0.9.4">0.9.4</a><a href="#v0.9.3">0.9.3</a><a href="#v0.9.2">0.9.2</a><a href="#v0.9.1">0.9.1</a><a href="#v0.9.0">0.9.0</a></dd>
           <dt>Before 0.9</dt><dd><a href="#fauxmatlab">as FauxMatlab, Sep to Oct 2026</a></dd>
           <dt>Feedback</dt><dd><a href="#report">report an issue</a></dd>
         </dl>
+      </div>
+    </section>
+
+    <section class="proj-section" id="v0.9.6">
+      <div class="card prose notes">
+        <h2>0.9.6 · 21 October 2026</h2>
+        <h3>New</h3>
+        <ul>
+          <li><strong>The console speaks MATLAB.</strong> Lines typed at the prompt go through the Script tab's translator, so <code>sys = tf(K, [T 1])</code>, <code>s^2</code> and <code>x(end)</code> work as written. A <code>for</code>, <code>if</code> or <code>while</code> stays open until its <code>end</code> (Escape drops it), and a bare variable echoes as <code>x = 5</code>. Python still runs: a line with <code>import</code>, <code>def</code>, <code>**</code> or <code>x[0]</code> goes to Python as before.</li>
+          <li>MATLAB is the default elsewhere too: Auto in the Script tab picks MATLAB for a script that reads as both, console completion offers MATLAB's keywords, and the lesson snippets use <code>^</code>.</li>
+          <li><strong>Simulink's solver names.</strong> The model toolbar offers <code>ode45</code>, <code>ode23</code>, <code>ode15s</code>, <code>ode23s</code>, <code>ode23t</code> and <code>ode113</code>, mapped to the closest method Evans has, and the fixed-step <code>ode1</code> to <code>ode5</code>. <code>ode2</code>, <code>ode3</code> and <code>ode5</code> are new. The scipy names (RK45, BDF, …) are still there.</li>
+          <li><strong>Any number of algebraic loops.</strong> A model with several loops, or two loops sharing a block, is solved loop by loop, upstream first. The warning names every loop, and a loop that does not converge is named on its own.</li>
+          <li><strong>Discontinuities are handled as Simulink does.</strong> Saturation, dead zone, relay, switch, backlash, Coulomb friction, abs, sign and min/max hold their mode between switches; the solver stops exactly at each switch and restarts from there. A model that switches back and forth endlessly (a relay on an integrator, friction at rest) now finishes with a warning instead of hanging. Fixed-step solvers update the modes after every step.</li>
+        </ul>
+        <h3>Fixed</h3>
+        <ul>
+          <li>A relay with hysteresis switched off at its on-point: its memory never updated.</li>
+          <li>Between two discrete sample times, the continuous state was carried over from the last plotted point instead of the true end of the interval, so an integrator could lose part of its value when the sample time did not line up with the plot grid.</li>
+          <li>The last instant of a continuous run was never logged.</li>
+          <li>An unknown solver name now gives a clear error, instead of failing late or being silently accepted by a model with no continuous states.</li>
+        </ul>
+        <h3>Changed</h3>
+        <ul>
+          <li>The default solver is shown as <code>ode45</code>; it is the same method as the old RK45 default. With discontinuities in the model and no maximum step set, the step is capped at one fiftieth of the run, Simulink's default, so a short excursion cannot be stepped over.</li>
+        </ul>
       </div>
     </section>
 
