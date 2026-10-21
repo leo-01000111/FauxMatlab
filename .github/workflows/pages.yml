@@ -2,7 +2,7 @@ name: Site
 
 # The documentation and download site, served at www.leongorecki.eu/evans/.
 # Every pull request builds it, so a change that breaks a generated page
-# (a command without its group, a lesson claim that no longer holds) fails
+# (a command without its group) fails
 # before it merges; only main deploys.
 #
 # Deploying needs the repository's Pages source set to "GitHub Actions"

@@ -62,7 +62,6 @@ from PySide6.QtWidgets import (
 from ..console.apps import AppRequest, set_app_sink
 from ..core.architecture import CourseArchitecture
 from ..core.collection import SnapshotStore, SystemCollection
-from ..core.lessons import Lesson, all_lessons
 from ..core.report import text_report
 from ..core.session import load_session_dict, session_dict
 from ..core.tf_utils import (
@@ -77,7 +76,6 @@ from .console import ConsolePanel, FigureArea
 from .context_bar import ContextBar
 from .design import TIGHT
 from .diagram.fixed_diagram import FixedDiagramView
-from .lesson_dock import LessonDock
 from .panes import DEFAULT_LAYOUT, LAYOUTS, PANE_KINDS, PaneGrid, Source
 from .persist import RecentFiles
 from .sim.sim_tab import SimTab
@@ -120,7 +118,6 @@ class MainWindow(QMainWindow):
         self.setMenuWidget(self._title_bar)
         self._native_frame = winframe.NativeFrame(self, self._title_bar)
         self._build_ui()
-        self._build_docks()
         self._build_menus()
         self._build_status_bar()
         self.updater.status.connect(self._status.showMessage)
@@ -386,15 +383,6 @@ class MainWindow(QMainWindow):
         split.setStretchFactor(1, 2)
         return split
 
-    # ── Docks ────────────────────────────────────────────────
-
-    def _build_docks(self) -> None:
-        """The lesson panel — the only remaining dock."""
-        self._lessons = LessonDock(self)
-        self.addDockWidget(Qt.RightDockWidgetArea, self._lessons)
-        self._lessons.hide()
-        self._lessons.console_requested.connect(self._run_lesson_snippet)
-
     def _console_state(self) -> dict:
         """
         What the console starts with from the app.
@@ -517,12 +505,10 @@ class MainWindow(QMainWindow):
         this, the only fix is deleting a registry key.
         """
         self._settings().clear()
-        for dock in (self._model_dock, self._lessons,
-                     *self._app_docks.values()):
+        for dock in (self._model_dock, *self._app_docks.values()):
             dock.hide()
         self.removeDockWidget(self._model_dock)
         self.addDockWidget(Qt.LeftDockWidgetArea, self._model_dock)
-        self.addDockWidget(Qt.RightDockWidgetArea, self._lessons)
         self.resize(1400, 850)
         self._grid.set_layout_size(1, ("step",), (None,))
         self._sync_layout_buttons()
@@ -580,7 +566,7 @@ class MainWindow(QMainWindow):
         Dock the app, rather than opening a window.
 
         These were three parentless top-level windows. With the main window,
-        the lesson dock and the model dock that made up to six independent
+        and the model dock that made up to five independent
         surfaces, none of which remembered a position, all floating over a
         window that did not fit the screen. As docks they sit beside the
         analysis they are editing — which is the point of a designer whose
@@ -681,58 +667,6 @@ class MainWindow(QMainWindow):
                             sensor=self._arch.block_tf("H"),
                             feedforward=self._arch.block_tf("K1"))
         return self._show("pidtuner", tuner)
-
-    # ── Lessons ──────────────────────────────────────────────
-
-    #: Lesson tab names -> the pane kind that shows that workflow.
-    _PANE_BY_LESSON_TAB = {
-        "System": "system", "Time": "time", "Frequency": "frequency",
-        "Stability": "stability", "Performance": "performance",
-        "Design": "design", "Modern": "modern",
-    }
-
-    def load_lesson(self, lesson: Lesson) -> None:
-        """
-        Load a worked example: its blocks, its tab, and its notes.
-
-        A snapshot of the current design is taken first, so opening a lesson
-        out of curiosity does not cost you the controller you were working on
-        — Restore brings it back. It reuses one slot rather than accumulating,
-        because browsing seven lessons should not fill the store with seven
-        copies of the same "before".
-        """
-        self.snapshots.remove("before lesson")
-        self.snapshots.take(self._arch, "before lesson")
-        self._snapshot_bar.refresh()
-
-        lesson.apply_to(self._arch)
-        self._diagram.build()
-        self._refresh_status()
-
-        if lesson.tab == "Simulink":
-            self._stack.set_current(Workspace.MODEL)
-        else:
-            self._stack.set_current(Workspace.ANALYSE)
-            self._show_in_first_pane(
-                self._PANE_BY_LESSON_TAB.get(lesson.tab, "system"))
-        self._update_all_tabs()
-
-        self._lessons.show_lesson(lesson, self._arch)
-        self._status.showMessage(
-            f"Chapter {lesson.chapter}: {lesson.title}  "
-            f"({lesson.slides})", 10000)
-
-    def _show_in_first_pane(self, key: str) -> None:
-        """Point the first pane at ``key`` -- the old "switch to that tab"."""
-        if self._grid.panes and self._grid.panes[0].key != key:
-            self._grid.panes[0].set_kind(key)
-
-    def _run_lesson_snippet(self, commands: tuple[str, ...]) -> None:
-        """Send a lesson's snippet to the console, one line at a time."""
-        self._stack.set_current(Workspace.CONSOLE)
-        self._console.focus()
-        for command in commands:
-            self._console.execute(command)
 
     def _compare_snapshots(self, collection: SystemCollection) -> None:
         """The snapshot bar's Compare button: hand them to the LTI Viewer."""
@@ -948,20 +882,6 @@ class MainWindow(QMainWindow):
             action.setStatusTip(tip)
             action.triggered.connect(lambda _checked=False, s=slot: s())
             apps_menu.addAction(action)
-
-        # Lessons menu
-        lesson_menu = mb.addMenu("&Lessons")
-        for item in all_lessons():
-            action = QAction(f"Ch. {item.chapter} — {item.title}", self)
-            action.setStatusTip(item.slides)
-            action.triggered.connect(
-                lambda _checked=False, les=item: self.load_lesson(les))
-            lesson_menu.addAction(action)
-        lesson_menu.addSeparator()
-        show_notes = QAction("Show the lesson panel", self)
-        show_notes.triggered.connect(
-            lambda: (self._lessons.show(), self._lessons.raise_()))
-        lesson_menu.addAction(show_notes)
 
         # Presets menu
         preset_menu = mb.addMenu("&Presets")

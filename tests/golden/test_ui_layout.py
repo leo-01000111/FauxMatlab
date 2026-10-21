@@ -58,7 +58,6 @@ def reset(request, app):
         return
     window = request.getfixturevalue("win")
     window._model_dock.hide()
-    window._lessons.hide()
     # App docks too: one test leaving the PID Tuner open changes the next
     # test's minimum window size, which is exactly what this file measures.
     for dock in window._app_docks.values():
@@ -860,7 +859,7 @@ def test_docking_every_app_does_not_break_the_size_budget(app, win):
 def test_the_apps_open_as_docks_not_windows(app, win):
     """
     Three parentless top-level windows became three tabbed docks. With the
-    main window, the lesson dock and the model dock that was six independent
+    main window and the model dock that was five independent
     surfaces, none of which remembered a position.
     """
     from PySide6.QtWidgets import QDockWidget

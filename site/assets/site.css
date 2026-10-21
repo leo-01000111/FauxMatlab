@@ -113,11 +113,6 @@ td.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; whit
 .ref__body pre { margin-bottom: var(--space-2); }
 .ref__none { color: var(--ink-muted); font-style: italic; }
 
-/* ——— Lessons: claims, predicted beside measured ——— */
-.claim-ok { color: var(--lamp-go); font-weight: 700; }
-.claim-bad { color: var(--hold-ink); font-weight: 700; }
-.claim-why { display: block; color: var(--ink-muted); font-size: 13px; margin-top: 2px; }
-
 .skip-link { position: absolute; left: 8px; top: -60px; background: var(--plate); color: var(--on-plate); padding: 8px 12px; z-index: 10; }
 .skip-link:focus { top: 8px; }
 

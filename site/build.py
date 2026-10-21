@@ -59,9 +59,6 @@ PAGES = [
      "Every console command, generated from the code.", "commands_page"),
     ("blocks.html", "Blocks", "Simulator blocks",
      "Every simulator block and its parameters, generated from the code.", "blocks_page"),
-    ("lessons.html", "Lessons", "Lessons",
-     "One worked example per chapter, each claim measured against the current code.",
-     "lessons_page"),
     ("matlab.html", "MATLAB scripts", "MATLAB compatibility",
      "What a MATLAB script or live script can use in Evans.", "matlab.html"),
     ("patch-notes.html", "Patch notes", "Patch notes",
@@ -155,7 +152,6 @@ def build(out: Path) -> dict:
         "version": __version__,
         "n_commands": str(stats["commands"]),
         "n_blocks": str(len(block_types())),
-        "n_lessons": str(stats["lessons"]),
         "releases": RELEASES,
         "repo": REPO,
     }
@@ -185,12 +181,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     stats = build(args.out)
     print(f"Built {len(PAGES)} pages into {args.out}: {stats['commands']} commands, "
-          f"{stats['blocks']} blocks, {stats['lessons']} lessons.")
+          f"{stats['blocks']} blocks.")
     if stats["undocumented"]:
         print("Commands with no docstring: " + ", ".join(stats["undocumented"]))
-    if stats["failed_claims"]:
-        print("Lesson claims that do not hold:\n  " + "\n  ".join(stats["failed_claims"]))
-        return 1
     return 0
 
 

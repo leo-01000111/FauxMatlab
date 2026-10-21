@@ -1,14 +1,10 @@
 """
-The generated pages: console commands, simulator blocks, lessons.
-==================================================================
+The generated pages: console commands and simulator blocks.
+===========================================================
 Each page is read out of the code that defines it — the console's ``_GROUPS``
 and the commands' docstrings, the block registry and each block's
-``params_spec``, the lessons and their claims — so the site cannot describe a
-command, block or worked example that does not exist, or miss one that does.
-
-A lesson's claims are measured here, at build time, with the same probes the
-lesson panel and the test suite use. The page shows the value the theory
-predicts beside the value the current code measures.
+``params_spec`` — so the site cannot describe a command or block that does
+not exist, or miss one that does.
 """
 
 from __future__ import annotations
@@ -48,7 +44,7 @@ def inline(text: str) -> str:
 
 def rst(text: str) -> str:
     """
-    A docstring or lesson note as HTML paragraphs.
+    A docstring as HTML paragraphs.
 
     Covers what the source actually contains: paragraphs, indented literal
     blocks, ``- `` bullet lists, underlined section titles and inline
@@ -229,92 +225,3 @@ def blocks_page() -> tuple[str, dict]:
                 f"{table}</div></article>")
         parts.append(_card(cat, "\n".join(entries), "cat-" + _slug(cat)))
     return "\n".join(parts), {"blocks": count}
-
-
-# ──────────────────────────────────────────────────────────────
-#  Lessons
-# ──────────────────────────────────────────────────────────────
-
-_SUP = str.maketrans("0123456789", "⁰¹²³⁴⁵⁶⁷⁸⁹")
-_BLOCK_NAMES = {"K1": "K₁", "K2": "K₂", "G": "G", "H": "H"}
-
-
-def _num(c: float) -> str:
-    return f"{float(c):.4g}"
-
-
-def polynomial(coeffs) -> str:
-    """Coefficients, highest power first, as ``s³ + 3s² + 3s + 1``."""
-    coeffs = [float(c) for c in coeffs]
-    n = len(coeffs) - 1
-    terms = []
-    for i, c in enumerate(coeffs):
-        power = n - i
-        if c == 0:
-            continue
-        mag = abs(c)
-        var = "" if power == 0 else ("s" if power == 1 else "s" + str(power).translate(_SUP))
-        body = _num(mag) if (mag != 1 or not var) else ""
-        term = body + var
-        if not terms:
-            terms.append(("−" if c < 0 else "") + term)
-        else:
-            terms.append(("− " if c < 0 else "+ ") + term)
-    return " ".join(terms) or "0"
-
-
-def transfer_function(num, den) -> str:
-    top, bottom = polynomial(num), polynomial(den)
-    if bottom == "1":
-        return top
-    wrap = (lambda p: f"({p})" if " " in p else p)
-    return f"{wrap(top)} / {wrap(bottom)}"
-
-
-def lessons_page() -> tuple[str, dict]:
-    from evans.core.lessons import all_lessons
-    lessons = all_lessons()
-    symbols = {"equals": "=", "at_least": "≥", "at_most": "≤"}
-    failed = []
-    index = "".join(
-        f'<li><a href="#{esc(lesson.key)}">Ch. {lesson.chapter}: {esc(lesson.title)}</a></li>'
-        for lesson in lessons)
-    parts = [
-        _hero("Lessons · generated from the code", "Lessons that check themselves",
-              "The Lessons menu loads one worked example per chapter of the "
-              "CLACO course. A lesson states no numbers in prose: each one "
-              "carries claims, and a claim is a sentence, a probe that measures "
-              "the quantity from the loaded model, and the value the theory "
-              "predicts. Below, every claim was measured when this page was "
-              "built, by the same code the app runs."),
-        _card("Chapters", f"<ol>{index}</ol>"),
-    ]
-    for lesson in lessons:
-        blocks = "".join(
-            f"<li><code>{_BLOCK_NAMES.get(bid, bid)}(s) = {esc(transfer_function(num, den))}</code></li>"
-            for bid, (num, den) in lesson.blocks.items())
-        rows = []
-        for claim, measured, holds in lesson.check():
-            if not holds:
-                failed.append(f"{lesson.key}: {claim.text}")
-            mark = ('<span class="claim-ok" aria-label="holds">✓</span>' if holds
-                    else '<span class="claim-bad" aria-label="does not hold">✗</span>')
-            why = f'<span class="claim-why">{inline(claim.why)}</span>' if claim.why else ""
-            rows.append(
-                f"<tr><td>{inline(claim.text)}{why}</td><td>{esc(claim.units)}</td>"
-                f'<td class="num">{symbols[claim.mode]} {_num(claim.expected)}</td>'
-                f'<td class="num">{_num(measured)}</td><td>{mark}</td></tr>')
-        console = "\n".join(lesson.console)
-        body = (
-            f'<p class="label">{esc(lesson.slides)} · opens on {esc(lesson.tab)}</p>'
-            f"<h3>{esc(lesson.title)}</h3>"
-            f"{rst(lesson.summary)}"
-            f'<p class="label">The model it loads</p><ul>{blocks}</ul>'
-            + (f'<p class="label">Claims</p><div class="table-wrap"><table><thead><tr>'
-               "<th>Claim</th><th>Quantity</th><th>Predicted</th><th>Measured</th>"
-               f"<th></th></tr></thead><tbody>{''.join(rows)}</tbody></table></div>"
-               if rows else "")
-            + (f'<p class="label">Try at the prompt</p><pre><code>{esc(console)}</code></pre>'
-               if console else ""))
-        parts.append(_card(f"Chapter {lesson.chapter}", body, lesson.key))
-    return "\n".join(parts), {"lessons": len(lessons), "failed_claims": failed}

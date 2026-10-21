@@ -63,6 +63,6 @@ def test_help_opens_the_documentation_site(app, monkeypatch):
     monkeypatch.setattr(evans_help.QDesktopServices, "openUrl",
                         lambda url: opened.append(url.toString()) or True)
     assert evans_help.open_help()
-    assert evans_help.open_help("lessons/")
+    assert evans_help.open_help("tour.html")
     assert opened == ["https://www.leongorecki.eu/evans/",
-                      "https://www.leongorecki.eu/evans/lessons/"]
+                      "https://www.leongorecki.eu/evans/tour.html"]

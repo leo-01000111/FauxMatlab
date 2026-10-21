@@ -5,11 +5,10 @@ A packaged build ships without the test suite, so there has to be some way for
 a user — or an installer, or a CI job — to ask "is this copy working?" and get
 an answer that means something.
 
-The payload is deliberately *not* a set of smoke checks. It runs the course
-lessons' :class:`~evans.core.lessons.Claim` objects, which are already
-analytic statements with known answers spanning the whole classical half:
-exact critical gains, closed-form margins, the waterbed integral. If those
-hold, the numbers this build produces are the numbers the theory predicts.
+The payload is deliberately *not* a set of smoke checks. It checks results
+with known closed forms across the classical half: exact critical gains,
+margins, second-order overshoot, the waterbed integral. If those hold, the
+numbers this build produces are the numbers the theory predicts.
 On top of that it builds the whole window offscreen and checks that no panel
 reported an error.
 
@@ -91,7 +90,7 @@ def run(verbose: bool = True, include_ui: bool = True) -> Report:
     say("=" * 60)
 
     _check_core(report, say)
-    _check_lessons(report, say)
+    _check_analysis(report, say)
     _check_simulation(report, say)
     if include_ui:
         _check_ui(report, say)
@@ -139,24 +138,52 @@ def _check_core(report: Report, say) -> None:
         say(f"      FAILED: {exc}")
 
 
-def _check_lessons(report: Report, say) -> None:
-    """Every analytic claim the course lessons make."""
-    say("\n[2/4] course lessons — analytic claims")
+def _check_analysis(report: Report, say) -> None:
+    """Analysis results that have a closed form to compare against."""
+    say("\n[2/4] analysis — closed-form results")
     try:
-        from .core.lessons import all_lessons
+        import control as ctl
+        import numpy as np
 
-        for lesson in all_lessons():
-            results = lesson.check()
-            held = sum(1 for _, _, ok in results if ok)
-            for claim, measured, ok in results:
-                report.record(ok, (
-                    f"ch{lesson.chapter} {claim.text!r}: predicted "
-                    f"{claim.mode} {claim.expected:.6g} {claim.units}, "
-                    f"measured {measured:.6g}"))
-            say(f"      ch{lesson.chapter}  {held}/{len(results)}  "
-                f"{lesson.title[:46]}")
+        from .core.freqresp import bode
+        from .core.performance import waterbed
+        from .core.stability import marginal_gain
+        from .core.timeresp import compute_step_metrics, step_response
+
+        def close(name: str, measured: float, expected: float,
+                  tol: float = 0.01) -> None:
+            ok = abs(measured - expected) <= tol * max(1.0, abs(expected))
+            report.record(ok, f"{name}: expected {expected:.6g}, "
+                              f"measured {measured:.6g}")
+            say(f"      {name:28s} {measured:.6g}"
+                f"{'' if ok else f'  (expected {expected:.6g})'}")
+
+        # L = 2/(s+1)³: |L(j√3)| = 1/4, and |L| = 1 at ωc = √(2^⅔ − 1).
+        bd = bode(ctl.tf([2.0], [1.0, 3.0, 3.0, 1.0]))
+        wc = float(np.sqrt(2.0 ** (2.0 / 3.0) - 1.0))
+        close("gain margin (dB)", float(bd.gm_dB), 20 * np.log10(4.0))
+        close("phase crossover (rad/s)", float(bd.w180), np.sqrt(3.0))
+        close("gain crossover (rad/s)", float(bd.wc), wc)
+        close("phase margin (°)", float(bd.pm_deg),
+              180.0 - 3.0 * float(np.degrees(np.arctan(wc))))
+
+        # 1 + K/(s+1)³ = 0 crosses the axis at K = 8, ω = √3, exactly.
+        ku, wu = marginal_gain(ctl.tf([1.0], [1.0, 3.0, 3.0, 1.0]))
+        close("critical gain", float(ku), 8.0, tol=1e-6)
+        close("critical frequency (rad/s)", float(wu), np.sqrt(3.0), tol=1e-6)
+
+        # Mp = exp(−πζ/√(1−ζ²)) for the canonical second order.
+        zeta, wn = 0.3, 2.0
+        metrics = compute_step_metrics(step_response(
+            ctl.tf([wn ** 2], [1.0, 2 * zeta * wn, wn ** 2])))
+        close("second-order overshoot (%)", float(metrics.Mp_pct),
+              100 * np.exp(-np.pi * zeta / np.sqrt(1 - zeta ** 2)), tol=0.02)
+
+        # A stable loop of relative degree 2: ∫ln|S| dω = 0.
+        integral = float(waterbed(ctl.tf([2.0], [1.0, 3.0, 2.0])).integral)
+        close("waterbed integral", integral, 0.0, tol=0.06)
     except Exception as exc:                                    # noqa: BLE001
-        report.record(False, f"lessons raised {type(exc).__name__}: {exc}")
+        report.record(False, f"analysis raised {type(exc).__name__}: {exc}")
         say(f"      FAILED: {exc}")
 
 

@@ -2,7 +2,7 @@
 Editing code: highlighting, completion, sections and a gutter.
 
 Reusable pieces — the Script tab uses all of them, and any other editor of
-MATLAB or Python text (a live script, a lesson's snippet) can take them:
+MATLAB or Python text (a live script) can take them:
 
 * :class:`MatlabHighlighter` — a ``QSyntaxHighlighter`` for MATLAB or Python.
 * :class:`CompletionController` — the completion popup on a

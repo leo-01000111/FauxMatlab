@@ -41,7 +41,7 @@
         <h3>New</h3>
         <ul>
           <li><strong>The console speaks MATLAB.</strong> Lines typed at the prompt go through the Script tab's translator, so <code>sys = tf(K, [T 1])</code>, <code>s^2</code> and <code>x(end)</code> work as written. A <code>for</code>, <code>if</code> or <code>while</code> stays open until its <code>end</code> (Escape drops it), and a bare variable echoes as <code>x = 5</code>. Python still runs: a line with <code>import</code>, <code>def</code>, <code>**</code> or <code>x[0]</code> goes to Python as before.</li>
-          <li>MATLAB is the default elsewhere too: Auto in the Script tab picks MATLAB for a script that reads as both, console completion offers MATLAB's keywords, and the lesson snippets use <code>^</code>.</li>
+          <li>MATLAB is the default elsewhere too: Auto in the Script tab picks MATLAB for a script that reads as both, console completion offers MATLAB's keywords.</li>
           <li><strong>Simulink's solver names.</strong> The model toolbar offers <code>ode45</code>, <code>ode23</code>, <code>ode15s</code>, <code>ode23s</code>, <code>ode23t</code> and <code>ode113</code>, mapped to the closest method Evans has, and the fixed-step <code>ode1</code> to <code>ode5</code>. <code>ode2</code>, <code>ode3</code> and <code>ode5</code> are new. The scipy names (RK45, BDF, …) are still there.</li>
           <li><strong>Any number of algebraic loops.</strong> A model with several loops, or two loops sharing a block, is solved loop by loop, upstream first. The warning names every loop, and a loop that does not converge is named on its own.</li>
           <li><strong>Discontinuities are handled as Simulink does.</strong> Saturation, dead zone, relay, switch, backlash, Coulomb friction, abs, sign and min/max hold their mode between switches; the solver stops exactly at each switch and restarts from there. A model that switches back and forth endlessly (a relay on an integrator, friction at rest) now finishes with a warning instead of hanging. Fixed-step solvers update the modes after every step.</li>
@@ -134,7 +134,7 @@
         <ul>
           <li><strong>A Windows installer</strong> beside the portable zip. It installs for your account only, needs no administrator rights, adds a Start-menu shortcut and an uninstaller, and opens <code>.fmdl</code> models on double-click.</li>
           <li><strong>One title bar on Windows</strong>, with the menus, the window title and the window buttons in it. Snap, edge resizing and Snap Layouts work as usual. View ▸ Integrated title bar turns it off.</li>
-          <li><strong>This site</strong>, with the command, block and lesson pages generated from the code so they cannot drift from it.</li>
+          <li><strong>This site</strong>, with the command and block pages generated from the code so they cannot drift from it.</li>
           <li>Evans opens files given on the command line: models on the Model canvas, scripts in the Console.</li>
           <li>The taskbar shows Evans's own icon, even when run from source.</li>
         </ul>
@@ -215,7 +215,6 @@
           <li>Classical and modern control over one live model, a block-diagram simulator, and a MATLAB-shaped command window with a workspace browser and docked figures.</li>
           <li>Closed loops solved exactly from the block diagram, so hidden modes survive and the stability report can name them. Discrete blocks sample and hold.</li>
           <li>The LTI Viewer, a Control System Designer where you drag a pole along the root locus, and a PID Tuner that solves for exact margins and says why when it cannot.</li>
-          <li>Lessons, one per course chapter, whose claims are measured from the loaded model and checked by the test suite.</li>
           <li><code>--check</code>, a headless self-test, and the first Windows build.</li>
         </ul>
       </div>

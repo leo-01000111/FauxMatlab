@@ -4,7 +4,7 @@ The title bar: the menus, the title and the window buttons in one strip.
 ::
 
   ┌──────────────────────────────────────────────────────────────────┐
-  │ ▣ File Export View Apps Lessons Presets Help   Evans — …   ─ □ ✕ │
+  │ ▣ File Export View Apps Presets Help   Evans — …   ─ □ ✕ │
   └──────────────────────────────────────────────────────────────────┘
 
 It is the main window's menu widget, so it sits where the menu bar did, and

@@ -1,9 +1,8 @@
 """
 The documentation site builds from the current code.
 
-The reference pages are generated from the console's command groups, the
-block registry and the lessons, so a command, block or lesson added without
-what the site needs to describe it fails here rather than on the Pages build.
+The reference pages are generated from the console's command groups and the
+block registry, so a command or block added without what the site needs to describe it fails here rather than on the Pages build.
 """
 
 import importlib.util
@@ -20,16 +19,14 @@ def _build_module():
     return module
 
 
-def test_site_builds_with_every_command_block_and_lesson(tmp_path):
+def test_site_builds_with_every_command_and_block(tmp_path):
     from evans.console import api
-    from evans.core.lessons import all_lessons
     from evans.sim import block_types
 
     build = _build_module()
     stats = build.build(tmp_path)
 
     assert stats["undocumented"] == [], "commands with no docstring"
-    assert stats["failed_claims"] == []
     for file, *_ in build.PAGES:
         assert (tmp_path / file).is_file(), file
 
@@ -41,10 +38,6 @@ def test_site_builds_with_every_command_block_and_lesson(tmp_path):
     blocks = (tmp_path / "blocks.html").read_text(encoding="utf-8")
     for name in block_types():
         assert f'id="{name}"' in blocks, name
-
-    lessons = (tmp_path / "lessons.html").read_text(encoding="utf-8")
-    for lesson in all_lessons():
-        assert f'id="{lesson.key}"' in lessons, lesson.key
 
 
 def test_hand_written_pages_link_only_to_pages_that_exist(tmp_path):
