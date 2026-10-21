@@ -12,10 +12,28 @@
       <div class="card">
         <h2>Versions</h2>
         <dl class="ref-index">
-          <dt>Released</dt><dd><a href="#v0.9.7">0.9.7</a><a href="#v0.9.6">0.9.6</a><a href="#v0.9.5">0.9.5</a><a href="#v0.9.4">0.9.4</a><a href="#v0.9.3">0.9.3</a><a href="#v0.9.2">0.9.2</a><a href="#v0.9.1">0.9.1</a><a href="#v0.9.0">0.9.0</a></dd>
+          <dt>Released</dt><dd><a href="#v0.9.8">0.9.8</a><a href="#v0.9.7">0.9.7</a><a href="#v0.9.6">0.9.6</a><a href="#v0.9.5">0.9.5</a><a href="#v0.9.4">0.9.4</a><a href="#v0.9.3">0.9.3</a><a href="#v0.9.2">0.9.2</a><a href="#v0.9.1">0.9.1</a><a href="#v0.9.0">0.9.0</a></dd>
           <dt>Before 0.9</dt><dd><a href="#fauxmatlab">as FauxMatlab, Sep to Oct 2026</a></dd>
           <dt>Feedback</dt><dd><a href="#report">report an issue</a></dd>
         </dl>
+      </div>
+    </section>
+
+    <section class="proj-section" id="v0.9.8">
+      <div class="card prose notes">
+        <h2>0.9.8 · 21 October 2026</h2>
+        <h3>New</h3>
+        <ul>
+          <li><strong>A Mac app.</strong> <code>Evans-0.9.8-macos-arm64.dmg</code> is on the release, for Macs with Apple Silicon on macOS 13 or newer: open it and drag Evans onto Applications. It is not notarised by Apple yet, so the first launch needs <em>Open Anyway</em> in System Settings ▸ Privacy &amp; Security; the <a href="install.html#gatekeeper">install page</a> walks through it. An Intel Mac or an older macOS can still run Evans from source.</li>
+          <li>On a Mac, <code>.fmdl</code> models open in Evans from Finder, tooltips show shortcuts the Mac way (⇧⌘↩ rather than Ctrl+Shift+Enter), Control-C stops the console as it does in MATLAB, Control-` opens the command window (⌘` stays the Mac's window switcher), TeX from MacTeX or Homebrew is found for PDF export even when Evans is opened from Finder, and <code>sound()</code> plays.</li>
+          <li>The Mac app checks for a newer release once a day and offers the download page. It cannot update itself yet.</li>
+        </ul>
+        <h3>Changed</h3>
+        <ul>
+          <li><strong>The lessons are gone</strong>: the Lessons menu, the lesson panel and the lessons page on this site. The self-test still checks the same closed-form results (exact margins, the critical gain of 8 at ω = √3, second-order overshoot, the waterbed integral), now directly.</li>
+          <li>A release is published only once both the Windows and the Mac build have passed their own self-test.</li>
+          <li>Cedric, the shrimp on the splash and the rail, is not under the MIT licence: he is all rights reserved (<code>LICENSE-CEDRIC</code>). The code stays MIT. Both licences now ship inside the build.</li>
+        </ul>
       </div>
     </section>
 
