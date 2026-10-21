@@ -30,7 +30,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import iconset
+from . import iconset, keys
 from .cedric import CedricButton
 from .design import NORMAL, TIGHT
 
@@ -67,7 +67,7 @@ class Workspace(str, Enum):
         rail is the application's primary navigation. A digit that matches
         the keyboard shortcut teaches something instead.
         """
-        return self.shortcut.replace("Ctrl+", "⌃")
+        return self.shortcut.replace("Ctrl+", "⌘" if keys.is_mac() else "⌃")
 
 
 class NavigationRail(QFrame):

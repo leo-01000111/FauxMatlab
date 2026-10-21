@@ -178,6 +178,14 @@ def can_install() -> bool:
     return sys.platform == "win32" and bool(getattr(sys, "frozen", False))
 
 
+def is_packaged() -> bool:
+    """
+    A built app rather than a checkout. The Mac app is one that cannot
+    replace itself yet, so it checks all the same and points at the release.
+    """
+    return bool(getattr(sys, "frozen", False))
+
+
 def installer_arguments(*, relaunch: bool) -> list[str]:
     """
     How the installer is run.

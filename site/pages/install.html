@@ -1,7 +1,7 @@
     <section class="proj-hero">
       <p class="label">Install · v@@version@@</p>
       <h1>Install Evans</h1>
-      <p class="lede">On Windows, download the standalone build: it needs nothing else installed, not even Python. Everywhere else, and on Windows if you want to change the code, run it from source.</p>
+      <p class="lede">On Windows and on Apple Silicon Macs, download the standalone build: it needs nothing else installed, not even Python. Everywhere else, and wherever you want to change the code, run it from source.</p>
       <div class="cta">
         <a class="hp-btn hp-btn--primary" href="@@releases@@" data-download data-download-note="download-note"><span>Download for Windows</span><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><g transform="rotate(90 12 12)" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="square" stroke-linejoin="miter"><path d="M3.5 12H18.5"></path><path d="M12 5.2L18.8 12L12 18.8"></path></g></svg></a>
       </div>
@@ -28,7 +28,7 @@
           <li>Unzip it anywhere, a USB stick included. Keep the folder together: the program is a folder, not a single file.</li>
           <li>Run <code>Evans.exe</code> inside it. Nothing is installed or registered with Windows; to remove it, delete the folder.</li>
         </ol>
-        <p>Both downloads hold <code>Evans-check.exe</code>, the same program's headless self-test. Run it from a terminal: it checks every lesson's analytic claims and builds the whole window offscreen, and its exit code is the number of failures. It exists as a separate file because a windowed program on Windows has no console to print to.</p>
+        <p>Both downloads hold <code>Evans-check.exe</code>, the same program's headless self-test. Run it from a terminal: it checks analysis results against their closed forms and builds the whole window offscreen, and its exit code is the number of failures. It exists as a separate file because a windowed program on Windows has no console to print to.</p>
         <p>It is a one-folder build on purpose. A one-file build unpacks the whole Qt runtime on every launch, which for PySide6, SciPy and SymPy takes several seconds before the window appears.</p>
       </div>
     </section>
@@ -42,6 +42,35 @@
           <li>Check that the app is <code>Evans.exe</code>, then click <strong>Run anyway</strong>.</li>
         </ol>
         <p>Windows remembers the choice. If you would rather not run an unsigned build, run Evans from source instead: it is the same code, and you can read all of it first. The release is built by the repository's own <a href="@@repo@@/actions">GitHub Actions workflow</a> from the tagged commit.</p>
+      </div>
+    </section>
+
+    <section class="proj-section" id="macos">
+      <div class="card prose">
+        <h2>macOS: the disk image</h2>
+        <p>For Macs with Apple Silicon (M1 or later) on macOS 13 Ventura or newer. To check, open the Apple menu → <strong>About This Mac</strong>: the chip should say Apple M-something. An Intel Mac, or an older macOS, can still run Evans from source, below.</p>
+        <ol>
+          <li>From the <a href="@@releases@@">latest release</a>, download <code>Evans-@@version@@-macos-arm64.dmg</code>.</li>
+          <li>Open it and drag <strong>Evans</strong> onto the <strong>Applications</strong> folder beside it.</li>
+          <li>Open Evans from Applications. The first time, macOS stops it; see the next section.</li>
+        </ol>
+        <p>Double-clicking an <code>.fmdl</code> model opens it in Evans. To upgrade, drag a newer Evans over the old one; to uninstall, move Evans from Applications to the Bin. Updates are not automatic on a Mac yet: Evans says when there is a newer release, and you download it the same way.</p>
+        <p>The self-test is inside the app. In Terminal, run <code>/Applications/Evans.app/Contents/MacOS/Evans --check</code>; its exit code is the number of failures.</p>
+      </div>
+    </section>
+
+    <section class="proj-section" id="gatekeeper">
+      <div class="card prose">
+        <h2>The “cannot be opened” warning</h2>
+        <p>The Mac build is not notarised by Apple yet, so the first time you open it macOS says it <strong>could not verify that Evans is free of malware</strong> and offers only Done or Move to Bin. That is what macOS shows for any app from outside the App Store that Apple has not checked, not a sign that something is wrong with the file. Click <strong>Done</strong>, then:</p>
+        <ol>
+          <li>Open <strong>System Settings</strong> → <strong>Privacy &amp; Security</strong>.</li>
+          <li>Scroll down to the message about Evans and click <strong>Open Anyway</strong>.</li>
+          <li>Confirm with your password or Touch ID, then click <strong>Open Anyway</strong> once more.</li>
+        </ol>
+        <p>macOS remembers the choice; from then on Evans opens like any other app. (Right-click → Open, the old way round this, no longer works on current macOS.) If you are comfortable in Terminal, this does the same in one step:</p>
+<pre><code>xattr -dr com.apple.quarantine /Applications/Evans.app</code></pre>
+        <p>As with Windows, if you would rather not run an unnotarised build, run Evans from source: it is the same code, and the app is built by the same <a href="@@repo@@/actions">GitHub Actions workflow</a> from the tagged commit.</p>
       </div>
     </section>
 
@@ -60,7 +89,7 @@ python app.py</code></pre>
           <tbody>
             <tr><td>check the install (headless self-test; exit code = failures)</td><td><code>python app.py --check</code></td></tr>
             <tr><td>run the test suite</td><td><code>pytest -q</code></td></tr>
-            <tr><td>build the standalone Windows app into <code>dist/Evans/</code></td><td><code>pyinstaller --clean --noconfirm packaging/evans.spec</code></td></tr>
+            <tr><td>build the standalone app (<code>dist/Evans/</code> on Windows, <code>dist/Evans.app</code> on macOS)</td><td><code>pyinstaller --clean --noconfirm packaging/evans.spec</code></td></tr>
           </tbody>
         </table></div>
         <p>On Linux, PySide6 needs the usual Qt and X11 runtime libraries; the CI workflow (<code>.github/workflows/ci.yml</code>) lists the exact apt packages. There is no dependency on slycot, so a clean <code>pip install</code> is all it takes.</p>

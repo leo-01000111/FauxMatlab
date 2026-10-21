@@ -10,17 +10,26 @@
 #
 # Then check the result actually works:
 #
-#   dist/Evans/Evans-check.exe --check
+#   dist/Evans/Evans-check.exe --check                  (Windows)
+#   dist/Evans.app/Contents/MacOS/Evans --check         (macOS)
+#
+# On macOS the same folder is then wrapped in Evans.app; see the end.
 
+import re
+import sys
 from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_submodules
 
 SPEC_DIR = Path(SPECPATH)
 ROOT = SPEC_DIR.parent
+MAC = sys.platform == "darwin"
+VERSION = re.search(r'__version__ = "([^"]+)"',
+                    (ROOT / "src" / "evans" / "__init__.py").read_text()
+                    ).group(1)
 
 # Our own modules are imported lazily at the bottom of functions all over the
-# codebase — the console's `sim`, the tuner's `tuning`, the lessons' probes.
+# codebase — the console's `sim` and the tuner's `tuning`.
 #
 # `control` is deliberately *not* collected wholesale. `collect_submodules`
 # walks every submodule, which reaches `control.tests.*`; those import pytest,
@@ -121,7 +130,8 @@ def _exe(name: str, console: bool):
         entitlements_file=None,
         # The plate in Explorer and on the taskbar before Qt has started;
         # the running window sets the same picture from app.svg.
-        icon=str(ROOT / "src" / "evans" / "ui" / "icons" / "app.ico"),
+        icon=str(ROOT / "src" / "evans" / "ui" / "icons"
+                 / ("app.icns" if MAC else "app.ico")),
     )
 
 
@@ -132,12 +142,14 @@ def _exe(name: str, console: bool):
 # `Evans.exe` would set an exit code and print nothing, which is useless
 # to anybody diagnosing an installation by hand. `Evans-check.exe` is the
 # same program built as a console application, so its report is readable.
+#
+# Not on macOS: a Mac app's executable prints to the terminal it is run
+# from like any other, so Evans.app/Contents/MacOS/Evans --check reports.
 gui = _exe("Evans", console=False)
-check = _exe("Evans-check", console=True)
+exes = [gui] if MAC else [gui, _exe("Evans-check", console=True)]
 
 coll = COLLECT(
-    gui,
-    check,
+    *exes,
     a.binaries,
     a.datas,
     strip=False,
@@ -145,3 +157,48 @@ coll = COLLECT(
     upx_exclude=[],
     name="Evans",
 )
+
+# ── macOS: the folder becomes Evans.app ──
+#
+# Unsigned on purpose for now, but not unsigned at all: Apple Silicon will
+# not run code without a signature, so PyInstaller signs ad hoc (identity
+# "-"), which costs nothing and needs no Apple account. CI re-signs the
+# finished bundle the same way and verifies it. What it cannot get without a
+# paid Developer ID is notarisation, so Gatekeeper still stops the first
+# launch; the install page walks through Privacy & Security → Open Anyway.
+if MAC:
+    app = BUNDLE(
+        coll,
+        name="Evans.app",
+        icon=str(ROOT / "src" / "evans" / "ui" / "icons" / "app.icns"),
+        bundle_identifier="eu.leongorecki.evans",
+        version=VERSION,
+        info_plist={
+            "CFBundleDisplayName": "Evans",
+            "CFBundleShortVersionString": VERSION,
+            "CFBundleVersion": VERSION,
+            # PySide6 6.10's wheels are built for macOS 13; below that Qt
+            # itself will not load, so say so before the launch, not after.
+            "LSMinimumSystemVersion": "13.0",
+            "LSApplicationCategoryType": "public.app-category.education",
+            "NSHighResolutionCapable": True,
+            # Follow the system's light/dark appearance for native chrome.
+            "NSRequiresAquaSystemAppearance": False,
+            "NSHumanReadableCopyright": "© Leon Gorecki",
+            # .fmdl is Evans' own format, so Evans owns it, as the Windows
+            # installer's association does. Not .m: that belongs to MATLAB
+            # and to whatever editor the user already has.
+            "UTExportedTypeDeclarations": [{
+                "UTTypeIdentifier": "eu.leongorecki.evans.model",
+                "UTTypeDescription": "Evans model",
+                "UTTypeConformsTo": ["public.data", "public.content"],
+                "UTTypeTagSpecification": {"public.filename-extension": ["fmdl"]},
+            }],
+            "CFBundleDocumentTypes": [{
+                "CFBundleTypeName": "Evans model",
+                "CFBundleTypeRole": "Editor",
+                "LSHandlerRank": "Owner",
+                "LSItemContentTypes": ["eu.leongorecki.evans.model"],
+            }],
+        },
+    )

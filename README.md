@@ -29,8 +29,17 @@ your PC" the first time you run it. Click **More info**, then **Run anyway**.
 run `Evans.exe`. Nothing gets installed and nothing is registered with Windows. To remove
 it, delete the folder.
 
-The documentation, with a tour and a reference for every console command, simulator block
-and lesson, is at [www.leongorecki.eu/evans](https://www.leongorecki.eu/evans/). Its source
+On a Mac with Apple Silicon (M1 or later) and macOS 13 or newer, download
+`Evans-<version>-macos-arm64.dmg` from the same page, open it and drag Evans onto
+Applications. The app isn't notarised by Apple yet, so the first launch is blocked with
+"could not verify that Evans is free of malware". Click **Done**, then open **System
+Settings ▸ Privacy & Security**, scroll down and click **Open Anyway**; macOS remembers
+it. `.fmdl` models open in Evans on a double-click. Updates aren't automatic on a Mac:
+Evans tells you when there's a newer release. An Intel Mac or an older macOS can run
+Evans from source.
+
+The documentation, with a tour and a reference for every console command and simulator
+block, is at [www.leongorecki.eu/evans](https://www.leongorecki.eu/evans/). Its source
 is in [`site/`](site/README.md).
 
 ## Quick start
@@ -71,7 +80,7 @@ all still there when you come back.
 
 | Workspace | What's in it |
 | --- | --- |
-| **Analyse** | The current control system: responses, margins, stability, design, lessons |
+| **Analyse** | The current control system: responses, margins, stability, design |
 | **Model** | The block-diagram editor, its palette, inspector, scope and solver |
 | **Console** | Command window, workspace variables, figures and scripts |
 
@@ -268,7 +277,7 @@ a crossover above the plant's phase budget is impossible for it.
 pytest
 ```
 
-1444 tests, plus `ruff check .`. Most are golden tests: analytic values worked out by hand
+1386 tests, plus `ruff check .`. Most are golden tests: analytic values worked out by hand
 or by an independent route, rather than snapshots of whatever the code printed first. The
 numeric signal solver and the symbolic one check each other, and `python-control` is a
 third opinion.
@@ -297,33 +306,22 @@ Several pin down bugs that were hard to see:
 `python tools/debug_runner.py` runs a headless end-to-end sweep (176 checks) that builds
 every tab and exercises every core path without a display.
 
-## Lessons that check themselves
+## A self-test that can fail
 
-The Lessons menu loads one worked example per chapter: the satellite that proportional
-control cannot hold (ch2), the right-half-plane zero that has to undershoot (ch3), the
-second-order family (ch4), the two-degrees-of-freedom split (ch5), margins and the 2.3 dB
-M-circle (ch6), the waterbed integral (ch7), and Ziegler–Nichols (ch8).
-
-The notes state no numbers in prose. Each lesson carries `Claim` objects, each one a
-sentence, a probe that measures the quantity from whatever model is loaded, and the value
-the theory predicts, and the panel shows predicted beside measured. Change the plant and
-the ticks turn into crosses in front of you.
-
-The test suite checks every claim of every lesson, so a note that stops being true fails
-the build. Several are exact: ωc = √(2^⅔ − 1) with PM = 180° − 3·arctan ωc for the ch6
-loop, and a critical gain of exactly 8 at ω = √3 for ch8.
-
-`--check` runs the same claims. A packaged build ships without the test suite, so its
-self-test is the lessons' analytic claims plus a full offscreen build of the window. A
+A packaged build ships without the test suite, so `--check` is its self-test: analysis
+results with known closed forms, plus a full offscreen build of the window. Several are
+exact: ωc = √(2^⅔ − 1) with PM = 180° − 3·arctan ωc for 2/(s+1)³, a critical gain of
+exactly 8 at ω = √3 for 1/(s+1)³, the overshoot a damping ratio predicts, and the waterbed integral. A
 pass means the numbers agree with the theory, which says more than that nothing raised.
+CI runs it on every build, Windows and macOS, before anything is released.
 
 ## Status
 
 Two plans, both complete.
 
 [`docs/PLAN.md`](docs/PLAN.md) covers the engine in eight phases: correctness, the
-classical half, modern control, the simulator, the command window, the apps, the course
-lessons and packaging.
+classical half, modern control, the simulator, the command window, the apps and
+packaging.
 
 [`docs/UI-PLAN.md`](docs/UI-PLAN.md) covers the interface in eight more. The application
 had grown to 28 modules and 8 tabs while keeping the layout of a 6-tab viewer, and its

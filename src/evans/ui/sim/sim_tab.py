@@ -43,7 +43,7 @@ from ...sim.compile import CompileError
 from ...sim.linearize import LinearizationError, linearize, steady_state
 from ...sim.model import ModelError, PortRef, SimModel
 from ...sim.solver import SimulationError, resolve_solver, simulate
-from .. import iconset, theme
+from .. import iconset, keys, theme
 from ..design import NORMAL, TIGHT
 from ..guard import GuardedPanel, guard
 from .arrange import ArrangePanel, hidden_actions
@@ -239,7 +239,7 @@ class SimTab(QWidget, GuardedPanel):
         self._palette_action.setChecked(True)
         self._palette_action.setShortcut("Ctrl+B")
         self._palette_action.setToolTip(
-            "Show or hide the block palette (Ctrl+B)")
+            keys.label("Show or hide the block palette (Ctrl+B)"))
         self._palette_action.triggered.connect(
             lambda checked: self.set_palette_visible(checked))
         bar.addSeparator()
@@ -261,7 +261,7 @@ class SimTab(QWidget, GuardedPanel):
         self._run_btn = QPushButton("Run")
         iconset.bind(self._run_btn, "run")
         self._run_btn.setShortcut("Ctrl+R")
-        self._run_btn.setToolTip("Run the simulation (Ctrl+R)")
+        self._run_btn.setToolTip(keys.label("Run the simulation (Ctrl+R)"))
         self._run_btn.clicked.connect(self.run_simulation)
         bar.addWidget(self._run_btn)
 
@@ -315,12 +315,12 @@ class SimTab(QWidget, GuardedPanel):
         # the canvas's corner (see arrange.py).
         undo = bar.addAction("Undo")
         iconset.bind(undo, "undo")
-        undo.setToolTip("Undo (Ctrl+Z)")
+        undo.setToolTip(keys.label("Undo (Ctrl+Z)"))
         undo.setShortcut("Ctrl+Z")
         undo.triggered.connect(lambda: self._canvas.undo_stack.undo())
         redo = bar.addAction("Redo")
         iconset.bind(redo, "redo")
-        redo.setToolTip("Redo (Ctrl+Y)")
+        redo.setToolTip(keys.label("Redo (Ctrl+Y)"))
         redo.setShortcut("Ctrl+Y")
         redo.triggered.connect(lambda: self._canvas.undo_stack.redo())
         bar.addSeparator()

@@ -34,7 +34,7 @@ from ...console import tracer as dbg
 from ...console.figures import FigureSpec, set_figure_sink
 from ...console.interpreter import Interpreter, Result
 from ...console.matlab import looks_like_matlab
-from .. import iconset
+from .. import iconset, keys
 from ..code import (
     CodeEditor,
     MatlabHighlighter,
@@ -514,10 +514,10 @@ class ScriptEditor(QWidget):
         row.addWidget(run)
         self._run_button = run
         section = QPushButton("Run section")
-        section.setToolTip(
+        section.setToolTip(keys.label(
             "Run the %% section the cursor is in (Ctrl+Enter); "
             "Ctrl+Shift+Enter runs it and moves to the next. Appends to the "
-            "console, like typed commands.")
+            "console, like typed commands."))
         section.clicked.connect(lambda: self.run_section(False))
         row.addWidget(section)
         self._section_button = section
@@ -810,11 +810,11 @@ class ConsolePanel(QWidget):
             # Quitting mid-run must unwind the script, or it would keep the
             # process alive after the last window closed.
             app.lastWindowClosed.connect(self.stop)
-        for keys, slot in (("F5", self._run_or_continue),
-                           ("Shift+F5", self.stop),
-                           ("F10", lambda: self._debug(dbg.STEP)),
-                           ("F11", lambda: self._debug(dbg.STEP_IN))):
-            shortcut = QShortcut(QKeySequence(keys), self)
+        for key, slot in (("F5", self._run_or_continue),
+                          ("Shift+F5", self.stop),
+                          ("F10", lambda: self._debug(dbg.STEP)),
+                          ("F11", lambda: self._debug(dbg.STEP_IN))):
+            shortcut = QShortcut(QKeySequence(key), self)
             shortcut.setContext(Qt.WidgetWithChildrenShortcut)
             shortcut.activated.connect(slot)
 

@@ -66,9 +66,10 @@ jobs:
         timeout-minutes: 30
         run: pytest -q -o faulthandler_timeout=300
 
-      # The same self-test a packaged build ships with. It runs every course
-      # lesson's analytic claims, so a CI pass means the numbers agree with
-      # the theory, not merely that nothing raised.
+      # The same self-test a packaged build ships with. It checks analysis
+      # results with known closed forms (margins, critical gains, overshoot,
+      # the waterbed integral), so a CI pass means the numbers agree with the
+      # theory, not merely that nothing raised.
       - name: self-test
         run: python app.py --check
 
@@ -77,9 +78,6 @@ jobs:
     runs-on: windows-latest
     needs: [lint, test]
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
-    # Creating the release on a tag needs write access to the repository.
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -128,8 +126,6 @@ jobs:
           }
           & $iscc packaging/evans.iss
           if ($LASTEXITCODE -ne 0) { throw "ISCC failed (exit $LASTEXITCODE)" }
-          $setup = Get-ChildItem dist/Evans-Setup-*.exe | Select-Object -First 1
-          "SETUP=$($setup.FullName)" >> $env:GITHUB_ENV
 
       - uses: actions/upload-artifact@v4
         with:
@@ -138,15 +134,81 @@ jobs:
           retention-days: 14
 
       - name: Zip the build
-        if: startsWith(github.ref, 'refs/tags/')
         shell: pwsh
         run: Compress-Archive -Path dist/Evans -DestinationPath Evans-windows.zip
 
-      - name: Publish the release
-        if: startsWith(github.ref, 'refs/tags/')
-        shell: pwsh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Evans-windows-zip
+          path: Evans-windows.zip
+          retention-days: 14
+
+  build-macos:
+    name: PyInstaller (macos)
+    # Apple Silicon. An Intel Mac would need its own job on an Intel runner.
+    runs-on: macos-latest
+    needs: [lint, test]
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: pyinstaller --clean --noconfirm packaging/evans.spec
+
+      # Unsigned, not unsigned at all: Apple Silicon refuses to run code with
+      # no signature, so the whole bundle is signed ad hoc ("-") and checked.
+      # A library PyInstaller copied in with a broken signature fails here
+      # rather than on someone's Mac as "Evans is damaged".
+      - name: Sign ad hoc and verify
+        run: |
+          codesign --force --deep --sign - dist/Evans.app
+          codesign --verify --deep --strict --verbose=2 dist/Evans.app
+
+      # The same rule as on Windows: no self-test, no release. The app's
+      # executable prints its report to this terminal like any other.
+      - name: self-test the frozen build
+        run: dist/Evans.app/Contents/MacOS/Evans --check
+
+      # The usual Mac disk image: the app beside a link to Applications, to
+      # drag it onto. hdiutil ships with macOS, so no extra tool.
+      - name: Build the disk image
+        run: |
+          version=$(python -c "import evans; print(evans.__version__)")
+          mkdir -p dmg
+          cp -R dist/Evans.app dmg/
+          ln -s /Applications dmg/Applications
+          hdiutil create -volname "Evans $version" -srcfolder dmg -ov \
+            -format UDZO "dist/Evans-$version-macos-arm64.dmg"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Evans-macos
+          path: dist/Evans-*-macos-arm64.dmg
+          retention-days: 14
+
+  # One release, published only once every platform's build has passed its
+  # self-test, so a tag never goes out with one platform missing.
+  release:
+    name: Publish the release
+    runs-on: ubuntu-latest
+    needs: [build, build-macos]
+    if: startsWith(github.ref, 'refs/tags/')
+    # Creating the release needs write access to the repository.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          pattern: "{Evans-Setup,Evans-windows-zip,Evans-macos}"
+          merge-multiple: true
+      - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: >
-          gh release create "${{ github.ref_name }}" "$env:SETUP" Evans-windows.zip
+          gh release create "${{ github.ref_name }}" release/*
+          --repo "${{ github.repository }}"
           --title "Evans ${{ github.ref_name }}" --generate-notes

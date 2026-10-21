@@ -44,7 +44,7 @@ from ...console.live.report import (
     find_engines,
     write_tex,
 )
-from .. import theme
+from .. import keys, theme
 
 #: The preview's own narrowest: the Live tab must still fit a 1280 px window.
 MIN_WIDTH = 220
@@ -82,8 +82,8 @@ class LivePreview(QWidget):
         layout.setSpacing(2)
         row = QHBoxLayout()
         self.rebuild_button = QPushButton("Rebuild")
-        self.rebuild_button.setToolTip("Build the PDF again (Ctrl+Enter in "
-                                       "the script also rebuilds)")
+        self.rebuild_button.setToolTip(keys.label(
+            "Build the PDF again (Ctrl+Enter in the script also rebuilds)"))
         self.rebuild_button.clicked.connect(self.rebuild_requested)
         row.addWidget(self.rebuild_button)
         template = QPushButton("Template…")
@@ -116,8 +116,8 @@ class LivePreview(QWidget):
         self.view.setMinimumWidth(MIN_WIDTH)
         layout.addWidget(self.view, stretch=1)
 
-        self.placeholder = QLabel("Press Ctrl+Enter or Rebuild to build "
-                                  "the PDF.")
+        self.placeholder = QLabel(keys.label(
+            "Press Ctrl+Enter or Rebuild to build the PDF."))
         self.placeholder.setAlignment(Qt.AlignCenter)
         self.placeholder.setWordWrap(True)
         layout.addWidget(self.placeholder)

@@ -125,6 +125,7 @@ def main() -> None:
     from evans.ui import iconset
 
     app.setWindowIcon(iconset.app_icon())
+    finder_files = _finder_files(app)
 
     from evans.ui.splash import Splash
 
@@ -159,11 +160,51 @@ def main() -> None:
     # `Evans.exe model.fmdl`: the file association, or a drop on the exe.
     for path in _file_arguments(app.arguments()[1:]):
         win.open_recent(path)
+    # The same on a Mac, where Finder sends an event instead.
+    finder_files.set_target(win.open_recent)
 
     # Once a day, a few seconds from now: is there a newer release?
     win.updater.start()
 
     sys.exit(app.exec())
+
+
+# Below main() on purpose: nothing above it may import Qt, so that
+# --check works on a machine with no display.
+def _finder_files(app):
+    """
+    Files macOS asks Evans to open: a double-click in Finder, a drop on the
+    Dock icon. They come as ``FileOpen`` events, never on the command line,
+    and the first can arrive before the window exists, so they wait in
+    ``pending`` until :attr:`open` is set.
+    """
+    from PySide6.QtCore import QEvent, QObject
+
+    class FinderFiles(QObject):
+        def __init__(self) -> None:
+            super().__init__(app)
+            self.pending: list[Path] = []
+            self.open = None
+
+        def set_target(self, open_file) -> None:
+            self.open = open_file
+            for path in self.pending:
+                open_file(path)
+            self.pending.clear()
+
+        def eventFilter(self, obj, event) -> bool:  # noqa: N802 (Qt API)
+            if event.type() != QEvent.FileOpen or not event.file():
+                return False
+            path = Path(event.file())
+            if self.open is None:
+                self.pending.append(path)
+            else:
+                self.open(path)
+            return True
+
+    files = FinderFiles()
+    app.installEventFilter(files)
+    return files
 
 
 if __name__ == "__main__":

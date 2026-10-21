@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (
 from ..core.architecture import CourseArchitecture
 from ..core.freqresp import bode
 from ..core.tf_utils import factored_str
+from . import keys
 from .design import NORMAL, SECTION, TIGHT, MetricLabel, Status, StatusBadge, monospace
 
 
@@ -92,8 +93,8 @@ class ContextBar(QFrame):
         outer.addWidget(_divider())
 
         self._edit_btn = QPushButton("Edit model")
-        self._edit_btn.setToolTip(
-            "Show the architecture diagram and the block editor (Ctrl+\\)")
+        self._edit_btn.setToolTip(keys.label(
+            "Show the architecture diagram and the block editor (Ctrl+\\)"))
         self._edit_btn.clicked.connect(self.edit_requested)
         outer.addWidget(self._edit_btn)
 

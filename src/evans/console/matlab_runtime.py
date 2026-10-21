@@ -3667,7 +3667,41 @@ def _play(data: np.ndarray, rate: float) -> bool:
         return True
     except Exception:                                    # noqa: BLE001
         pass
-    return _play_winsound(data, rate)
+    return _play_winsound(data, rate) or _play_afplay(data, rate)
+
+
+def _sound_file(data: np.ndarray, rate: float) -> str:
+    """
+    A .wav of ``data`` that lives until Evans exits: both last resorts play
+    asynchronously, so the file has to outlive the call.
+    """
+    import atexit
+    import tempfile
+
+    handle, path = tempfile.mkstemp(prefix="evans-sound-", suffix=".wav")
+    os.close(handle)
+    if not _SOUND_FILES:
+        atexit.register(_remove_sound_files)
+    _SOUND_FILES.append(path)
+    _write_audio(path, data, int(round(rate)), 16)
+    return path
+
+
+def _play_afplay(data: np.ndarray, rate: float) -> bool:
+    """
+    The last resort on a Mac: ``afplay``, which every macOS ships in
+    /usr/bin. The packaged app has no Qt Multimedia there either.
+    """
+    if sys.platform != "darwin":
+        return False
+    import subprocess
+
+    try:
+        subprocess.Popen(["/usr/bin/afplay", _sound_file(data, rate)],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except (OSError, RuntimeError, ValueError):
+        return False
+    return True
 
 
 def _play_winsound(data: np.ndarray, rate: float) -> bool:
@@ -3683,22 +3717,15 @@ def _play_winsound(data: np.ndarray, rate: float) -> bool:
     if sys.platform != "win32":
         return False
     try:
-        import atexit
-        import tempfile
         import winsound
     except ImportError:
         return False
     try:
-        handle, path = tempfile.mkstemp(prefix="evans-sound-", suffix=".wav")
-        os.close(handle)
-        _write_audio(path, data, int(round(rate)), 16)
-        winsound.PlaySound(path, winsound.SND_FILENAME | winsound.SND_ASYNC
+        winsound.PlaySound(_sound_file(data, rate),
+                           winsound.SND_FILENAME | winsound.SND_ASYNC
                            | winsound.SND_NODEFAULT)
     except (OSError, RuntimeError, ValueError):
         return False
-    if not _SOUND_FILES:
-        atexit.register(_remove_sound_files)
-    _SOUND_FILES.append(path)
     return True
 
 

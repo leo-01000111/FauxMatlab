@@ -174,10 +174,17 @@ def test_tex_error_picks_the_line_that_matters():
     assert tex_error("a\nb\nc", lines=2) == "b\nc"
 
 
+def test_tex_folders_on_a_mac_include_mactex_and_homebrew():
+    # An app opened from Finder never sees the shell's PATH.
+    folders = tex_folders({}, platform="darwin")
+    assert "/Library/TeX/texbin" in folders
+    assert "/opt/homebrew/bin" in folders
+
+
 def test_tex_folders_cover_the_default_installs():
     folders = tex_folders({"LOCALAPPDATA": r"C:\U\AppData\Local",
                            "ProgramFiles": r"C:\Program Files",
-                           "SystemDrive": "Z:"})
+                           "SystemDrive": "Z:"}, platform="win32")
     assert any("AppData" in f and "MiKTeX" in f for f in folders)
     assert any(f.startswith(r"C:\Program Files") and "MiKTeX" in f
                for f in folders)

@@ -28,6 +28,7 @@ import html
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -61,14 +62,18 @@ INSTALL_HINT = (
     "Then export again.")
 
 
-def tex_folders(environ=os.environ) -> list[str]:
+def tex_folders(environ=os.environ, platform=sys.platform) -> list[str]:
     """
-    Where TeX distributions install their binaries by default on Windows.
+    Where TeX distributions install their binaries by default.
 
     Searched after PATH: an app started from the Start menu or the bundled
     exe can have a PATH that predates the TeX install, or MiKTeX may have
-    been installed for one user without touching PATH at all.
+    been installed for one user without touching PATH at all. On a Mac an
+    app opened from Finder or the Dock never sees the shell's PATH, so
+    MacTeX's link folder and Homebrew's are never on it.
     """
+    if platform == "darwin":
+        return ["/Library/TeX/texbin", "/opt/homebrew/bin", "/usr/local/bin"]
     miktex = os.path.join("MiKTeX", "miktex", "bin", "x64")
     folders = []
     if environ.get("LOCALAPPDATA"):                 # "for me only"

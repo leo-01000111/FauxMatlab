@@ -35,7 +35,7 @@ from PySide6.QtWidgets import (
 
 from ...console.interpreter import Interpreter, Result
 from ...console.matlab import incomplete
-from .. import theme
+from .. import keys, theme
 from ..code.completion import code_request, completion_candidates
 from ..code.popup import CompletionController
 
@@ -43,6 +43,18 @@ PROMPT = ">> "
 CONTINUATION = ".. "
 #: The prompt while the debugger is paused, as MATLAB writes it.
 DEBUG_PROMPT = "K>> "
+
+
+def _interrupts(event: QKeyEvent) -> bool:
+    """
+    Copy's key (Ctrl+C, ⌘C on a Mac), or on a Mac also Control-C itself:
+    what MATLAB and Terminal stop with there. Qt calls the Mac's Control key
+    Meta.
+    """
+    if event.matches(QKeySequence.Copy):
+        return True
+    return (keys.is_mac() and event.key() == Qt.Key_C
+            and event.modifiers() == Qt.MetaModifier)
 
 
 class _InputLine(QLineEdit):
@@ -61,7 +73,7 @@ class _InputLine(QLineEdit):
         # While the completion popup shows, its controller (an event filter)
         # takes the keys it needs before they get here.
         key = event.key()
-        if event.matches(QKeySequence.Copy) and not self.hasSelectedText():
+        if _interrupts(event) and not self.hasSelectedText():
             self.interrupt.emit()
             return
         if key in (Qt.Key_Return, Qt.Key_Enter):
@@ -102,8 +114,7 @@ class _CopyOrInterrupt(QObject):
         self._interrupt = interrupt
 
     def eventFilter(self, obj, event) -> bool:        # noqa: N802 (Qt API)
-        if event.type() == QEvent.KeyPress and event.matches(
-                QKeySequence.Copy) \
+        if event.type() == QEvent.KeyPress and _interrupts(event) \
                 and not self._transcript.textCursor().hasSelection():
             self._interrupt()
             return True
@@ -161,8 +172,8 @@ class ConsoleWidget(QWidget):
         # does not know the button font is the wide uppercase sign face.
         stop = QPushButton("Stop")
         stop.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        stop.setToolTip("Interrupt what is running (Ctrl+C here with "
-                        "nothing selected, or Shift+F5)")
+        stop.setToolTip(keys.label("Interrupt what is running (Ctrl+C here "
+                                   "with nothing selected, or Shift+F5)"))
         stop.setEnabled(False)
         stop.clicked.connect(self.stop_requested)
         row.addWidget(stop)
@@ -238,7 +249,8 @@ class ConsoleWidget(QWidget):
         self._stop_button.setEnabled(self.interpreter.tracer.running)
 
     def _busy_note(self) -> None:
-        self.note("Busy — Stop (or Ctrl+C) interrupts what is running.")
+        self.note(keys.label(
+            "Busy — Stop (or Ctrl+C) interrupts what is running."))
 
     def _submit(self, text: str) -> None:
         if self.busy:

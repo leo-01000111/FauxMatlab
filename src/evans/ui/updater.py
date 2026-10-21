@@ -66,7 +66,9 @@ class Updater(QObject):
 
     def start(self) -> None:
         """The automatic check, if it is on and due. Call once at launch."""
-        if not update.can_install() or not persist.update_auto_check():
+        if not (update.can_install() or update.is_packaged()):
+            return                  # a checkout: the user runs git pull
+        if not persist.update_auto_check():
             return
         if time.time() - persist.update_last_check() < CHECK_INTERVAL_S:
             return
@@ -108,7 +110,8 @@ class Updater(QObject):
 
     def offer(self, release: Release) -> None:
         if not update.can_install():
-            # From a checkout there is no installed copy to replace.
+            # From a checkout there is no installed copy to replace, and the
+            # Mac app cannot replace itself yet: both get the release page.
             if self._ask_open_page(release):
                 QDesktopServices.openUrl(QUrl(release.notes_url))
             return

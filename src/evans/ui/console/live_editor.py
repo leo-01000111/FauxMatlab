@@ -81,7 +81,7 @@ from ...console.live.report import (
     write_tex,
 )
 from ...console.live.template import ReportTemplate, resolve_template
-from .. import iconset, theme
+from .. import iconset, keys, theme
 from ..code.completion import code_request
 from ..code.latex import labels_in, latex_request
 from ..code.popup import CompletionController
@@ -334,7 +334,7 @@ class CodeCellWidget(CellWidget):
         run.setText("Run")
         iconset.bind(run, "run")
         run.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-        run.setToolTip("Run this cell (Ctrl+Enter)")
+        run.setToolTip(keys.label("Run this cell (Ctrl+Enter)"))
         run.clicked.connect(lambda: self.action.emit(self, "run"))
         self._header.addWidget(run)
         self.run_button = run
@@ -343,7 +343,8 @@ class CodeCellWidget(CellWidget):
         super().__init__(cell, parent)
         self.editor = _GrowingEditor(code=True)
         self.editor.setPlainText(cell.source)
-        self.editor.setPlaceholderText("% MATLAB — Ctrl+Enter runs this cell")
+        self.editor.setPlaceholderText(
+            keys.label("% MATLAB — Ctrl+Enter runs this cell"))
         self.editor.run_requested.connect(lambda: self.action.emit(self, "run"))
         self.editor.focused.connect(lambda: self.action.emit(self, "focus"))
         self.editor.textChanged.connect(self.sync_to_cell)
@@ -481,8 +482,9 @@ class TextCellWidget(CellWidget):
         self.kind_box.currentIndexChanged.connect(self._kind_changed)
         self._header.addWidget(self.kind_box)
         self.toggle = QToolButton()
-        self.toggle.setToolTip("Switch between the markup and the rendered "
-                               "text (Ctrl+Enter renders)")
+        self.toggle.setToolTip(keys.label(
+            "Switch between the markup and the rendered text "
+            "(Ctrl+Enter renders)"))
         self.toggle.clicked.connect(self._toggle)
         self._header.addWidget(self.toggle)
 
@@ -654,11 +656,13 @@ class LiveScriptEditor(QWidget):
             row.addWidget(b)
             return b
 
-        button("Run all", "Run every code cell from the top "
-               "(Ctrl+Shift+Enter)", self.run_all, "run")
+        button("Run all", keys.label("Run every code cell from the top "
+                                     "(Ctrl+Shift+Enter)"),
+               self.run_all, "run")
         button("Run to here", "Run every code cell down to the selected one",
                self.run_to_here)
-        button("Run cell", "Run the selected code cell (Ctrl+Enter)",
+        button("Run cell",
+               keys.label("Run the selected code cell (Ctrl+Enter)"),
                self.run_current)
         row.addSpacing(8)   # group gaps: 8 px keeps the row in the 1280 budget
         button("+ Code", "Insert a code cell below the selected one",
@@ -676,9 +680,9 @@ class LiveScriptEditor(QWidget):
         # in its own format; the arrow is Save as…, with either format.
         self.save_button = QToolButton()
         self.save_button.setText("Save")
-        self.save_button.setToolTip(
+        self.save_button.setToolTip(keys.label(
             "Save to the same file, in its format (Ctrl+S). The arrow: "
-            "Save as… a MATLAB .mlx or a plain-text .m")
+            "Save as… a MATLAB .mlx or a plain-text .m"))
         self.save_button.setPopupMode(QToolButton.MenuButtonPopup)
         self.save_button.clicked.connect(lambda: self.save())
         save_menu = QMenu(self.save_button)
@@ -695,9 +699,9 @@ class LiveScriptEditor(QWidget):
         row.addWidget(export)
         self.preview_button = QPushButton("Preview")
         self.preview_button.setCheckable(True)
-        self.preview_button.setToolTip(
+        self.preview_button.setToolTip(keys.label(
             f"Show the PDF beside the script ({PREVIEW_SHORTCUT}); "
-            "Ctrl+Enter rebuilds it")
+            "Ctrl+Enter rebuilds it"))
         self.preview_button.toggled.connect(self.set_preview)
         row.addWidget(self.preview_button)
         # The file name takes the room that is left and asks for none: it is

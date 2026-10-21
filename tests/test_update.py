@@ -329,6 +329,10 @@ def test_the_automatic_check_waits_a_day_and_respects_the_switch(
     updater.start()
     assert len(scheduled) == 1                  # running from source
 
+    monkeypatch.setattr(update, "is_packaged", lambda: True)
+    updater.start()
+    assert len(scheduled) == 2                  # the Mac app: checks anyway
+
 
 def test_a_copy_from_source_only_points_at_the_release(updater, monkeypatch):
     monkeypatch.setattr(update, "can_install", lambda: False)
