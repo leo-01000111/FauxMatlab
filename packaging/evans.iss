@@ -140,3 +140,13 @@ Root: HKA; Subkey: "Software\Classes\Applications\Evans.exe\SupportedTypes"; \
 [Run]
 Filename: "{app}\Evans.exe"; Description: "{cm:LaunchProgram,Evans}"; \
     Flags: nowait postinstall skipifsilent
+; Evans' own updater (src\evans\ui\updater.py) runs this installer silently.
+; "Update now" passes /relaunch=1 to get Evans back once the files are in;
+; "Update when I close Evans" does not, since the user has just closed it.
+Filename: "{app}\Evans.exe"; Flags: nowait; Check: RelaunchRequested
+
+[Code]
+function RelaunchRequested: Boolean;
+begin
+  Result := ExpandConstant('{param:relaunch|0}') = '1';
+end;

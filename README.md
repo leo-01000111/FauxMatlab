@@ -17,8 +17,10 @@ On Windows you don't need Python. Both downloads are on the
 for your account only, into `%LOCALAPPDATA%\Programs\Evans`, so it doesn't need
 administrator rights. You get a Start-menu entry (a desktop shortcut if you tick the box),
 `.fmdl` models open in Evans when you double-click them, and Evans shows up in
-*Apps & features* so you can uninstall it there. To upgrade, run a newer installer over
-the old one. Uninstalling leaves your settings (theme, layout, recent files) in place.
+*Apps & features* so you can uninstall it there. Evans checks GitHub for a newer release
+once a day and offers to update, either right away or when you close it; *Help ▸ Check for
+updates* asks on demand, and the same menu turns the daily check off. Running a newer
+installer over the old one upgrades it too. Uninstalling leaves your settings (theme, layout, recent files) in place.
 
 The installer isn't code-signed yet, so Windows SmartScreen will say "Windows protected
 your PC" the first time you run it. Click **More info**, then **Run anyway**.
@@ -265,7 +267,7 @@ a crossover above the plant's phase budget is impossible for it.
 pytest
 ```
 
-1328 tests, plus `ruff check .`. Most are golden tests: analytic values worked out by hand
+1364 tests, plus `ruff check .`. Most are golden tests: analytic values worked out by hand
 or by an independent route, rather than snapshots of whatever the code printed first. The
 numeric signal solver and the symbolic one check each other, and `python-control` is a
 third opinion.

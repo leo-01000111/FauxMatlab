@@ -173,3 +173,45 @@ def integrated_title_bar(default: bool) -> bool:
 
 def set_integrated_title_bar(on: bool) -> None:
     settings().setValue(INTEGRATED_TITLE_BAR_KEY, bool(on))
+
+
+#: Help ▸ Check for updates: whether Evans looks by itself, when it last did,
+#: and the one release the user asked not to hear about again.
+UPDATE_AUTO_KEY = "updates/autoCheck"
+UPDATE_LAST_CHECK_KEY = "updates/lastCheck"
+UPDATE_SKIPPED_KEY = "updates/skipped"
+
+
+def _bool(value, default: bool) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, str):            # the INI backend stores text
+        return value.lower() in ("true", "1")
+    return bool(value)
+
+
+def update_auto_check() -> bool:
+    return _bool(settings().value(UPDATE_AUTO_KEY), True)
+
+
+def set_update_auto_check(on: bool) -> None:
+    settings().setValue(UPDATE_AUTO_KEY, bool(on))
+
+
+def update_last_check() -> float:
+    try:
+        return float(settings().value(UPDATE_LAST_CHECK_KEY) or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def set_update_last_check(when: float) -> None:
+    settings().setValue(UPDATE_LAST_CHECK_KEY, float(when))
+
+
+def update_skipped() -> str:
+    return str(settings().value(UPDATE_SKIPPED_KEY) or "")
+
+
+def set_update_skipped(tag: str) -> None:
+    settings().setValue(UPDATE_SKIPPED_KEY, tag)

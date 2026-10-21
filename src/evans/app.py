@@ -148,6 +148,9 @@ def main() -> None:
     for path in _file_arguments(app.arguments()[1:]):
         win.open_recent(path)
 
+    # Once a day, a few seconds from now: is there a newer release?
+    win.updater.start()
+
     sys.exit(app.exec())
 
 

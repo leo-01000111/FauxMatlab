@@ -83,6 +83,7 @@ from .persist import RecentFiles
 from .sim.sim_tab import SimTab
 from .tabs.modern import ModernTab
 from .titlebar import TitleBar
+from .updater import Updater
 from .workspace import Workspace, WorkspaceStack
 
 
@@ -109,6 +110,8 @@ class MainWindow(QMainWindow):
         self.recent_files = RecentFiles()
         # Before the menus: the title bar holds the menu bar they fill.
         self._title_bar = TitleBar(self)
+        #: Help ▸ Check for updates; before the menus, which call it.
+        self.updater = Updater(self)
         # Looked up at click time, not bound now, so the tests can patch them.
         self._title_bar.minimize_requested.connect(lambda: self.showMinimized())
         self._title_bar.maximize_requested.connect(
@@ -120,6 +123,7 @@ class MainWindow(QMainWindow):
         self._build_docks()
         self._build_menus()
         self._build_status_bar()
+        self.updater.status.connect(self._status.showMessage)
         self.set_integrated_title_bar(
             persist.integrated_title_bar(default=winframe.supported()),
             remember=False)
@@ -539,6 +543,8 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:
         self.save_layout()
+        # "Update when I close Evans": the installer takes over from here.
+        self.updater.install_pending()
         super().closeEvent(event)
 
     # ── Apps ─────────────────────────────────────────────────
@@ -978,6 +984,17 @@ class MainWindow(QMainWindow):
         help_menu = mb.addMenu("&Help")
         help_menu.addAction(QAction("Documentation", self, shortcut="F1",
                                      triggered=lambda: help.open_help()))
+        help_menu.addSeparator()
+        help_menu.addAction(QAction(
+            "Check for &updates…", self,
+            triggered=lambda: self.updater.check(),
+            statusTip="Look for a newer Evans on GitHub"))
+        act_auto_update = QAction("Check for updates &automatically", self,
+                                  checkable=True)
+        act_auto_update.setChecked(persist.update_auto_check())
+        act_auto_update.setStatusTip("Once a day, a few seconds after launch")
+        act_auto_update.triggered.connect(persist.set_update_auto_check)
+        help_menu.addAction(act_auto_update)
         help_menu.addSeparator()
         help_menu.addAction(QAction("About", self,
                                      triggered=self._show_about))
