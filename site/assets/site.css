@@ -151,6 +151,28 @@ td.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; whit
 }
 .download-note[hidden] { display: none; }
 
+/* The install page's download: centred, and the one big button on the site.
+   It names the system it found above its label and the file below it. */
+.proj-hero--center { text-align: center; }
+.proj-hero--center .lede, .proj-hero--center .download-note { margin-left: auto; margin-right: auto; }
+.proj-hero--center .download-note { text-align: left; }
+.proj-hero--center .cta { justify-content: center; }
+.hp-btn--download {
+  flex-direction: column; gap: 6px; min-height: 96px; min-width: min(100%, 360px);
+  padding: var(--space-3) calc(var(--space-6) + 6px);
+}
+.hp-btn--download .hp-btn__main { display: inline-flex; align-items: center; gap: var(--space-2); font-size: 26px; }
+.hp-btn--download .hp-btn__main svg { width: 22px; height: 22px; }
+.hp-btn__meta {
+  font-family: var(--font-mono); font-size: 12px; font-weight: 500; letter-spacing: 0.04em;
+  text-transform: none; font-stretch: normal; opacity: 0.8;
+}
+.hp-btn__meta[hidden] { display: none; }
+@media (max-width: 640px) {
+  .hp-btn--download { width: 100%; padding: var(--space-3) var(--space-4); }
+  .hp-btn--download .hp-btn__main { font-size: 21px; }
+}
+
 /* ——— Patch notes ——— */
 .notes h3 {
   margin: var(--space-4) 0 var(--space-2); font-family: var(--font-mono); font-size: 11px; font-weight: 600;

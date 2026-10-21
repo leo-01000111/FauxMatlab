@@ -1,11 +1,16 @@
-    <section class="proj-hero">
+    <section class="proj-hero proj-hero--center">
       <p class="label">Install · v@@version@@</p>
       <h1>Install Evans</h1>
       <p class="lede">On Windows and on Apple Silicon Macs, download the standalone build: it needs nothing else installed, not even Python. Everywhere else, and wherever you want to change the code, run it from source.</p>
       <div class="cta">
-        <a class="hp-btn hp-btn--primary" href="@@releases@@" data-download data-download-note="download-note"><span>Download for Windows</span><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><g transform="rotate(90 12 12)" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="square" stroke-linejoin="miter"><path d="M3.5 12H18.5"></path><path d="M12 5.2L18.8 12L12 18.8"></path></g></svg></a>
+        <a class="hp-btn hp-btn--primary hp-btn--download" href="@@releases@@" data-download data-download-direct data-download-note="download-note">
+          <span class="hp-btn__meta" data-download-os hidden></span>
+          <span class="hp-btn__main"><span data-download-label>Download Evans</span><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><g transform="rotate(90 12 12)" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="square" stroke-linejoin="miter"><path d="M3.5 12H18.5"></path><path d="M12 5.2L18.8 12L12 18.8"></path></g></svg></span>
+          <span class="hp-btn__meta" data-download-size>Latest release on GitHub</span>
+        </a>
       </div>
       <p class="download-note" id="download-note" role="status" hidden></p>
+      <p class="cta-note">Other systems: <a href="#windows-col">Windows</a> · <a href="#macos">macOS</a> · <a href="#linux">Linux</a> · <a href="#source">from source</a> · <a href="@@releases@@">all releases</a></p>
     </section>
 
     <section class="proj-section os-grid" aria-label="Install on your system">

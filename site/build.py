@@ -100,7 +100,7 @@ TEMPLATE = """<!DOCTYPE html>
       </nav>
       <div class="header-tools">
         <div class="hp-lang" role="group" aria-label="Theme" data-theme-toggle hidden><button type="button" data-set-theme="light" aria-pressed="false">Day</button><button type="button" data-set-theme="dark" aria-pressed="false">Night</button></div>
-        <a class="hp-btn hp-btn--secondary hp-btn--sm" href="{releases}" data-download data-download-short><span>Download</span></a>
+        <a class="hp-btn hp-btn--secondary hp-btn--sm" href="install.html" data-download data-download-short><span>Download</span></a>
       </div>
     </div>
     <nav class="docs-nav" aria-label="Documentation"><div class="hp-signarray">{nav}</div></nav>
