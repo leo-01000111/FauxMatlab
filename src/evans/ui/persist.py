@@ -42,6 +42,11 @@ def migrate_legacy_settings(stores=None) -> int:
     copied = 0
     for (old_org, old_app), (org, app) in (stores or LEGACY_STORES).items():
         old, new = QSettings(old_org, old_app), QSettings(org, app)
+        # On macOS, allKeys() otherwise includes the system-wide preferences
+        # (AppleLocale and the rest), so neither store is ever empty: nothing
+        # would migrate, and if it did, Apple's keys would come along.
+        old.setFallbacksEnabled(False)
+        new.setFallbacksEnabled(False)
         if new.allKeys() or not old.allKeys():
             continue
         for key in old.allKeys():

@@ -59,6 +59,11 @@ import numpy as np
 _REAL_TOL = 1e-4
 #: |root| below this is a root at the origin (an integrator/differentiator).
 _ZERO_TOL = 1e-9
+#: Relative gap below which two corner frequencies are one corner. A root of
+#: multiplicity m comes back from ``np.roots`` split by about eps^(1/m): for
+#: ``(s+1)²`` that is ±1e-8, imaginary on one LAPACK and real on another
+#: (macOS's Accelerate returns 1 ± 6.7e-9).
+_CORNER_TOL = 1e-4
 
 
 @dataclass(frozen=True)
@@ -177,7 +182,32 @@ def _factorise(tf) -> _Factors | None:
             + [(abs(p), -1, p > 0) for p in pr])
     pairs = ([(abs(z), +1, z.real > 0) for z in zc]
              + [(abs(p), -1, p.real > 0) for p in pc])
-    return _Factors(float(gain), p0 - z0, real, pairs)
+    return _Factors(float(gain), p0 - z0, _snap(real), _snap(pairs))
+
+
+def _snap(roots: list[tuple[float, int, bool]]) -> list[tuple[float, int, bool]]:
+    """
+    Give near-equal corner frequencies one value, their mean.
+
+    Both sketches key on the exact ω: the magnitude adds coincident corners
+    up, and the phase would otherwise draw a ramp a few nanodecades wide
+    between the two halves of a double root.
+    """
+    if not roots:
+        return []
+    order = sorted(range(len(roots)), key=lambda i: roots[i][0])
+    out = list(roots)
+    group: list[int] = []
+    for i in order + [None]:
+        if i is not None and (not group or roots[i][0] - roots[group[0]][0]
+                              <= _CORNER_TOL * roots[group[0]][0]):
+            group.append(i)
+            continue
+        mean = sum(roots[j][0] for j in group) / len(group)
+        for j in group:
+            out[j] = (mean, *roots[j][1:])
+        group = [i]
+    return out
 
 
 # ──────────────────────────────────────────────────────────────

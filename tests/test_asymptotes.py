@@ -204,6 +204,15 @@ def test_repeated_pole_is_one_corner_with_two_ramps():
     assert a.phase[-1].value_end == pytest.approx(-180.0)
 
 
+def test_a_double_pole_split_into_two_real_roots_is_still_one_corner():
+    # macOS's LAPACK returns (s+1)² as 1 ± 6.7e-9, real, where Windows and
+    # Linux return a vanishing imaginary pair. Poles 1e-5 apart come back
+    # real and distinct everywhere, so this pins the macOS case on any OS.
+    a = bode_asymptotes(ctl.tf([1], np.poly([-1.0, -1.00001])), W0, W1)
+    assert len(a.breaks) == 1 and a.breaks[0].slope_change == -40.0
+    assert [s.slope for s in a.phase] == [0, -90, 0]
+
+
 def test_static_gain_is_the_bode_gain():
     # 100/(s+10) = 10/(1 + s/10): 20 dB flat until 10 rad/s.
     a = bode_asymptotes(ctl.tf([100], [1, 10]), W0, W1)
