@@ -19,8 +19,8 @@ Within a span
 -------------
 * Block outputs are evaluated in the compiled order. Non-feedthrough blocks
   read only their state, so they are always ready.
-* An algebraic loop is closed with ``scipy.optimize.fsolve`` on the breaker's
-  output.
+* Each algebraic loop is closed with ``scipy.optimize.fsolve`` on its
+  breakers' outputs, loop by loop in signal-flow order.
 * Discontinuities are caught by :meth:`~evans.sim.block.Block.zero_crossings`
   events, so a saturation limit or relay switch is hit exactly.
 """
@@ -96,80 +96,114 @@ class _Evaluator:
 
     def evaluate(self, t: float, x: np.ndarray,
                  xd: np.ndarray) -> dict[PortRef, np.ndarray]:
-        """All port values at ``t``, resolving any algebraic loop."""
+        """All port values at ``t``, resolving every algebraic loop."""
         if self.c.has_algebraic_loop:
-            return self._evaluate_with_loop(t, x, xd)
+            return self._evaluate_with_loops(t, x, xd)
         return self._sweep(t, x, xd)
 
-    def _sweep(self, t, x, xd, seed=None) -> dict[PortRef, np.ndarray]:
-        self._values = dict(seed) if seed else {}
+    def _sweep(self, t, x, xd) -> dict[PortRef, np.ndarray]:
+        self._values = {}
         for bid in self.c.order:
-            plan = self.c.plans[bid]
-            block = plan.block
-            outs = block.output(t, x[plan.x_slice], xd[plan.xd_slice],
-                                self._inputs(plan))
-            for port, value in zip(block.outputs, outs):
-                ref = PortRef(bid, port)
-                if seed is None or ref not in self._values:
-                    self._values[ref] = np.atleast_1d(np.asarray(value,
-                                                                 dtype=float))
+            self._output(bid, t, x, xd)
         return self._values
 
-    def _evaluate_with_loop(self, t, x, xd) -> dict[PortRef, np.ndarray]:
-        """
-        Close the algebraic loop by solving for the breaker's output.
+    def _output(self, bid, t, x, xd, store: bool = True) -> list[np.ndarray]:
+        """One block's outputs from the values so far; stored unless told not."""
+        plan = self.c.plans[bid]
+        block = plan.block
+        outs = [np.atleast_1d(np.asarray(v, dtype=float))
+                for v in block.output(t, x[plan.x_slice], xd[plan.xd_slice],
+                                      self._inputs(plan))]
+        if store:
+            for port, value in zip(block.outputs, outs):
+                self._values[PortRef(bid, port)] = value
+        return outs
 
-        Guess the breaker's output, sweep the model once, and compare the
-        breaker's recomputed output with the guess. The root of that residual
-        is the consistent solution.
+    # ── algebraic loops ─────────────────────────────────────────
+
+    def _evaluate_with_loops(self, t, x, xd) -> dict[PortRef, np.ndarray]:
         """
-        breaker_id = self.c.loop_breakers[0]
-        plan = self.c.plans[breaker_id]
-        refs = [PortRef(breaker_id, p) for p in plan.block.outputs]
-        widths = plan.output_widths
+        Sweep the model, closing each algebraic loop where the order meets it.
+
+        Loops are solved **one at a time**, in the order the compiler emitted
+        them — topological order of the loops and the blocks between them —
+        rather than with one ``fsolve`` over every breaker at once. That is
+        both cheaper and more robust: ``fsolve`` builds its Jacobian by finite
+        differences, one sweep per unknown, so a joint solve pays for every
+        loop's unknowns on every loop's sweep, while here each Jacobian is
+        only as wide as one loop's breakers and each sweep only re-evaluates
+        that loop's own blocks. A loop downstream of another starts from its
+        upstream's converged values instead of a half-solved guess, and when
+        one fails to converge the error names exactly that loop.
+        """
+        previous = self._values              # warm start: the last solution
+        self._values = {}
+        first = {loop.members[0]: loop for loop in self.c.loops}
+        order = self.c.order
+        at = 0
+        while at < len(order):
+            loop = first.get(order[at])
+            if loop is None:
+                self._output(order[at], t, x, xd)
+                at += 1
+            else:
+                self._solve_loop(loop, t, x, xd, previous)
+                at += len(loop.members)
+        return self._values
+
+    def _solve_loop(self, loop, t, x, xd, previous) -> None:
+        """
+        Close one loop by solving for its breakers' outputs.
+
+        Guess the breakers' outputs, evaluate the loop's blocks once in their
+        compiled order, and compare each breaker's recomputed output with its
+        guess. The root of that residual is the consistent solution. Values
+        from upstream of the loop are already in place and are not touched.
+        """
+        refs: list[PortRef] = []
+        widths: list[int] = []
+        for bid in loop.breakers:
+            plan = self.c.plans[bid]
+            refs += [PortRef(bid, p) for p in plan.block.outputs]
+            widths += plan.output_widths
         guess = np.concatenate([
-            self._values.get(r, np.zeros(w)) for r, w in zip(refs, widths)
-        ]) if self._values else np.zeros(int(sum(widths)))
+            previous.get(r, np.zeros(w)) for r, w in zip(refs, widths)])
+        breakers = set(loop.breakers)
 
         def residual(flat: np.ndarray) -> np.ndarray:
-            seed, at = {}, 0
+            at = 0
             for ref, w in zip(refs, widths):
-                seed[ref] = flat[at:at + w]
+                self._values[ref] = flat[at:at + w]
                 at += w
-            values = self._sweep(t, x, xd, seed=seed)
-            recomputed = plan.block.output(
-                t, x[plan.x_slice], xd[plan.xd_slice],
-                self._loop_inputs(plan, values))
-            return np.concatenate([np.atleast_1d(v) for v in recomputed]) - flat
+            recomputed: dict[str, list[np.ndarray]] = {}
+            for bid in loop.members:
+                # A breaker is evaluated in place but keeps its guess: the
+                # blocks after it in the order were promised the guess.
+                outs = self._output(bid, t, x, xd, store=bid not in breakers)
+                if bid in breakers:
+                    recomputed[bid] = outs
+            return np.concatenate(
+                [v for bid in loop.breakers for v in recomputed[bid]]) - flat
 
-        def _loop_inputs(p, values):
-            return [values.get(c.src, np.zeros(w)) if c is not None
-                    else np.zeros(w)
-                    for c, w in zip(p.input_conns, p.input_widths)]
-
-        self._loop_inputs = _loop_inputs            # bound for residual()
         with _warnings.catch_warnings():
             _warnings.simplefilter("ignore")
             solution, _info, ok, msg = fsolve(residual, guess, full_output=True)
+        # Always re-run at the solution: it leaves every member's value
+        # consistent with it (fsolve's last call need not have been there).
+        error = float(np.max(np.abs(residual(solution)), initial=0.0))
         # Judged by the residual, not by fsolve's flag alone: scipy ≥ 1.15
         # can land on the root of a linear loop (residual ~1e-17, rounding
         # noise) and then report "not making good progress" because the
         # noise cannot be reduced further — a solved loop called a failure.
         scale = 1.0 + float(np.max(np.abs(solution), initial=0.0))
-        if ok != 1 and not (np.max(np.abs(residual(solution)), initial=0.0)
-                            <= 1e-9 * scale):
+        if ok != 1 and not error <= 1e-9 * scale:
             raise SimulationError(
                 f"the algebraic loop through "
-                f"{' → '.join(self.c.algebraic_loop)} did not converge at "
+                f"{' → '.join(loop.cycle)} did not converge at "
                 f"t = {t:.6g} ({msg.strip()}). "
                 f"Break it with a UnitDelay or another block without direct "
                 f"feedthrough."
             )
-        seed, at = {}, 0
-        for ref, w in zip(refs, widths):
-            seed[ref] = solution[at:at + w]
-            at += w
-        return self._sweep(t, x, xd, seed=seed)
 
     # ── derived quantities ──────────────────────────────────────
 
