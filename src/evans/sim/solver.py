@@ -22,7 +22,10 @@ Within a span
 * An algebraic loop is closed with ``scipy.optimize.fsolve`` on the breaker's
   output.
 * Discontinuities are caught by :meth:`~evans.sim.block.Block.zero_crossings`
-  events, so a saturation limit or relay switch is hit exactly.
+  events, so a saturation limit or relay switch is hit exactly. The events
+  are terminal: integration stops on the crossing, the blocks' **modes** are
+  updated, and it restarts. Between crossings the modes stay latched, so the
+  right-hand side the solver sees is smooth (see :func:`_integrate`).
 """
 
 from __future__ import annotations
@@ -84,6 +87,8 @@ class _Evaluator:
     def __init__(self, compiled: CompiledModel) -> None:
         self.c = compiled
         self._values: dict[PortRef, np.ndarray] = {}
+        #: Run warnings raised while integrating (chattering zero crossings).
+        self.warnings: list[str] = []
 
     def _inputs(self, plan) -> list[np.ndarray]:
         out = []
@@ -183,16 +188,6 @@ class _Evaluator:
                 t, x[plan.x_slice], xd[plan.xd_slice], self._inputs(plan))
         return dx
 
-    def zero_crossings(self, t, x, xd, values) -> np.ndarray:
-        out = []
-        for _bid, plan in self.c.plans.items():
-            self._values = values
-            zc = plan.block.zero_crossings(
-                t, x[plan.x_slice], xd[plan.xd_slice], self._inputs(plan))
-            if len(zc):
-                out.append(np.atleast_1d(zc))
-        return np.concatenate(out) if out else np.zeros(0)
-
     def update_discrete(self, t, x, xd, values, due: set[str]) -> np.ndarray:
         """Apply discrete updates for the blocks whose sample time is due."""
         new = xd.copy()
@@ -208,6 +203,109 @@ class _Evaluator:
     def inputs_for(self, plan, values) -> list[np.ndarray]:
         self._values = values
         return self._inputs(plan)
+
+    # ── zero crossings and modes ────────────────────────────────
+
+    def zero_crossing_layout(self, t, x, xd) -> list[tuple[str, int]]:
+        """
+        ``(block id, count)`` for every block with zero crossings, in order.
+
+        Counts come from :meth:`~evans.sim.block.Block.n_zero_crossings`. A
+        block that does not declare one is asked directly, at the real state
+        — and if that raises, the run says so instead of quietly losing every
+        event, which is what the old probe at ``x = 0`` did.
+        """
+        layout: list[tuple[str, int]] = []
+        values = None
+        for bid, plan in self.c.plans.items():
+            n = plan.block.n_zero_crossings(list(plan.input_widths))
+            if n is None:
+                if values is None:
+                    values = self.evaluate(t, x, xd)
+                try:
+                    n = len(np.atleast_1d(plan.block.zero_crossings(
+                        t, x[plan.x_slice], xd[plan.xd_slice],
+                        self.inputs_for(plan, values))))
+                except Exception as exc:
+                    raise SimulationError(
+                        f"{bid} ({plan.block.type_name}) failed while "
+                        f"counting its zero crossings: {exc}. Declare "
+                        f"n_zero_crossings() on the block."
+                    ) from exc
+            if n:
+                layout.append((bid, int(n)))
+        return layout
+
+    def zero_crossings(self, t, x, xd, values, layout=None) -> np.ndarray:
+        """
+        Every zero-crossing value, concatenated in ``layout`` order.
+
+        With a layout, a block returning a different number of values than it
+        declared is an error: event ``i`` must mean the same crossing for the
+        whole span, or the solver would stop on one and update another.
+        """
+        if layout is None:
+            layout = [(bid, None) for bid in self.c.plans]
+        out = []
+        for bid, n in layout:
+            plan = self.c.plans[bid]
+            self._values = values
+            zc = np.atleast_1d(np.asarray(plan.block.zero_crossings(
+                t, x[plan.x_slice], xd[plan.xd_slice], self._inputs(plan)),
+                dtype=float))
+            if n is not None and len(zc) != n:
+                raise SimulationError(
+                    f"{bid} ({plan.block.type_name}) returned {len(zc)} "
+                    f"zero-crossing values at t = {t:.6g} but declared {n}")
+            if len(zc):
+                out.append(zc)
+        return np.concatenate(out) if out else np.zeros(0)
+
+    def init_modes(self, t, x, xd) -> None:
+        """
+        Set every block's modes from scratch at ``(t, x)``, and latch them.
+
+        The model is evaluated *unlatched* first, so each block's mode comes
+        from the inputs it really has — not from whatever an earlier run, or
+        a default, left latched upstream.
+        """
+        self.release_modes()
+        values = self.evaluate(t, x, xd)
+        for plan in self.c.plans.values():
+            plan.block.init_modes(t, x[plan.x_slice], xd[plan.xd_slice],
+                                  self.inputs_for(plan, values))
+        self.update_modes(t, x, xd)
+
+    def update_modes(self, t, x, xd) -> bool:
+        """
+        Recompute every block's modes at ``(t, x)``, latching them.
+
+        Called at each zero-crossing event, at the start of every continuous
+        span (a discrete update may just have pushed an input across a
+        threshold), and — by a fixed-step solver — after each major step.
+
+        A mode change upstream changes the inputs downstream, so the pass is
+        repeated until nothing moves; chained discontinuities settle in as
+        many passes as the chain is long.
+        """
+        changed_any = False
+        for _ in range(len(self.c.plans) + 1):
+            values = self.evaluate(t, x, xd)
+            changed = False
+            for plan in self.c.plans.values():
+                if plan.block.update_modes(t, x[plan.x_slice],
+                                           xd[plan.xd_slice],
+                                           self.inputs_for(plan, values)):
+                    changed = True
+            if not changed:
+                break
+            changed_any = True
+        return changed_any
+
+    def release_modes(self) -> None:
+        """Stop latching: every block evaluates its discontinuity on the spot."""
+        for plan in self.c.plans.values():
+            plan.block.release_modes()
 
 
 # ──────────────────────────────────────────────────────────────
@@ -281,6 +379,7 @@ def simulate(model: SimModel | CompiledModel,
     if all_discrete:
         xd = ev.update_discrete(0.0, x, xd, ev.evaluate(0.0, x, xd),
                                 all_discrete)
+    ev.init_modes(0.0, x, xd)
     record(t_now, x, xd)
 
     # A StopSimulation block ends the run at the first sample where its input
@@ -295,6 +394,7 @@ def simulate(model: SimModel | CompiledModel,
             n_steps += steps
         else:
             for t in t_grid[(t_grid > span_start) & (t_grid <= span_end)]:
+                ev.update_modes(float(t), x, xd)
                 record(float(t), x, xd)
                 if stopped:
                     break
@@ -315,10 +415,13 @@ def simulate(model: SimModel | CompiledModel,
             record(t_now, x, xd)
             values = ev.evaluate(t_now, x, xd)
             xd = ev.update_discrete(t_now, x, xd, values, due)
+            ev.update_modes(t_now, x, xd)
             record(t_now, x, xd)
         if progress is not None:
             progress(t_now / t_end)
 
+    run_warnings.extend(ev.warnings)
+    ev.release_modes()
     result = _assemble(compiled, times, states, logged, run_warnings,
                        solver, n_steps)
     return result
@@ -368,9 +471,40 @@ def _blocks_due(compiled: CompiledModel, t: float) -> set[str]:
     return due
 
 
+#: More zero-crossing events than this inside one chatter window and the span
+#: stops latching modes (see :func:`_integrate`).
+_CHATTER_EVENTS = 50
+#: The chatter window, as a fraction of the span (or of ``max_step``).
+_CHATTER_WINDOW = 1e-6
+#: With zero crossings and no max_step, no step is longer than this fraction
+#: of the run (see :func:`_integrate`).
+_MIN_STEPS_PER_RUN = 50
+#: Stand-in for an exact zero, which counts as positive (see
+#: :meth:`~evans.sim.block.Block.zero_crossings`).
+_TINY = 1e-300
+
+
 def _integrate(ev, compiled, x, xd, t0, t1, solver, max_step, rtol, atol,
                t_grid, record, stop_flag=()):
-    """Integrate one continuous span, recording on the output grid."""
+    """
+    Integrate one continuous span, recording on the output grid.
+
+    With zero crossings the span is a sequence of smooth pieces. Every event
+    is terminal: ``solve_ivp`` stops on the crossing, the state there is
+    recorded twice — before and after the modes are updated, so a relay's
+    jump is drawn as a vertical edge, like a held sample — and integration
+    restarts from the event time with the new modes latched. Between events
+    the right-hand side is one smooth function, which is what the step-size
+    controller's error estimate assumes; stepping over a kink instead makes
+    the answer depend on the tolerance.
+
+    A model that keeps switching without advancing (a relay with no
+    hysteresis around a pure integrator, friction at rest under a small
+    force) would restart forever. More than ``_CHATTER_EVENTS`` events inside
+    a window of ``_CHATTER_WINDOW`` of the span ends latching for the rest
+    of the span: the solver then steps on with the modes recomputed after
+    every step, and the run carries a warning naming the blocks.
+    """
     inner = t_grid[(t_grid > t0) & (t_grid < t1)]
 
     def rhs(t, x_vec):
@@ -378,61 +512,236 @@ def _integrate(ev, compiled, x, xd, t0, t1, solver, max_step, rtol, atol,
         return ev.derivatives(t, x_vec, xd, values)
 
     if solver in FIXED_STEP:
+        # _fixed_step does not report its steps, so nothing would update a
+        # latched mode while it marches: evaluate the discontinuities on the
+        # spot instead. Once it takes an ``on_major_step(t, x)`` callback,
+        # pass ``lambda t, x: ev.update_modes(t, x, xd)`` and drop this line.
+        ev.release_modes()
         x_end = _fixed_step(rhs, x, t0, t1, solver, max_step,
                             inner, record, xd)
         return x_end, max(1, len(inner))
 
-    events = _build_events(ev, compiled, xd)
-    with _warnings.catch_warnings():
-        _warnings.simplefilter("ignore")
-        sol = solve_ivp(rhs, (t0, t1), x, method=solver,
-                        t_eval=inner if len(inner) else None,
-                        events=events or None,
-                        max_step=max_step if max_step else np.inf,
-                        rtol=rtol, atol=atol, dense_output=False)
-    if not sol.success:
-        raise SimulationError(
-            f"the solver failed between t = {t0:.6g} and {t1:.6g}: "
-            f"{sol.message}. Try a stiff method (Radau or BDF), or check for "
-            f"a block whose output grows without bound."
-        )
+    span = t1 - t0
+    h_ref = min(span, max_step) if max_step else span
+    window = _CHATTER_WINDOW * h_ref
+    # The run's last grid point is t_end itself; nothing else logs it unless a
+    # discrete block happens to be due there.
+    log_end = t1 >= t_grid[-1] and not _blocks_due(compiled, t1)
+    use_grid = len(inner) > 0
 
-    for i, t_i in enumerate(sol.t):
-        record(float(t_i), sol.y[:, i], xd)
+    # A discrete update may just have pushed an input across a threshold.
+    ev.update_modes(t0, x, xd)
+    layout = ev.zero_crossing_layout(t0, x, xd)
+    owners = [bid for bid, n in layout for _ in range(n)]
+    # Crossings are only looked for at step ends, and with the modes latched
+    # a clipped signal is a constant the step controller will happily stride
+    # over for the whole span — straight past an input that dips back inside
+    # the limits and out again. Without a user max_step, cap the step at a
+    # fiftieth of the run, as Simulink does, whenever there is anything to
+    # cross.
+    step_cap = max_step if max_step else (
+        (t_grid[-1] - t_grid[0]) / _MIN_STEPS_PER_RUN if layout else np.inf)
+    sides = _sides(ev.zero_crossings(t0, x, xd, ev.evaluate(t0, x, xd),
+                                     layout))
+
+    t_s, x_s = t0, np.asarray(x, dtype=float)
+    nfev = 0
+    recent: list[tuple[float, list[int]]] = []
+    while True:
+        # t1 rides along in t_eval so the span ends with the state *at* t1,
+        # not at the last grid point before it.
+        t_eval = (np.append(inner[inner > t_s], t1) if use_grid else None)
+        with _warnings.catch_warnings():
+            _warnings.simplefilter("ignore")
+            sol = solve_ivp(rhs, (t_s, t1), x_s, method=solver,
+                            t_eval=t_eval,
+                            events=_build_events(ev, layout, xd, t_s, sides)
+                            or None,
+                            max_step=step_cap,
+                            rtol=rtol, atol=atol, dense_output=False)
+        nfev += int(sol.nfev)
+        if not sol.success:
+            raise SimulationError(
+                f"the solver failed between t = {t_s:.6g} and {t1:.6g}: "
+                f"{sol.message}. Try a stiff method (Radau or BDF), or check "
+                f"for a block whose output grows without bound."
+            )
+
+        ts, ys = np.asarray(sol.t, dtype=float), np.asarray(sol.y)
+        for i in range(len(ts)):
+            # The restart point was logged already, and t1 only when it ends
+            # the run.
+            if ts[i] == t_s or (ts[i] >= t1 and use_grid and not log_end):
+                continue
+            record(float(ts[i]), ys[:, i], xd)
+            if stop_flag:
+                return ys[:, i], nfev
+
+        if sol.status != 1:                     # reached t1
+            return (ys[:, -1] if len(ts) else x_s), nfev
+
+        # ── a zero crossing ──
+        t_e = min(float(te[-1]) for te in sol.t_events if len(te))
+        fired = [i for i, te in enumerate(sol.t_events)
+                 if len(te) and te[-1] == t_e]
+        y_e = np.asarray(sol.y_events[fired[0]][-1], dtype=float)
+        if not (len(ts) and ts[-1] == t_e):
+            record(t_e, y_e, xd)                # the left limit
+            if stop_flag:
+                return y_e, nfev
+        sides = _cross(ev, layout, rhs, t_e, y_e, xd, fired, sides, h_ref)
+        record(t_e, y_e, xd)                    # the right limit
         if stop_flag:
-            break
-    return (sol.y[:, -1] if sol.y.shape[1] else x), int(sol.nfev)
+            return y_e, nfev
+        t_s, x_s = t_e, y_e
+
+        recent.append((t_e, fired))
+        if len(recent) > _CHATTER_EVENTS:
+            recent.pop(0)
+            if t_e - recent[0][0] <= window:
+                blocks = sorted({owners[i] for _, f in recent for i in f})
+                ev.warnings.append(
+                    f"zero crossings of {', '.join(blocks)} chattered near "
+                    f"t = {t_e:.6g} ({_CHATTER_EVENTS} events within "
+                    f"{window:.3g} s); their modes were recomputed every "
+                    f"solver step instead of latched until t = {t1:.6g}, so "
+                    f"the result there depends on the step size")
+                x_end, steps = _step_unlatched(
+                    ev, rhs, t_s, x_s, t1, xd, solver, max_step, rtol, atol,
+                    t_grid, inner if use_grid else None, log_end, record,
+                    stop_flag)
+                return x_end, nfev + steps
+        if t1 - t_s <= 1e-12 * max(1.0, abs(t1)):
+            return x_s, nfev
 
 
-def _build_events(ev, compiled, xd):
+def _sides(zc: np.ndarray) -> np.ndarray:
+    """Which side of zero each value is on, an exact zero counting as ``+``."""
+    return np.where(np.asarray(zc) >= 0, 1.0, -1.0)
+
+
+def _cross(ev, layout, rhs, t_e, y_e, xd, fired, sides, h_ref):
     """
-    One solve_ivp event per zero-crossing signal.
+    Update the modes at a crossing; return each value's side after it.
+
+    ``solve_ivp`` places the root to within a few ulps, *on either side*. Read
+    the modes at ``t_e`` itself and half the time they come out as if the
+    crossing had not happened — then the next step finds the same crossing
+    again, a hair later, and so on. So the modes are read a little *past* the
+    event instead, at ``t_e + ε`` along the old trajectory, with ``ε`` grown
+    until the values that fired have really changed sign. Integration still
+    restarts from the exact event state; only the decision looks ahead.
+    """
+    f_old = rhs(t_e, y_e)
+    eps = max(1e-10 * h_ref, 1e-13 * abs(t_e))
+    for _ in range(5):
+        t_n, x_n = t_e + eps, y_e + eps * f_old
+        z = _sides(ev.zero_crossings(t_n, x_n, xd,
+                                     ev.evaluate(t_n, x_n, xd), layout))
+        if all(z[i] != sides[i] for i in fired):
+            break
+        eps *= 10.0
+    ev.update_modes(t_n, x_n, xd)
+    return _sides(ev.zero_crossings(t_n, x_n, xd, ev.evaluate(t_n, x_n, xd),
+                                    layout))
+
+
+def _build_events(ev, layout, xd, t_start, sides):
+    """
+    One terminal ``solve_ivp`` event per zero-crossing value.
 
     Landing exactly on a discontinuity matters: integrating through a
     saturation corner makes the local error estimate meaningless, so the step
     controller either shrinks the step towards zero or returns an answer that
     changes with the tolerance.
+
+    Each event only fires *away* from the side its value started on
+    (``direction = −side``). At ``t_start`` the value is reported as being on
+    that side even if it sits a rounding error the other way — that is the
+    crossing just handled, and it must not fire again. An exact zero counts
+    as positive throughout, so a signal resting on a threshold (friction at
+    rest) is quiet until it leaves.
+
+    The model is evaluated once per ``(t, x)``, not once per event: solve_ivp
+    calls every event function at the same point in turn.
     """
-    probe_t = 0.0
-    x0 = np.zeros(compiled.n_states)
-    try:
-        values = ev.evaluate(probe_t, x0, xd)
-        count = len(ev.zero_crossings(probe_t, x0, xd, values))
-    except Exception:
+    if not len(sides):
         return []
-    if not count:
-        return []
+    cache: dict = {"key": None, "zc": None}
+
+    def values_at(t, x_vec):
+        key = (t, x_vec.tobytes())
+        if cache["key"] != key:
+            cache["zc"] = ev.zero_crossings(
+                t, x_vec, xd, ev.evaluate(t, x_vec, xd), layout)
+            cache["key"] = key
+        return cache["zc"]
 
     def make(i):
+        side = float(sides[i])
+
         def event(t, x_vec):
-            values = ev.evaluate(t, x_vec, xd)
-            zc = ev.zero_crossings(t, x_vec, xd, values)
-            return float(zc[i]) if i < len(zc) else 1.0
-        event.terminal = False
-        event.direction = 0
+            g = float(values_at(t, x_vec)[i])
+            if t == t_start:
+                return side * max(abs(g), _TINY)
+            return g if g != 0.0 else _TINY
+        event.terminal = True
+        event.direction = -side
         return event
 
-    return [make(i) for i in range(count)]
+    return [make(i) for i in range(len(sides))]
+
+
+def _step_unlatched(ev, rhs, t_s, x_s, t1, xd, solver, max_step, rtol, atol,
+                    t_grid, inner, log_end, record, stop_flag):
+    """
+    Finish a span that chattered: step on, updating the modes after each step.
+
+    Each step still sees one latched mode, so the step-size controller sees a
+    smooth function and does not grind towards a zero step on the switching
+    surface; the step is capped at the output spacing so the switching is
+    resolved at least as finely as it is plotted. Whenever a mode changes the
+    stepper is restarted, so no stage carries a derivative from the old mode
+    into the new one.
+    """
+    import scipy.integrate as _ivp
+
+    h_out = (t_grid[-1] - t_grid[0]) / max(len(t_grid) - 1, 1)
+    cap = min(max_step, h_out) if max_step else h_out
+    pending = list(inner[inner > t_s]) if inner is not None else None
+    if pending is not None and log_end:
+        pending.append(t1)
+    method = getattr(_ivp, solver)
+
+    def fresh(t, y, h):
+        return method(rhs, t, y, t1, max_step=cap, rtol=rtol, atol=atol,
+                      first_step=min(h, t1 - t) if t1 > t else None)
+
+    stepper, nfev = fresh(t_s, x_s, cap), 0
+    while stepper.status == "running":
+        t_prev = stepper.t
+        message = stepper.step()
+        if stepper.status == "failed":
+            raise SimulationError(
+                f"the solver failed near t = {t_prev:.6g}: {message}. Try a "
+                f"stiff method (Radau or BDF).")
+        if pending is None:
+            record(float(stepper.t), stepper.y, xd)
+            if stop_flag:
+                break
+        elif pending and pending[0] <= stepper.t:
+            dense = stepper.dense_output()
+            while pending and pending[0] <= stepper.t:
+                tp = float(pending.pop(0))
+                record(tp, dense(tp), xd)
+                if stop_flag:
+                    return dense(tp), nfev + stepper.nfev
+        if stepper.status == "running" and \
+                ev.update_modes(stepper.t, stepper.y, xd):
+            nfev += stepper.nfev
+            h = stepper.step_size or cap
+            stepper = fresh(stepper.t, stepper.y, h)
+    return stepper.y, nfev + stepper.nfev
 
 
 def _fixed_step(rhs, x, t0, t1, method, max_step, inner, record, xd):

@@ -2,24 +2,30 @@
 Discontinuous blocks.
 
 Every block here has a kink or a jump in its input/output map. Each declares
-:meth:`~evans.sim.block.Block.zero_crossings` so the solver can land a
-step exactly on the discontinuity: integrating straight through one makes the
+:meth:`~evans.sim.block.Block.zero_crossings` so the solver can stop
+exactly on the discontinuity: integrating straight through one makes the
 local error estimate meaningless, which shows up as a step size that collapses
 towards zero, or — worse — a plausible-looking answer that changes when you
 change the tolerance.
+
+Most of them also have **modes** (see :class:`~evans.sim.block.ModeLatch`):
+the region, on/off or engaged state is computed by ``_fresh_mode`` from the
+input, latched by the solver between crossings, and every evaluation goes
+through the latched value. Each ``_fresh_mode`` tests its zero-crossing values
+as ``z >= 0``, the convention the solver uses for a value of exactly zero.
 """
 
 from __future__ import annotations
 
 import numpy as np
 
-from ..block import Block, BlockError, ParamSpec, register
+from ..block import Block, BlockError, ModeLatch, ParamSpec, register
 
 _CAT = "Discontinuities"
 
 
 @register
-class Saturation(Block):
+class Saturation(ModeLatch, Block):
     type_name = "Saturation"
     category = _CAT
     description = "Clip between an upper and a lower limit — an actuator limit."
@@ -36,21 +42,35 @@ class Saturation(Block):
                 f"({self.params['lower']})"
             )
 
+    def _fresh_mode(self, v):
+        # +1 on the upper limit, -1 on the lower, 0 in between.
+        p = self.params
+        return np.where(v - p["upper"] >= 0, 1.0,
+                        np.where(v - p["lower"] < 0, -1.0, 0.0))
+
     def output(self, t, x, xd, u):
-        return [np.clip(np.atleast_1d(u[0]),
-                        self.params["lower"], self.params["upper"])]
+        v = np.atleast_1d(u[0])
+        mode = self._mode_or(self._fresh_mode(v))
+        return [np.where(mode > 0, self.params["upper"],
+                         np.where(mode < 0, self.params["lower"], v))]
 
     def zero_crossings(self, t, x, xd, u):
         v = np.atleast_1d(u[0])
         return np.concatenate([v - self.params["upper"],
                                v - self.params["lower"]])
 
+    def n_zero_crossings(self, input_widths):
+        return 2 * input_widths[0]
+
+    def update_modes(self, t, x, xd, u):
+        return self._latch(self._fresh_mode(np.atleast_1d(u[0])))
+
     def label(self):
         return "sat"
 
 
 @register
-class DeadZone(Block):
+class DeadZone(ModeLatch, Block):
     type_name = "DeadZone"
     category = _CAT
     description = "Zero output inside a band — stiction, backlash, valve overlap."
@@ -59,22 +79,35 @@ class DeadZone(Block):
         ParamSpec("end", "Dead zone end", 0.1),
     )
 
+    def _fresh_mode(self, v):
+        # +1 above the band, -1 below it, 0 inside.
+        p = self.params
+        return np.where(v - p["end"] >= 0, 1.0,
+                        np.where(v - p["start"] < 0, -1.0, 0.0))
+
     def output(self, t, x, xd, u):
         v = np.atleast_1d(u[0])
         lo, hi = self.params["start"], self.params["end"]
-        return [np.where(v > hi, v - hi, np.where(v < lo, v - lo, 0.0))]
+        mode = self._mode_or(self._fresh_mode(v))
+        return [np.where(mode > 0, v - hi, np.where(mode < 0, v - lo, 0.0))]
 
     def zero_crossings(self, t, x, xd, u):
         v = np.atleast_1d(u[0])
         return np.concatenate([v - self.params["start"],
                                v - self.params["end"]])
 
+    def n_zero_crossings(self, input_widths):
+        return 2 * input_widths[0]
+
+    def update_modes(self, t, x, xd, u):
+        return self._latch(self._fresh_mode(np.atleast_1d(u[0])))
+
     def label(self):
         return "dead\nzone"
 
 
 @register
-class Relay(Block):
+class Relay(ModeLatch, Block):
     type_name = "Relay"
     category = _CAT
     description = "On/off with hysteresis — the relay-feedback experiment."
@@ -95,8 +128,11 @@ class Relay(Block):
 
     @property
     def n_dstates(self) -> int:
-        # The relay's own on/off memory. Hysteresis means the output depends
-        # on history, not just on the present input.
+        # The relay's initial on/off memory. Hysteresis means the output
+        # depends on history, not just on the present input. During a run the
+        # memory is the latched mode: nothing clocks a discrete update for a
+        # block with sample time 0, so a memory kept here never moved, and
+        # the relay switched off again at the switch-*on* point.
         return 1
 
     @property
@@ -104,30 +140,48 @@ class Relay(Block):
         # Driven by zero crossings, not by a clock.
         return 0.0
 
+    def _switched(self, on: bool, u) -> bool:
+        """The memory ``on`` after seeing input ``u``."""
+        z_on, z_off = self.zero_crossings(0.0, None, None, u)
+        if z_on >= 0:
+            return True
+        if z_off >= 0:
+            return False
+        return on
+
+    def _memory(self, xd) -> bool:
+        if self._mode is not None:
+            return bool(self._mode[0] > 0.5)
+        return bool(xd is not None and len(xd) and xd[0] > 0.5)
+
     def output(self, t, x, xd, u):
         p = self.params
-        v = float(np.atleast_1d(u[0])[0]) if u else 0.0
-        on = bool(xd[0] > 0.5)
-        if v >= p["on_point"]:
-            on = True
-        elif v <= p["off_point"]:
-            on = False
+        on = self._memory(xd)
+        if not self._latched:
+            on = self._switched(on, u)
         return [np.array([p["on_value"] if on else p["off_value"]])]
 
     def update(self, t, x, xd, u):
-        p = self.params
-        v = float(np.atleast_1d(u[0])[0]) if u else 0.0
-        on = bool(xd[0] > 0.5)
-        if v >= p["on_point"]:
-            on = True
-        elif v <= p["off_point"]:
-            on = False
-        return np.array([1.0 if on else 0.0])
+        return np.array([1.0 if self._switched(self._memory(xd), u) else 0.0])
 
     def zero_crossings(self, t, x, xd, u):
-        v = np.atleast_1d(u[0])
-        return np.concatenate([v - self.params["on_point"],
-                               v - self.params["off_point"]])
+        # Both written so that ``>= 0`` means "switch": on at or above the
+        # on-point, off at or below the off-point.
+        v = float(np.atleast_1d(u[0])[0]) if u else 0.0
+        return np.array([v - self.params["on_point"],
+                         self.params["off_point"] - v])
+
+    def n_zero_crossings(self, input_widths):
+        return 2
+
+    def init_modes(self, t, x, xd, u):
+        self._mode = None
+        on = bool(len(xd) and xd[0] > 0.5)
+        self._latch([1.0 if self._switched(on, u) else 0.0])
+
+    def update_modes(self, t, x, xd, u):
+        return self._latch(
+            [1.0 if self._switched(self._memory(xd), u) else 0.0])
 
     def label(self):
         return "relay"
@@ -186,7 +240,7 @@ class Quantizer(Block):
 
 
 @register
-class Switch(Block):
+class Switch(ModeLatch, Block):
     type_name = "Switch"
     category = _CAT
     description = "Pass input 1 or input 3 depending on the control input 2."
@@ -197,31 +251,50 @@ class Switch(Block):
                   choices=(">=", ">", "~=0")),
     )
 
-    def _take_first(self, c: float) -> bool:
-        cond, thr = self.params["condition"], self.params["threshold"]
+    def _fresh_mode(self, u) -> np.ndarray:
+        # 1 passes in1, 0 passes in3 — read off the zero-crossing values, so
+        # the tie at the threshold falls the way the condition says.
+        z = self.zero_crossings(0.0, None, None, u)
+        cond = self.params["condition"]
         if cond == ">=":
-            return c >= thr
-        if cond == ">":
-            return c > thr
-        return abs(c) > 1e-12
+            first = z[0] >= 0                       # c − thr ≥ 0
+        elif cond == ">":
+            first = not z[0] >= 0                   # thr − c ≥ 0 means in3
+        else:
+            first = not (z[0] >= 0 and z[1] >= 0)   # both ≥ 0 only at c = 0
+        return np.array([1.0 if first else 0.0])
 
     def output(self, t, x, xd, u):
-        c = float(np.atleast_1d(u[1])[0])
-        return [np.atleast_1d(u[0] if self._take_first(c) else u[2])]
+        mode = self._mode_or(self._fresh_mode(u))
+        return [np.atleast_1d(u[0] if mode[0] > 0.5 else u[2])]
 
     def output_widths(self, input_widths):
         return [max(input_widths[0], input_widths[2])] if len(input_widths) == 3 \
             else [1]
 
     def zero_crossings(self, t, x, xd, u):
-        return np.atleast_1d(u[1]) - self.params["threshold"]
+        c = float(np.atleast_1d(u[1])[0])
+        cond, thr = self.params["condition"], self.params["threshold"]
+        if cond == ">=":
+            return np.array([c - thr])
+        if cond == ">":
+            return np.array([thr - c])
+        # "~=0" changes mode when c leaves zero in *either* direction, and a
+        # single value can only flag one of them when c sits exactly at 0.
+        return np.array([c, -c])
+
+    def n_zero_crossings(self, input_widths):
+        return 2 if self.params["condition"] == "~=0" else 1
+
+    def update_modes(self, t, x, xd, u):
+        return self._latch(self._fresh_mode(u))
 
     def label(self):
         return "switch"
 
 
 @register
-class CoulombFriction(Block):
+class CoulombFriction(ModeLatch, Block):
     type_name = "CoulombFriction"
     category = _CAT
     description = "Coulomb + viscous friction: offset·sign(u) + gain·u."
@@ -230,14 +303,27 @@ class CoulombFriction(Block):
         ParamSpec("gain", "Viscous gain", 1.0),
     )
 
+    def _fresh_mode(self, v):
+        # Slipping forward (+1), backward (−1), or stuck (0). Stuck needs both
+        # values ≥ 0, i.e. v exactly 0: a mass at rest stays at rest until
+        # its velocity actually leaves zero, in either direction.
+        return np.where(-v < 0, 1.0, np.where(v < 0, -1.0, 0.0))
+
     def output(self, t, x, xd, u):
         v = np.atleast_1d(u[0])
         p = self.params
-        return [np.where(np.abs(v) < 1e-12, 0.0,
-                         p["offset"] * np.sign(v) + p["gain"] * v)]
+        mode = self._mode_or(self._fresh_mode(v))
+        return [p["offset"] * mode + p["gain"] * v]
 
     def zero_crossings(self, t, x, xd, u):
-        return np.atleast_1d(u[0]).copy()
+        v = np.atleast_1d(u[0])
+        return np.concatenate([v, -v])
+
+    def n_zero_crossings(self, input_widths):
+        return 2 * input_widths[0]
+
+    def update_modes(self, t, x, xd, u):
+        return self._latch(self._fresh_mode(np.atleast_1d(u[0])))
 
     def label(self):
         return "friction"
@@ -276,7 +362,7 @@ class Lookup1D(Block):
 
 
 @register
-class Backlash(Block):
+class Backlash(ModeLatch, Block):
     type_name = "Backlash"
     category = _CAT
     description = "Mechanical play: the output only moves once the slack is taken up."
@@ -303,14 +389,20 @@ class Backlash(Block):
     def output(self, t, x, xd, u):
         return [x.copy()]
 
+    def _fresh_mode(self, x, u):
+        # +1 driven by the upper face, −1 by the lower, 0 free in the slack.
+        z_up, z_down = self.zero_crossings(0.0, x, None, u)
+        return np.array([1.0 if z_up >= 0 else -1.0 if z_down >= 0 else 0.0])
+
     def derivative(self, t, x, xd, u):
         # The output follows the input only while pressed against one side of
         # the slack; inside the band the gear is free and nothing moves.
         half = self.params["width"] / 2.0
         uu = float(np.atleast_1d(u[0])[0]) if u else 0.0
-        if uu - x[0] > half:
+        mode = self._mode_or(self._fresh_mode(x, u))[0]
+        if mode > 0:
             return np.array([(uu - half - x[0]) * 1e3])
-        if x[0] - uu > half:
+        if mode < 0:
             return np.array([(uu + half - x[0]) * 1e3])
         return np.zeros(1)
 
@@ -318,6 +410,12 @@ class Backlash(Block):
         half = self.params["width"] / 2.0
         uu = float(np.atleast_1d(u[0])[0]) if u else 0.0
         return np.array([uu - x[0] - half, x[0] - uu - half])
+
+    def n_zero_crossings(self, input_widths):
+        return 2
+
+    def update_modes(self, t, x, xd, u):
+        return self._latch(self._fresh_mode(x, u))
 
     def label(self):
         return "backlash"

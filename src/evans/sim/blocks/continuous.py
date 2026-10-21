@@ -183,6 +183,9 @@ class Integrator(Block):
         return np.array([x[0] - self.params["upper"],
                          x[0] - self.params["lower"]])
 
+    def n_zero_crossings(self, input_widths):
+        return 2 if self.params["limit"] else 0
+
     def label(self):
         return "1/s"
 
@@ -274,6 +277,9 @@ class PID(Block):
         uu = np.atleast_1d(u[0])[0] if u else 0.0
         v = self._unclamped(x, uu)
         return np.array([v - self.params["upper"], v - self.params["lower"]])
+
+    def n_zero_crossings(self, input_widths):
+        return 2 if self.params["limit"] else 0
 
     def label(self):
         p = self.params

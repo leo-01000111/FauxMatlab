@@ -60,6 +60,9 @@ class Step(Block):
         # make the response depend on the step size.
         return np.array([t - self.params["step_time"]])
 
+    def n_zero_crossings(self, input_widths):
+        return 1
+
     def label(self):
         return "Step"
 
@@ -166,6 +169,9 @@ class Pulse(Block):
         p = self.params
         phase = self._phase(t)
         return np.array([phase - p["duty"] * p["period"]])
+
+    def n_zero_crossings(self, input_widths):
+        return 1
 
 
 @register

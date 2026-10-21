@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from ..block import Block, BlockError, ParamSpec, as_array, register
+from ..block import Block, BlockError, ModeLatch, ParamSpec, as_array, register
 
 _MATH = "Math"
 _ROUTE = "Routing"
@@ -87,32 +87,56 @@ class Product(Block):
 
 
 @register
-class Abs(Block):
+class Abs(ModeLatch, Block):
     type_name = "Abs"
     category = _MATH
     description = "|u|."
 
+    @staticmethod
+    def _fresh_mode(v):
+        return np.where(v >= 0, 1.0, -1.0)
+
     def output(self, t, x, xd, u):
-        return [np.abs(np.atleast_1d(u[0]))]
+        v = np.atleast_1d(u[0])
+        return [self._mode_or(self._fresh_mode(v)) * v]
 
     def zero_crossings(self, t, x, xd, u):
         return np.atleast_1d(u[0]).copy()
+
+    def n_zero_crossings(self, input_widths):
+        return input_widths[0]
+
+    def update_modes(self, t, x, xd, u):
+        return self._latch(self._fresh_mode(np.atleast_1d(u[0])))
 
     def label(self):
         return "|u|"
 
 
 @register
-class Sign(Block):
+class Sign(ModeLatch, Block):
     type_name = "Sign"
     category = _MATH
     description = "sign(u)."
 
+    @staticmethod
+    def _fresh_mode(v):
+        # sign(0) = 0 is a mode of its own, left in either direction — hence
+        # the two zero-crossing values per element (see CoulombFriction).
+        return np.where(-v < 0, 1.0, np.where(v < 0, -1.0, 0.0))
+
     def output(self, t, x, xd, u):
-        return [np.sign(np.atleast_1d(u[0]))]
+        return [self._mode_or(self._fresh_mode(np.atleast_1d(u[0]))).copy()]
 
     def zero_crossings(self, t, x, xd, u):
-        return np.atleast_1d(u[0]).copy()
+        v = np.atleast_1d(u[0])
+        return np.concatenate([v, -v])
+
+    def n_zero_crossings(self, input_widths):
+        return 2 * input_widths[0]
+
+    def update_modes(self, t, x, xd, u):
+        return self._latch(self._fresh_mode(np.atleast_1d(u[0])))
 
 
 @register
@@ -161,7 +185,7 @@ class MathFunction(Block):
 
 
 @register
-class MinMax(Block):
+class MinMax(ModeLatch, Block):
     type_name = "MinMax"
     category = _MATH
     description = "Elementwise min or max of two inputs."
@@ -171,13 +195,26 @@ class MinMax(Block):
                   choices=("min", "max")),
     )
 
+    def _fresh_mode(self, a, b):
+        # 1 where in1 wins, 0 where in2 does.
+        a_ge_b = a - b >= 0
+        return np.where(a_ge_b if self.params["operation"] == "max"
+                        else ~a_ge_b, 1.0, 0.0)
+
     def output(self, t, x, xd, u):
         a, b = np.atleast_1d(u[0]), np.atleast_1d(u[1])
-        fn = np.maximum if self.params["operation"] == "max" else np.minimum
-        return [fn(a, b)]
+        mode = self._mode_or(self._fresh_mode(a, b))
+        return [np.where(mode > 0.5, a, b)]
 
     def zero_crossings(self, t, x, xd, u):
         return np.atleast_1d(u[0]) - np.atleast_1d(u[1])
+
+    def n_zero_crossings(self, input_widths):
+        return max(input_widths[:2])
+
+    def update_modes(self, t, x, xd, u):
+        return self._latch(self._fresh_mode(np.atleast_1d(u[0]),
+                                            np.atleast_1d(u[1])))
 
     def label(self):
         return self.params["operation"]
