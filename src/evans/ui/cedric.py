@@ -90,6 +90,69 @@ def _ease(phase: float) -> float:
     return (1 - math.cos(2 * math.pi * phase)) / 2
 
 
+def paint_shape(p: QPainter, scale: float, now: float,
+                ink: tuple[QColor, QColor, QColor], *,
+                antenna_speed: float = 1.0, blink: float = 1.0) -> None:
+    """
+    Draw Cedric centred on the painter's origin, ``scale`` painter units per
+    design unit, posed at ``now`` seconds into his swim. ``ink`` is (nose,
+    tail tip, eye); ``blink`` squeezes the eye, 1 open to 0.05 shut.
+    """
+    g1, g2, eye_ink = ink
+    p.save()
+    p.scale(scale, scale)
+    p.translate(-VIEW.center())
+
+    def sway(s: float) -> float:
+        """The swim wave: 7 units up, head first, every 2.6 s."""
+        return -7.0 * _ease((now + s * 1.3 - 3.0) / 2.6)
+
+    # At rail size a 14-unit stroke is barely a pixel; keep the hatching
+    # legible rather than faithful.
+    thick = max(1.0, 1.5 / (BODY_W * scale))
+
+    def pen(colour: QColor, width: float) -> QPen:
+        return QPen(colour, width * thick, Qt.SolidLine, Qt.RoundCap)
+
+    for x0, y0, x1, y1, s in BODY:
+        dy = sway(s)
+        p.setPen(pen(_mix(g1, g2, s), BODY_W))
+        p.drawLine(QPointF(x0, y0 + dy), QPointF(x1, y1 + dy))
+
+    # Antennae wiggle -4°..5° about their root.
+    for x0, y0, x1, y1, i in ANTENNAE:
+        phase = (now * antenna_speed - i * 0.45) / 3.0
+        angle = -4.0 + 9.0 * _ease(phase)
+        p.save()
+        p.translate(ANT_PIVOT)
+        p.rotate(angle)
+        p.translate(-ANT_PIVOT)
+        p.setPen(pen(g1, ANT_W))
+        p.drawLine(QPointF(x0, y0), QPointF(x1, y1))
+        p.restore()
+
+    # The eye line: solid, a gap, the eye in the gap, solid again.
+    dy = sway(EYE_S)
+
+    def at(u: float) -> QPointF:
+        return QPointF(EYE_P[0] + EYE_DIR[0] * u,
+                       EYE_P[1] + EYE_DIR[1] * u + dy)
+
+    gap = EYE_LEN + 2 * BODY_W + 2 * EYE_CLEAR
+    p.setPen(pen(_mix(g1, g2, EYE_S), BODY_W))
+    p.drawLine(at(0), at(EYE_U0 - gap / 2))
+    p.drawLine(at(EYE_U0 + gap / 2), at(EYE_LENGTH))
+    half = EYE_LEN / 2 * blink
+    p.setPen(pen(eye_ink, BODY_W))
+    p.drawLine(at(EYE_U0 - half), at(EYE_U0 + half))
+    p.restore()
+
+
+def ink_for(tok) -> tuple[QColor, QColor, QColor]:
+    """Cedric's (nose, tail tip, eye) colours for the theme ``tok``."""
+    return tuple(QColor(c) for c in (NIGHT_INK if tok.is_night else DAY_INK))
+
+
 class CedricButton(QWidget):
     """Cedric with a "need help?" callout; the whole thing is one button."""
 
@@ -208,8 +271,7 @@ class CedricButton(QWidget):
 
     def paintEvent(self, _event) -> None:
         tok = theme.tokens()
-        g1, g2, eye_ink = (QColor(c) for c in
-                           (NIGHT_INK if tok.is_night else DAY_INK))
+        g1, g2, eye_ink = ink_for(tok)
         now = self._now() if self._timer.isActive() else 0.0
         fast = 2.0 if self._hover else 1.0
 
@@ -253,38 +315,6 @@ class CedricButton(QWidget):
             p.rotate(-5 * lift)
         if self._pressed:
             p.translate(0, 1)
-        p.scale(scale, scale)
-        p.translate(-VIEW.center())
-
-        def sway(s: float) -> float:
-            """The swim wave: 7 units up, head first, every 2.6 s."""
-            return -7.0 * _ease((now + s * 1.3 - 3.0) / 2.6)
-
-        # At rail size a 14-unit stroke is barely a pixel; keep the hatching
-        # legible rather than faithful.
-        thick = max(1.0, 1.5 / (BODY_W * scale))
-
-        def pen(colour: QColor, width: float) -> QPen:
-            return QPen(colour, width * thick, Qt.SolidLine, Qt.RoundCap)
-
-        for x0, y0, x1, y1, s in BODY:
-            dy = sway(s)
-            p.setPen(pen(_mix(g1, g2, s), BODY_W))
-            p.drawLine(QPointF(x0, y0 + dy), QPointF(x1, y1 + dy))
-
-        # Antennae wiggle -4°..5° about their root (faster under the cursor).
-        for x0, y0, x1, y1, i in ANTENNAE:
-            phase = (now * fast - i * 0.45) / 3.0
-            angle = -4.0 + 9.0 * _ease(phase)
-            p.save()
-            p.translate(ANT_PIVOT)
-            p.rotate(angle)
-            p.translate(-ANT_PIVOT)
-            p.setPen(pen(g1, ANT_W))
-            p.drawLine(QPointF(x0, y0), QPointF(x1, y1))
-            p.restore()
-
-        # The eye line: solid, a gap, the eye in the gap, solid again.
         if now > self._next_blink:
             self._blink_at = now
             self._next_blink = now + random.uniform(3.5, 6.5)
@@ -292,20 +322,8 @@ class CedricButton(QWidget):
         pb = (now - self._blink_at) / 0.18
         if 0 <= pb < 1:
             k = 1 - 0.95 * math.sin(math.pi * pb)
-        dy = sway(EYE_S)
-
-        def at(u: float) -> QPointF:
-            return QPointF(EYE_P[0] + EYE_DIR[0] * u,
-                           EYE_P[1] + EYE_DIR[1] * u + dy)
-
-        gap = EYE_LEN + 2 * BODY_W + 2 * EYE_CLEAR
-        host = pen(_mix(g1, g2, EYE_S), BODY_W)
-        p.setPen(host)
-        p.drawLine(at(0), at(EYE_U0 - gap / 2))
-        p.drawLine(at(EYE_U0 + gap / 2), at(EYE_LENGTH))
-        half = EYE_LEN / 2 * k
-        p.setPen(pen(eye_ink, BODY_W))
-        p.drawLine(at(EYE_U0 - half), at(EYE_U0 + half))
+        paint_shape(p, scale, now, (g1, g2, eye_ink), antenna_speed=fast,
+                    blink=k)
 
         p.end()
 

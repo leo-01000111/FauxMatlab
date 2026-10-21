@@ -91,16 +91,10 @@ def main() -> None:
     if "--check" in argv:
         raise SystemExit(_run_check(argv))
 
-    import pyqtgraph as pg
-
-    pg.setConfigOptions(antialias=True, useOpenGL=False)
-
+    # Only what the splash needs comes before it: Qt, the settings and the
+    # theme. numpy, scipy, python-control and the window load behind it.
     from PySide6.QtCore import Qt
     from PySide6.QtWidgets import QApplication
-
-    from evans.core.architecture import CourseArchitecture
-    from evans.core.tf_utils import second_order, unity
-    from evans.ui.mainwindow import MainWindow
 
     _claim_taskbar_identity()
     app = QApplication.instance() or QApplication(sys.argv)
@@ -132,6 +126,23 @@ def main() -> None:
 
     app.setWindowIcon(iconset.app_icon())
 
+    from evans.ui.splash import Splash
+
+    splash = Splash(steps=3)
+    splash.show()
+    splash.step("Loading numerics")
+
+    import pyqtgraph as pg
+
+    pg.setConfigOptions(antialias=True, useOpenGL=False)
+
+    from evans.core.architecture import CourseArchitecture
+    from evans.core.tf_utils import second_order, unity
+
+    splash.step("Loading the workbench")
+    from evans.ui.mainwindow import MainWindow
+
+    splash.step("Opening the window")
     # Default architecture: textbook 2nd-order plant, unity feedback
     arch = CourseArchitecture(
         G  = second_order(K=1.0, zeta=0.5, wn=2.0),
@@ -143,6 +154,7 @@ def main() -> None:
     win = MainWindow(arch)
     win.show()
     win.raise_()
+    splash.finish(win)
 
     # `Evans.exe model.fmdl`: the file association, or a drop on the exe.
     for path in _file_arguments(app.arguments()[1:]):
