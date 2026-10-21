@@ -62,13 +62,13 @@
     <section class="proj-section" id="gatekeeper">
       <div class="card prose">
         <h2>The “cannot be opened” warning</h2>
-        <p>The Mac build is not notarised by Apple yet, so the first time you open it macOS says it <strong>could not verify that Evans is free of malware</strong> and offers only Done or Move to Bin. That is what macOS shows for any app from outside the App Store that Apple has not checked, not a sign that something is wrong with the file. Click <strong>Done</strong>, then:</p>
+        <p>The Mac build is not notarised by Apple yet, so the first time you open it macOS stops it. On macOS 15 Sequoia and newer it says Apple <strong>could not verify that Evans is free of malware</strong> and offers Done or Move to Bin; on macOS 13 and 14 it says Evans <strong>can’t be opened because Apple cannot check it for malicious software</strong>. That is what macOS shows for any app from outside the App Store that Apple has not checked, not a sign that something is wrong with the file. Close the message without moving Evans to the Bin, then, on any version:</p>
         <ol>
           <li>Open <strong>System Settings</strong> → <strong>Privacy &amp; Security</strong>.</li>
-          <li>Scroll down to the message about Evans and click <strong>Open Anyway</strong>.</li>
-          <li>Confirm with your password or Touch ID, then click <strong>Open Anyway</strong> once more.</li>
+          <li>Scroll down to the message about Evans and click <strong>Open Anyway</strong>. It is there for about an hour after the blocked attempt; if it is gone, open Evans once more first.</li>
+          <li>Confirm with your password or Touch ID, then click <strong>Open Anyway</strong> (or <strong>Open</strong>) once more.</li>
         </ol>
-        <p>macOS remembers the choice; from then on Evans opens like any other app. (Right-click → Open, the old way round this, no longer works on current macOS.) If you are comfortable in Terminal, this does the same in one step:</p>
+        <p>macOS remembers the choice; from then on Evans opens like any other app. On macOS 13 and 14 there is also a shortcut: Control-click Evans in Applications, choose <strong>Open</strong>, then <strong>Open</strong> again; Sequoia removed it. If you are comfortable in Terminal, this does the same on any version in one step:</p>
 <pre><code>xattr -dr com.apple.quarantine /Applications/Evans.app</code></pre>
         <p>As with Windows, if you would rather not run an unnotarised build, run Evans from source: it is the same code, and the app is built by the same <a href="@@repo@@/actions">GitHub Actions workflow</a> from the tagged commit.</p>
       </div>

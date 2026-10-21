@@ -47,10 +47,12 @@ ARROW = ('<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><g trans
 PAGES = [
     ("index.html", "Home", "A control-systems workbench",
      "Classical and modern control, a block-diagram simulator and a MATLAB-shaped "
-     "command window in one desktop app. Free for Windows, or run it from source.",
+     "command window in one desktop app. Free for Windows and Apple Silicon Macs, "
+     "or run it from source.",
      "home.html"),
     ("install.html", "Install", "Install Evans",
-     "Download the Windows build, get past SmartScreen, or run Evans from source.",
+     "Download the Windows or Mac build, get past SmartScreen or Gatekeeper, or run "
+     "Evans from source.",
      "install.html"),
     ("tour.html", "Tour", "A tour of Evans",
      "The workspaces, the pane grid, the console, scripts, figures, the simulator, "

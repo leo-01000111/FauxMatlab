@@ -31,10 +31,10 @@ it, delete the folder.
 
 On a Mac with Apple Silicon (M1 or later) and macOS 13 or newer, download
 `Evans-<version>-macos-arm64.dmg` from the same page, open it and drag Evans onto
-Applications. The app isn't notarised by Apple yet, so the first launch is blocked with
-"could not verify that Evans is free of malware". Click **Done**, then open **System
-Settings ▸ Privacy & Security**, scroll down and click **Open Anyway**; macOS remembers
-it. `.fmdl` models open in Evans on a double-click. Updates aren't automatic on a Mac:
+Applications. The app isn't notarised by Apple yet, so macOS blocks the first launch
+("could not verify that Evans is free of malware" on Sequoia, "can't be opened" on 13 and
+14). Close the message, then open **System Settings ▸ Privacy & Security**, scroll down
+and click **Open Anyway**; macOS remembers it. `.fmdl` models open in Evans on a double-click. Updates aren't automatic on a Mac:
 Evans tells you when there's a newer release. An Intel Mac or an older macOS can run
 Evans from source.
 

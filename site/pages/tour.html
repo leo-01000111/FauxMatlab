@@ -7,7 +7,7 @@
     <section class="proj-section" id="workspaces">
       <div class="card prose">
         <h2>Three workspaces</h2>
-        <p>The workspaces sit on a rail down the left, on <kbd>Ctrl+1</kbd>, <kbd>Ctrl+2</kbd> and <kbd>Ctrl+3</kbd>. Switching keeps everything alive, so a running console session, a half-built diagram and a configured analysis are all still there when you come back.</p>
+        <p>The workspaces sit on a rail down the left, on <kbd>Ctrl+1</kbd>, <kbd>Ctrl+2</kbd> and <kbd>Ctrl+3</kbd>. Switching keeps everything alive, so a running console session, a half-built diagram and a configured analysis are all still there when you come back. On a Mac, read <kbd>Ctrl</kbd> as <kbd>⌘</kbd> throughout, so <kbd>⌘1</kbd> to <kbd>⌘3</kbd>; the app's own tooltips use the Mac's symbols.</p>
         <div class="table-wrap"><table>
           <thead><tr><th>Workspace</th><th>What's in it</th></tr></thead>
           <tbody>
@@ -61,6 +61,7 @@ bode(G)</code></pre>
         <p>Run starts from a clean slate. It clears the transcript and the previous run's figures first, and offers to save any figures that were never saved, as <code>figure_1.png</code>, <code>figure_2.png</code> and so on. Lines typed at the prompt still append.</p>
         <p>The editor highlights MATLAB, numbers its lines and completes names on <kbd>Tab</kbd> (variables, builtins, <code>.m</code> files in the folder). <code>%%</code> splits it into sections: <kbd>Ctrl+Enter</kbd> runs the one under the cursor, <kbd>Ctrl+Shift+Enter</kbd> runs it and moves on.</p>
         <p>Click the gutter for a breakpoint. <kbd>F5</kbd> runs or continues, <kbd>F10</kbd> steps and <kbd>F11</kbd> steps into your functions; while paused, the prompt (<code>K&gt;&gt;</code>) and the workspace see the paused scope. Stop, <kbd>Shift+F5</kbd> or <kbd>Ctrl+C</kbd> interrupts anything, <code>while true</code> included.</p>
+        <p>On a Mac keyboard the function keys need <kbd>fn</kbd>, and macOS keeps <kbd>F11</kbd> for Show Desktop unless you turn that off in System Settings ▸ Keyboard ▸ Keyboard Shortcuts ▸ Mission Control. <kbd>⌘C</kbd> and <kbd>Control-C</kbd> both stop a run there.</p>
       </div>
     </section>
 

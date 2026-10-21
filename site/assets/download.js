@@ -94,7 +94,7 @@
       '<a href="install.html#source">run Evans from source</a>.';
     var after = "Downloading the disk image. Open it and drag Evans onto " +
       "Applications. The first time you open Evans, macOS stops it, because " +
-      "it is not notarised by Apple yet: click <strong>Done</strong>, then " +
+      "it is not notarised by Apple yet: close the message, then click " +
       "<strong>Open Anyway</strong> in System Settings ▸ Privacy &amp; " +
       'Security. <a href="install.html#gatekeeper">Step by step</a>';
     buttons.forEach(function (b) {
