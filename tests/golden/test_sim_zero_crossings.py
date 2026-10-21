@@ -330,3 +330,30 @@ def test_chattering_finishes_with_a_warning(build, block, signal, t_switch):
     # It stays on the switching surface, within the output spacing.
     tail = result.trace(signal)[result.t > t_switch + 0.1]
     assert np.max(np.abs(tail)) < 0.02
+
+
+# ──────────────────────────────────────────────────────────────
+#  Fixed step: modes held through a step, updated after it
+# ──────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("solver", ["ode1", "ode4", "ode5"])
+def test_fixed_step_saturation_matches_the_analytic_area(solver):
+    # y = t²/2 up to the corner at 0.7, then 0.245 + 0.7·(t − 0.7). A fixed
+    # step cannot land on the corner, so the switch lags by under one step:
+    # the error is O(h), not the method's order, whatever the method.
+    h = 1e-3
+    res = simulate(ramp_into_saturation(), t_end=2.0, solver=solver,
+                   max_step=h)
+    assert res.trace("y")[-1] == pytest.approx(0.245 + 0.7 * 1.3, abs=2 * h)
+
+
+def test_fixed_step_relay_loop_tracks_the_variable_step_run():
+    ref = simulate(relay_loop(), t_end=20.0, solver="RK45", n_points=401)
+    fix = simulate(relay_loop(), t_end=20.0, solver="ode4", max_step=1e-3,
+                   n_points=401)
+    # The relay latches on the step after its threshold is crossed, so the
+    # limit cycle is the same one, shifted by at most a step per switch.
+    g_ref = np.interp(np.linspace(0, 20, 401), ref.t, ref.trace("G"))
+    g_fix = np.interp(np.linspace(0, 20, 401), fix.t, fix.trace("G"))
+    assert np.max(np.abs(g_ref - g_fix)) < 0.02
+    assert np.ptp(g_fix[200:]) > 0.1                 # it really oscillates

@@ -634,13 +634,16 @@ def _integrate(ev, compiled, x, xd, t0, t1, solver, max_step, rtol, atol,
         return ev.derivatives(t, x_vec, xd, values)
 
     if solver in FIXED_STEP:
-        # _fixed_step does not report its steps, so nothing would update a
-        # latched mode while it marches: evaluate the discontinuities on the
-        # spot instead. Once it takes an ``on_major_step(t, x)`` callback,
-        # pass ``lambda t, x: ev.update_modes(t, x, xd)`` and drop this line.
-        ev.release_modes()
+        # A fixed-step solver cannot land on a crossing, so it does what
+        # Simulink's fixed-step solvers do: hold the modes through each step
+        # and recompute them after it. The minor stages of an RK step then see
+        # one smooth right-hand side, and a switch takes effect on the next
+        # major step.
+        ev.update_modes(t0, x, xd)
         x_end = _fixed_step(rhs, x, t0, t1, solver, max_step,
-                            inner, record, xd)
+                            inner, record, xd,
+                            on_major_step=lambda t, x_now:
+                                ev.update_modes(t, x_now, xd))
         return x_end, max(1, len(inner))
 
     span = t1 - t0
