@@ -42,7 +42,7 @@ from PySide6.QtWidgets import (
 from ...sim.compile import CompileError
 from ...sim.linearize import LinearizationError, linearize, steady_state
 from ...sim.model import ModelError, PortRef, SimModel
-from ...sim.solver import FIXED_STEP, SimulationError, simulate
+from ...sim.solver import SimulationError, resolve_solver, simulate
 from .. import iconset, theme
 from ..design import NORMAL, TIGHT
 from ..guard import GuardedPanel, guard
@@ -51,6 +51,14 @@ from .canvas import SimCanvas
 from .inspector import BlockInspector
 from .palette import STRIP_WIDTH, PaletteDock
 from .scope import ScopeWidget
+
+#: The solver combo, group by group with a separator between: Simulink's
+#: variable-step names, the fixed-step ones, then the scipy names they map to.
+SOLVER_MENU = (
+    ["ode45", "ode23", "ode15s", "ode23s", "ode23t", "ode113"],
+    ["ode1", "ode2", "ode3", "ode4", "ode5"],
+    ["RK45", "RK23", "DOP853", "LSODA", "Radau", "BDF"],
+)
 
 
 class _Worker(QObject):
@@ -274,14 +282,21 @@ class SimTab(QWidget, GuardedPanel):
         self._t_end.setToolTip("Stop time (s)")
         bar.addWidget(_labelled("Stop", self._t_end))
 
+        # Simulink's names first, since that is what people type; the scipy
+        # names stay below a separator, so an old habit (or a script that
+        # sets "RK45") still finds its entry.
         self._solver = QComboBox()
-        self._solver.addItems(["RK45", "LSODA", "Radau", "BDF", "DOP853",
-                               "ode4", "ode1"])
+        self._solver.addItems(SOLVER_MENU[0])
+        for group in SOLVER_MENU[1:]:
+            self._solver.insertSeparator(self._solver.count())
+            self._solver.addItems(group)
         self._solver.setAccessibleName("solver")
         self._solver.setToolTip(
-            "RK45 is a good default. Radau or BDF for stiff models "
-            "(widely separated time constants). ode4/ode1 are fixed-step, for "
-            "matching what an embedded controller will do.")
+            "ode45 is a good default. ode15s or ode23s for stiff models "
+            "(widely separated time constants); ode113 for tight tolerances. "
+            "ode1–ode5 are fixed-step (Euler to Dormand–Prince), for matching "
+            "what an embedded controller will do — they need a Step. "
+            "Below the second line are the same methods by their scipy names.")
         bar.addWidget(_labelled("Solver", self._solver))
 
         self._step = QDoubleSpinBox()
@@ -478,7 +493,8 @@ class SimTab(QWidget, GuardedPanel):
 
         solver = self._solver.currentText()
         step = self._step.value()
-        if solver in FIXED_STEP and step <= 0:
+        _, is_fixed = resolve_solver(solver)
+        if is_fixed and step <= 0:
             raise SimulationError(
                 f"{solver} is a fixed-step solver, so it needs an explicit "
                 f"step size — set 'Step' to something below your fastest time "
