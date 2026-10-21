@@ -135,9 +135,10 @@ def linearize(model: SimModel | CompiledModel,
     """
     compiled = model if isinstance(model, CompiledModel) else compile_model(model)
     if compiled.has_algebraic_loop:
+        paths = "; ".join(" → ".join(c) for c in compiled.algebraic_loops)
         raise LinearizationError(
             "cannot linearise through an algebraic loop "
-            f"({' → '.join(compiled.algebraic_loop)}); break it first"
+            f"({paths}); break it first"
         )
 
     in_ref = _resolve_input(compiled, input_port)
