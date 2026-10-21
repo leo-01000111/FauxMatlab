@@ -151,9 +151,26 @@ def linearize(model: SimModel | CompiledModel,
     t0 = operating_point.t
     x0 = np.asarray(operating_point.x, dtype=float)
     xd0 = np.asarray(operating_point.xd, dtype=float)
-    n = compiled.n_states
 
     ev = _Evaluator(compiled)
+    # Latch every block's mode at the operating point, so the perturbed
+    # sweeps below all see the same branch of each discontinuity: a
+    # saturation inside its limits is a unit gain, one on its stop a zero
+    # gain, even when ±h nudges its input across the corner. Modes left over
+    # from an earlier run (steady_state() simulates first) would describe
+    # wherever that run ended, not this point.
+    ev.init_modes(t0, x0, xd0)
+    try:
+        return _linearize_latched(compiled, ev, in_ref, out_ref,
+                                  operating_point, t0, x0, xd0, step)
+    finally:
+        ev.release_modes()
+
+
+def _linearize_latched(compiled, ev, in_ref, out_ref, operating_point,
+                       t0, x0, xd0, step) -> LinearModel:
+    """The central differences, with the modes already latched."""
+    n = compiled.n_states
 
     def f_and_g(x: np.ndarray, u: float) -> tuple[np.ndarray, float]:
         """

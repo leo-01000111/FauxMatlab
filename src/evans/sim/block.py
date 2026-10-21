@@ -27,6 +27,14 @@ Every signal is a 1-D ``numpy`` array. Most blocks are width-preserving and
 elementwise; those that are not (``Mux``, ``Demux``, ``TransferFcn``) declare
 their widths through :meth:`Block.output_widths`, which the compiler drives to
 a fixed point.
+
+Zero crossings and modes
+------------------------
+A discontinuous block declares how many zero-crossing values it has
+(:meth:`Block.n_zero_crossings`) and returns them from
+:meth:`Block.zero_crossings`. If it also has modes (:meth:`Block.init_modes`,
+:meth:`Block.update_modes`), the solver latches them between crossings, so the
+right-hand side is smooth on every interval it integrates.
 """
 
 from __future__ import annotations
@@ -175,14 +183,86 @@ class Block(ABC):
         """
         Values whose sign changes mark a discontinuity.
 
-        The solver watches these and lands a step exactly on each crossing, so
-        a saturation limit or a relay switch is hit precisely instead of being
+        The solver watches these and stops exactly on each crossing, so a
+        saturation limit or a relay switch is hit precisely instead of being
         smeared across a step. Return an empty array for smooth blocks.
+
+        **Sign convention.** A value of exactly zero counts as *positive*. A
+        block with modes should write its tests the same way (``z >= 0``), so
+        that a signal sitting exactly on a threshold — a friction block at
+        rest, a switch whose control is exactly at its threshold — is on a
+        definite side, and the solver knows which departure is a crossing.
         """
         return np.zeros(0)
 
+    def n_zero_crossings(self, input_widths: list[int]) -> int | None:
+        """
+        How many values :meth:`zero_crossings` returns, for these input widths.
+
+        The solver needs the count before the run starts, to build one event
+        per value. Probing the model for it instead — evaluating it once at
+        some made-up state — gets it wrong for a block whose count depends on
+        what it is fed, and loses every event when the probe happens to raise.
+
+        ``None`` (the default for a block that overrides
+        :meth:`zero_crossings` without declaring a count) makes the solver
+        ask the block itself at the start of each span, at the real state.
+        """
+        if type(self).zero_crossings is Block.zero_crossings:
+            return 0
+        return None
+
+    # ── modes ───────────────────────────────────────────────────
+    #
+    # A discontinuous block has a discrete *mode*: which region a Saturation
+    # is in, whether a Relay is on. Simulink's trick, and this engine's, is to
+    # **latch** the mode between zero-crossing events. Inside one interval the
+    # block then behaves as one smooth function (Saturation in its "upper"
+    # mode outputs the limit even if a trial step dips its input just below
+    # it), which is what an adaptive solver's error estimate assumes. The
+    # zero-crossing value still sees the real input, so the solver stops when
+    # the mode should change, and the mode is recomputed there.
+    #
+    # Blocks without modes ignore all three methods.
+
+    def init_modes(self, t: float, x: np.ndarray, xd: np.ndarray,
+                   u: list[np.ndarray]) -> None:
+        """
+        Compute the mode(s) from scratch at the start of a run, and latch them.
+
+        Differs from :meth:`update_modes` only for a block with memory (a
+        relay's hysteresis): here the memory comes from the initial
+        condition, not from the previous mode.
+        """
+        self.update_modes(t, x, xd, u)
+
+    def update_modes(self, t: float, x: np.ndarray, xd: np.ndarray,
+                     u: list[np.ndarray]) -> bool:
+        """
+        Recompute the mode(s) from the present inputs, and latch them.
+
+        Called by the solver at every zero-crossing event, at the start of
+        every continuous span, and at every step when it has given up on
+        latching. Returns whether any mode changed.
+        """
+        return False
+
+    def release_modes(self) -> None:
+        """
+        Stop latching: evaluate the discontinuity from the input on the spot.
+
+        Used where nobody will call :meth:`update_modes` while time advances
+        (a linearisation sweep before its modes are set, a solver that does
+        not report its steps). :meth:`init_modes` or :meth:`update_modes`
+        latches again.
+        """
+
     def reset(self) -> None:
-        """Clear any per-run internal caching before a simulation starts."""
+        """
+        Clear any per-run internal caching before a simulation starts.
+
+        Modes are per-run state too; a block with modes clears them here.
+        """
 
     # ── presentation ────────────────────────────────────────────
 
@@ -241,6 +321,46 @@ def by_category() -> dict[str, list[type[Block]]]:
 # ──────────────────────────────────────────────────────────────
 #  Helpers for block authors
 # ──────────────────────────────────────────────────────────────
+
+class ModeLatch:
+    """
+    Mixin holding a block's latched mode array.
+
+    Put it *before* :class:`Block` in the bases. The block computes a fresh
+    mode from its inputs in one place and evaluates through
+    :meth:`_mode_or`, so output and derivative use the latched mode while the
+    solver is latching and the fresh one otherwise — the same code path
+    either way, which is what keeps the two from drifting apart.
+    """
+
+    _mode: np.ndarray | None = None
+    _latched: bool = False
+
+    def _latch(self, mode) -> bool:
+        """Latch ``mode``; return whether it differs from the previous one."""
+        mode = np.array(mode, dtype=float, ndmin=1)
+        old = self._mode
+        changed = (old is None or old.shape != mode.shape
+                   or bool(np.any(old != mode)))
+        self._mode = mode
+        self._latched = True
+        return changed
+
+    def _mode_or(self, fresh: np.ndarray) -> np.ndarray:
+        """The latched mode, or ``fresh`` when nothing (compatible) is latched."""
+        fresh = np.array(fresh, dtype=float, ndmin=1)
+        if self._latched and self._mode is not None \
+                and self._mode.shape == fresh.shape:
+            return self._mode
+        return fresh
+
+    def release_modes(self) -> None:
+        self._latched = False
+
+    def reset(self) -> None:
+        self._mode = None
+        self._latched = False
+
 
 def as_array(value, width: int = 1) -> np.ndarray:
     """Coerce a scalar or sequence to a 1-D array of the given width."""
