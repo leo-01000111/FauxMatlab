@@ -364,5 +364,9 @@ clean `pip install` is all it takes.
 [MIT](LICENSE). The bundled typefaces (Archivo, Martian Mono) keep their own SIL Open
 Font License, shipped beside them in `src/evans/ui/fonts/`.
 
+Cedric, the shrimp on the splash and at the foot of the rail, is not MIT: his name,
+drawing and design data (`src/evans/ui/cedric.py`) are all rights reserved, see
+[LICENSE-CEDRIC](LICENSE-CEDRIC). A fork that ships needs its own character.
+
 MATLAB and Simulink are registered trademarks of The MathWorks, Inc. Evans is an independent project, not affiliated with or endorsed by MathWorks. The project was called FauxMatlab before version 0.9; models and settings saved
 under that name still open.

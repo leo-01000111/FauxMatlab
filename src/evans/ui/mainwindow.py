@@ -69,7 +69,7 @@ from ..core.tf_utils import (
     second_order,
     unity,
 )
-from . import help, persist, theme, winframe
+from . import help, keys, persist, theme, winframe
 from .apps import ControlSystemDesigner, LTIViewer, PIDTuner, SnapshotBar
 from .block_editor import BlockEditor
 from .console import ConsolePanel, FigureArea
@@ -842,7 +842,9 @@ class MainWindow(QMainWindow):
             self._workspace_actions[workspace] = action
 
         console_shortcut = QAction("Command window", self)
-        console_shortcut.setShortcut("Ctrl+`")
+        # On a Mac ⌘` is the system's "next window of this app"; Control-`
+        # (Qt's Meta there) is free, and is VS Code's terminal key on a Mac.
+        console_shortcut.setShortcut("Meta+`" if keys.is_mac() else "Ctrl+`")
         console_shortcut.triggered.connect(
             lambda: self._stack.set_current(Workspace.CONSOLE))
         self.addAction(console_shortcut)

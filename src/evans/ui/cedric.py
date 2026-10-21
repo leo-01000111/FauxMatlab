@@ -1,6 +1,9 @@
 """
 Cedric the shrimp, at the foot of the navigation rail, asking "need help?".
 
+Cedric is not under the MIT licence: his name, drawing and the design data in
+this file are all rights reserved (Leon Gorecki). See LICENSE-CEDRIC.
+
 The same Cedric as on leongorecki.eu and in the Cedric app: the shape is the
 site's ``assets/cedric/design.js`` (generated there from cedric-lab's
 ``shrimp.js``), copied in as data, and the palette is the site's coral one —

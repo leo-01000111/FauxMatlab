@@ -1,0 +1,24 @@
+Cedric — character, all rights reserved
+
+Copyright (c) 2026 Leon Gorecki. All rights reserved.
+
+"Cedric" (also "Cédric"), the cartoon shrimp from leongorecki.eu, belongs to
+Leon Gorecki. The MIT licence in LICENSE does NOT apply to him. In Evans this
+covers:
+
+  * his name, used for the character or as the name of an app or product;
+  * his drawing and its design data: src/evans/ui/cedric.py (the shape, the
+    pose and the palette) and anything generated from it;
+  * every place Evans shows him: the "need help?" button at the foot of the
+    workspace rail, the launch splash, and any screenshot, icon or page that
+    shows him.
+
+The same terms as the Cedric repository's own licence apply:
+https://github.com/leo-01000111/cedric/blob/main/LICENSE-CEDRIC
+
+You may read this repository, build it and run it for yourself, and send
+changes back. You may not publish, distribute or sell a copy, fork or app that
+shows or names Cedric without written permission. To reuse the code, take out
+the character (his name, drawing and palette) and put your own in.
+
+Contact: through leongorecki.eu.

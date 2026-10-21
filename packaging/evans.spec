@@ -98,7 +98,11 @@ a = Analysis(
            # The icon set, read by path like the fonts: without it every
            # button in the frozen build would show its text and no icon.
            (str(ROOT / "src" / "evans" / "ui" / "icons" / "*"),
-            "evans/ui/icons")],
+            "evans/ui/icons"),
+           # The licences travel with the build: MIT for the code, and
+           # Cedric's all-rights-reserved notice for the character it shows.
+           (str(ROOT / "LICENSE"), "."),
+           (str(ROOT / "LICENSE-CEDRIC"), ".")],
     hiddenimports=HIDDEN,
     hookspath=[],
     # Runs before any package is imported. A windowed build has no standard
