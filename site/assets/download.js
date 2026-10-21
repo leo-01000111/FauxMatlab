@@ -107,13 +107,51 @@
     target.hidden = !text;
   }
 
-  function note(button, html) {
+  function note(button, html, after) {
     var id = button.getAttribute("data-download-note");
     var target = id && document.getElementById(id);
     if (target) {
       target.innerHTML = html;
       target.hidden = false;
+      target.classList.toggle("download-note--after", !!after);
     }
+  }
+
+  /*
+   * What the visitor sees once they have clicked: that it started, how to
+   * start it again if it did not, and the steps that come next.
+   */
+  function started(b, steps, more) {
+    var again = '<a href="' + b.href + '">Try again</a>';
+    var all = '<a href="' + (b.getAttribute("data-download-release") ||
+                             "#source") + '">All files of this release</a>';
+    note(b, '<p class="download-note__title">Your download has started</p>' +
+            "<p>Didn’t start? " + again + " · " + all + "</p>" +
+            "<ol>" + steps.map(function (s) { return "<li>" + s + "</li>"; })
+                          .join("") + "</ol>" +
+            (more ? "<p>" + more + "</p>" : ""), true);
+  }
+
+  /*
+   * The file's SHA-256 under the button, as GitHub publishes it. The short
+   * form is for the eye; Copy and the tooltip carry the whole of it.
+   */
+  function checksum(f) {
+    var box = document.querySelector("[data-download-check]");
+    var hex = String(f.digest || "").replace(/^sha256:/, "");
+    if (!box || !/^[0-9a-f]{64}$/.test(hex)) return;
+    var code = box.querySelector("code");
+    code.textContent = hex.slice(0, 12) + "…" + hex.slice(-12);
+    code.title = hex;
+    var copy = box.querySelector("button");
+    copy.onclick = function () {
+      var done = function () {
+        copy.textContent = "Copied";
+        setTimeout(function () { copy.textContent = "Copy"; }, 1600);
+      };
+      if (navigator.clipboard) navigator.clipboard.writeText(hex).then(done);
+    };
+    box.hidden = false;
   }
 
   function direct(b) { return b.hasAttribute("data-download-direct"); }
@@ -145,8 +183,10 @@
         }
         b.href = f.browser_download_url;
         b.setAttribute("title", f.name);
+        b.setAttribute("data-download-release", rel.html_url);
         line(b, "size", kind + " size: " + Math.round(f.size / 1048576) +
              " MB · " + rel.tag_name);
+        checksum(f);
       });
     });
   }
@@ -154,16 +194,21 @@
   // ── per system ──
 
   function windows(buttons) {
-    var after = "Downloading the installer. When it has finished, run it: " +
-      "Windows may say <em>Windows protected your PC</em>, because the " +
-      "installer is not code-signed yet, so choose <strong>More info</strong> " +
-      "then <strong>Run anyway</strong>. " +
-      '<a href="#smartscreen">Why</a> · ' +
-      '<a href="#windows">Portable zip instead</a>';
+    var steps = [
+      "Open the downloaded <code>Evans-Setup</code> file.",
+      "If Windows says <em>Windows protected your PC</em>, click " +
+        "<strong>More info</strong>, then <strong>Run anyway</strong>. " +
+        '<a href="#smartscreen">Why</a>',
+      "Follow the installer; no administrator rights needed. Then start " +
+        "Evans from the Start menu."
+    ];
     buttons.forEach(function (b) {
       label(b, b.hasAttribute("data-download-short") ? "Download"
                                                      : "Download for Windows");
-      if (direct(b)) b.addEventListener("click", function () { note(b, after); });
+      if (direct(b)) b.addEventListener("click", function () {
+        started(b, steps, 'No installing allowed on this PC? ' +
+                '<a href="#windows">Take the portable zip</a>.');
+      });
     });
     file(buttons, INSTALLER, "Installer");
   }
@@ -172,18 +217,21 @@
     var who = "For Macs with Apple Silicon (M1 or later) on macOS 13 or " +
       "newer. On an Intel Mac or an older macOS, " +
       '<a href="#source">run Evans from source</a>.';
-    var after = "Downloading the disk image. Open it and drag Evans onto " +
-      "Applications. The first time you open Evans, macOS stops it, because " +
-      "it is not notarised by Apple yet: close the message, then click " +
-      "<strong>Open Anyway</strong> in System Settings ▸ Privacy &amp; " +
-      'Security. <a href="#gatekeeper">Step by step</a>';
+    var steps = [
+      "Open the downloaded disk image and drag <strong>Evans</strong> onto " +
+        "<strong>Applications</strong>.",
+      "Open Evans from Applications. macOS stops the first launch, because " +
+        "Evans is not notarised by Apple yet: close the message.",
+      "In System Settings ▸ Privacy &amp; Security, click " +
+        '<strong>Open Anyway</strong>. <a href="#gatekeeper">Step by step</a>'
+    ];
     buttons.forEach(function (b) {
       label(b, b.hasAttribute("data-download-short") ? "Download"
                                                      : "Download for Mac");
       if (!direct(b)) return;
       note(b, who);
       b.addEventListener("click", function () {
-        if (!sent(b)) note(b, after);
+        if (!sent(b)) started(b, steps);
       });
     });
     file(buttons, DISK_IMAGE, "Disk image");
@@ -198,6 +246,8 @@
       if (!direct(b)) return;
       b.href = "#source";
       b.removeAttribute("title");
+      var check = document.querySelector("[data-download-check]");
+      if (check) check.hidden = true;           // no file, so no checksum
       line(b, "size", "Needs Python 3.12 or newer");
       note(b, why + " Evans runs from source with Python 3.12 or newer: " +
               "clone, <code>pip install -e .</code>, <code>python app.py</code>. " +
