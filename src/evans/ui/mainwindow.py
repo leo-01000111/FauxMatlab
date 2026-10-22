@@ -71,6 +71,7 @@ from ..core.tf_utils import (
 )
 from . import help, keys, persist, theme, winframe
 from .apps import ControlSystemDesigner, LTIViewer, PIDTuner, SnapshotBar
+from .assistant import AssistantDock
 from .block_editor import BlockEditor
 from .console import ConsolePanel, FigureArea
 from .context_bar import ContextBar
@@ -384,7 +385,64 @@ class MainWindow(QMainWindow):
         self._console.figure_area_wanted.connect(self._figures.setVisible)
         split.setStretchFactor(0, 3)
         split.setStretchFactor(1, 2)
+        self._build_cedric()
         return split
+
+    def _build_cedric(self) -> None:
+        """
+        Cedric, the assistant, as a dock on the right of the Console
+        workspace. Hidden until asked for; shown only while the Console
+        workspace is, since the code he reads lives there.
+        """
+        self._cedric_dock = AssistantDock(self)
+        self._cedric_dock.setAllowedAreas(Qt.RightDockWidgetArea |
+                                          Qt.LeftDockWidgetArea)
+        self.addDockWidget(Qt.RightDockWidgetArea, self._cedric_dock)
+        self._cedric_dock.hide()
+        #: Whether the user wants him open (shown on the Console workspace).
+        self._cedric_wanted = False
+        self._cedric_syncing = False
+        self._cedric_dock.visibilityChanged.connect(self._on_cedric_visibility)
+        panel = self._cedric_dock.panel
+        panel.set_source(self._console.assistant_source)
+        panel.run_command.connect(self._console.execute)
+        panel.paste_command.connect(self._console.recall)
+        self._console.cedric_requested.connect(self._ask_cedric)
+
+    def _ask_cedric(self, context, source, action: str) -> None:
+        """*Ask Cedric* on a selection: open his panel and pass it on."""
+        self.set_cedric_visible(True)
+        self._cedric_dock.panel.request(context, source, action)
+
+    def set_cedric_visible(self, wanted: bool) -> None:
+        """Open or close Cedric's panel (it shows on the Console workspace)."""
+        self._cedric_wanted = bool(wanted)
+        if wanted and self._stack.current is not Workspace.CONSOLE:
+            self._stack.set_current(Workspace.CONSOLE)
+        self._sync_cedric()
+
+    def _sync_cedric(self) -> None:
+        show = self._cedric_wanted and self._stack.current is Workspace.CONSOLE
+        self._cedric_syncing = True
+        try:
+            self._cedric_dock.setVisible(show)
+            if show:
+                self._cedric_dock.raise_()
+        finally:
+            self._cedric_syncing = False
+        if hasattr(self, "_act_cedric"):
+            self._act_cedric.blockSignals(True)
+            self._act_cedric.setChecked(self._cedric_wanted)
+            self._act_cedric.blockSignals(False)
+
+    def _on_cedric_visibility(self, visible: bool) -> None:
+        """Closed with its own × (not hidden by a workspace switch)."""
+        if self._cedric_syncing or visible:
+            return
+        if self._stack.current is Workspace.CONSOLE \
+                and not self._cedric_dock.isVisible():
+            self._cedric_wanted = False
+            self._sync_cedric()
 
     def _console_state(self) -> dict:
         """
@@ -450,6 +508,7 @@ class MainWindow(QMainWindow):
         settings.setValue("paneSources",
                           [source.name for source in self._grid.sources])
         settings.setValue("modelPanel", self._model_dock.isVisible())
+        settings.setValue("cedricPanel", self._cedric_wanted)
         settings.setValue("workspace", self._stack.current.value)
 
     def restore_layout(self) -> bool:
@@ -473,6 +532,10 @@ class MainWindow(QMainWindow):
                 pass
         # `restoreState` brings back dock *visibility* too, so the menu check
         # marks have to be re-synchronised or they disagree with the window.
+        # Cedric's dock follows the saved wish and the workspace instead.
+        self._cedric_wanted = str(settings.value("cedricPanel", False)).lower() \
+            in ("true", "1")
+        self._sync_cedric()
         self._sync_view_menu()
         return True
 
@@ -512,6 +575,10 @@ class MainWindow(QMainWindow):
             dock.hide()
         self.removeDockWidget(self._model_dock)
         self.addDockWidget(Qt.LeftDockWidgetArea, self._model_dock)
+        self._cedric_wanted = False
+        self.removeDockWidget(self._cedric_dock)
+        self.addDockWidget(Qt.RightDockWidgetArea, self._cedric_dock)
+        self._sync_cedric()
         self.resize(1400, 850)
         self._grid.set_layout_size(1, ("step",), (None,))
         self._sync_layout_buttons()
@@ -852,6 +919,15 @@ class MainWindow(QMainWindow):
         self._act_model = act_model
         view_menu.addAction(act_model)
 
+        act_cedric = QAction("&Cedric", self, checkable=True)
+        act_cedric.setShortcut("Ctrl+Shift+A")
+        act_cedric.setStatusTip(
+            "Cedric, the assistant: ask a free AI model about your code")
+        act_cedric.triggered.connect(self.set_cedric_visible)
+        self._act_cedric = act_cedric
+        view_menu.addAction(act_cedric)
+        self._console.cedric_button.setDefaultAction(act_cedric)
+
         view_menu.addSeparator()
 
         # The three workspaces. Ctrl+1/2/3, plus Ctrl+` for the console
@@ -1018,6 +1094,7 @@ class MainWindow(QMainWindow):
             self._update_all_tabs()
         elif workspace is Workspace.CONSOLE:
             self._console.focus()
+        self._sync_cedric()
         self._sync_view_menu()
         self._status.showMessage(workspace.description, 4000)
 

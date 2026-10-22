@@ -36,6 +36,30 @@ def _scratch_persistence():
 
 
 @pytest.fixture(scope="session", autouse=True)
+def _no_openrouter_key():
+    """
+    Hide the developer's own OpenRouter key from the suite.
+
+    Cedric's panel is built with every main window; with a real key in the
+    environment (or saved for the user on Windows) a test that showed it
+    would fetch the model list from the network. Tests that want a key hand
+    the panel one.
+    """
+    saved = os.environ.pop("OPENROUTER_API_KEY", None)
+    try:
+        from evans.ui.assistant import panel
+    except ImportError:                      # no Qt: no panel
+        panel = None
+    if panel is not None:
+        real, panel.windows_user_key = panel.windows_user_key, lambda: None
+    yield
+    if panel is not None:
+        panel.windows_user_key = real
+    if saved is not None:
+        os.environ["OPENROUTER_API_KEY"] = saved
+
+
+@pytest.fixture(scope="session", autouse=True)
 def _no_modal_dialogs():
     """
     Fail at once on a dialog no test answered, instead of hanging.

@@ -5,7 +5,10 @@ Each request costs tokens and leaves the machine, so the context is narrow
 by rule, not by habit:
 
 * **the code at hand** — the selection, else the ``%%`` section around the
-  cursor, else the cursor's line. Never the whole script.
+  cursor, else the cursor's line. Never the whole script. A live-script cell
+  and the console's prompt line are sent whole: each is already one unit.
+* **console output the user picked** — a selection in the transcript, with
+  whatever error it shows; context only, never edited.
 * **the workspace** — each variable's name, type and size. Never a value:
   a matrix of measured data, or a gain someone has not published, stays in
   Evans. :func:`describe` only ever looks at shape, order and length.
@@ -25,6 +28,7 @@ from typing import Any
 #: Caps, in characters (about four to a token).
 MAX_CODE_CHARS = 6000
 MAX_ERROR_CHARS = 1200
+MAX_ATTACHMENT_CHARS = 4000
 MAX_VARIABLES = 40
 
 #: A cell divider: ``%%`` in MATLAB, ``# %%`` in Python. The same rule as
@@ -60,13 +64,17 @@ class Context:
     language: str = "python"
     #: The code at hand, or ``""`` (the console with nothing selected).
     code: str = ""
-    #: What ``code`` is: ``"selection"``, ``"section"``, ``"line"``, ``""``.
+    #: What ``code`` is: ``"selection"``, ``"section"``, ``"line"``,
+    #: ``"cell"`` (a live-script cell), ``"prompt"`` (the console's input
+    #: line, typed but not run) or ``""``.
     origin: str = ""
     region: Region | None = None
     variables: list[Variable] = field(default_factory=list)
     #: How many variables there were before :data:`MAX_VARIABLES` cut in.
     variable_count: int = 0
     last_error: str = ""
+    #: Console output the user selected and asked about; never edited.
+    attachment: str = ""
     #: The code was longer than :data:`MAX_CODE_CHARS` and was cut, so an
     #: edit proposed for it cannot be applied.
     truncated: bool = False
@@ -78,6 +86,9 @@ class Context:
             lines = self.code.count("\n") + 1
             parts.append(f"{self.origin} ({lines} line{'s' if lines != 1 else ''}"
                          f"{', cut' if self.truncated else ''})")
+        if self.attachment:
+            lines = self.attachment.count("\n") + 1
+            parts.append(f"console output ({lines} line{'s' if lines != 1 else ''})")
         if self.variable_count:
             parts.append(f"{self.variable_count} variable name"
                          f"{'s' if self.variable_count != 1 else ''}")
@@ -199,17 +210,25 @@ def workspace(variables: Mapping[str, Any]) -> tuple[list[Variable], int]:
 def build(where: str, *, language: str = "python", text: str = "",
           cursor: int = 0, sel_start: int | None = None,
           sel_end: int | None = None, variables: Mapping[str, Any] | None = None,
-          last_error: str = "") -> Context:
+          last_error: str = "", whole: str | None = None,
+          attachment: str = "") -> Context:
     """
     The context for one request from an editor or the console.
 
-    ``text`` is the document (the console passes its selection, or nothing);
-    only the part :func:`code_at` picks out is kept.
+    ``text`` is the document; only the part :func:`code_at` picks out is
+    kept. With ``whole`` (``"cell"``, ``"prompt"``) the whole text is the
+    unit instead, unless something in it is selected.
     """
     origin, region = ("", None)
     code = ""
-    if text.strip():
+    selected = sel_start is not None and sel_end is not None \
+        and sel_start != sel_end
+    if whole and not selected:
+        if text.strip():
+            origin, region = whole, Region(0, len(text), text)
+    elif text.strip():
         origin, region = code_at(text, cursor, sel_start, sel_end)
+    if region is not None:
         code = region.text
         if not code.strip():
             origin, region, code = "", None, ""
@@ -220,9 +239,13 @@ def build(where: str, *, language: str = "python", text: str = "",
     error = last_error.strip()
     if len(error) > MAX_ERROR_CHARS:
         error = "…" + error[-MAX_ERROR_CHARS:]       # the end says what broke
+    attachment = attachment.strip("\n")
+    if len(attachment) > MAX_ATTACHMENT_CHARS:
+        attachment = "…" + attachment[-MAX_ATTACHMENT_CHARS:]
     return Context(where=where, language=language, code=code, origin=origin,
                    region=region, variables=described, variable_count=count,
-                   last_error=error, truncated=truncated)
+                   last_error=error, attachment=attachment,
+                   truncated=truncated)
 
 
 def render(context: Context) -> str:
@@ -232,9 +255,15 @@ def render(context: Context) -> str:
     out = [f"[Evans: {place}, {context.language}]"]
     if context.code:
         what = {"selection": "Selected code", "section": "Current %% section",
-                "line": "Current line"}.get(context.origin, "Code")
+                "line": "Current line", "cell": "Current live-script cell",
+                "prompt": "Typed at the console prompt, not run yet "
+                          "(one line: an edit must stay on one line)",
+                }.get(context.origin, "Code")
         cut = " (cut short; do not propose an edit)" if context.truncated else ""
         out.append(f"{what}{cut}:\n```{context.language}\n{context.code}\n```")
+    if context.attachment:
+        out.append("Console output the user selected (do not edit it):\n"
+                   f"```text\n{context.attachment}\n```")
     if context.variables:
         rows = [f"{v.name}: {v.type}, {v.size}" for v in context.variables]
         more = context.variable_count - len(context.variables)

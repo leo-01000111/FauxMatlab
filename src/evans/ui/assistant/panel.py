@@ -1,13 +1,13 @@
 """
-The assistant panel: a question box, a short conversation, and proposals
+Cedric, the assistant: a question box, a short conversation, and proposals
 that do nothing until the user says so.
 
-What the panel talks about comes from a :class:`Source`, set by whoever has
-focus: the console, a script tab or a live script. A source builds the
-narrow :class:`~evans.assistant.context.Context` for one question and knows
-how to apply an edit to its own document. The panel never reads an editor
-directly, so wiring it to a new kind of editor is a new source, not a change
-here.
+What a question is about comes from a :class:`~.sources.Source` — the
+console, the showing script tab or the current live cell — set with
+:meth:`AssistantPanel.set_source`. The floating *Ask Cedric* button
+(:mod:`.ask_float`) hands the panel a context of its own through
+:meth:`AssistantPanel.request`: asked at once (Explain, Fix this error) or
+attached to the next question (Ask…).
 
 A proposed edit is shown as a diff of the code that was sent against the
 model's replacement; Apply replaces that code in one undo step, and refuses
@@ -24,11 +24,10 @@ from __future__ import annotations
 import html
 import sys
 import threading
-from collections.abc import Callable, Mapping
-from typing import Any
+from collections.abc import Callable
 
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
-from PySide6.QtGui import QFontMetrics, QKeySequence, QShortcut, QTextCursor
+from PySide6.QtGui import QFontMetrics, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QComboBox,
     QDockWidget,
@@ -41,6 +40,7 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QStackedWidget,
     QTextEdit,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -52,90 +52,15 @@ from ...assistant.client import AssistantError, Client, ModelInfo
 from ...assistant.context import Context
 from ...assistant.protocol import Command, Edit, History, StaleEdit, Text
 from .. import persist, theme
+from ..cedric import CedricMark
+from .ask_float import ASK, QUESTIONS
+from .sources import Source
 
 #: Where the chosen model is remembered. Only the model's id is stored;
 #: the key never is.
 MODEL_KEY = "assistant/model"
 
 KEY_URL = "https://openrouter.ai/keys"
-
-
-# ──────────────────────────────────────────────────────────────
-#  Sources: what the panel is about
-# ──────────────────────────────────────────────────────────────
-
-class Source:
-    """
-    Whatever the panel is asking about. Subclasses fill in the two methods.
-
-    ``context()`` is called once per question, on the GUI thread.
-    ``apply(context, edit)`` replaces the code that ``context`` was built
-    from, or raises :class:`StaleEdit`.
-    """
-
-    def context(self) -> Context:
-        raise NotImplementedError
-
-    def apply(self, context: Context, edit: Edit) -> None:
-        raise StaleEdit("This place cannot be edited.")
-
-
-class EditorSource(Source):
-    """
-    A source over any ``QPlainTextEdit`` or ``QTextEdit``: a script or a
-    live-script cell.
-
-    ``variables`` and ``last_error`` are callables, read at question time,
-    so the source never holds on to a stale workspace.
-    """
-
-    def __init__(self, editor: QPlainTextEdit | QTextEdit, *, where: str,
-                 language: str | Callable[[], str] = "python",
-                 variables: Callable[[], Mapping[str, Any]] = dict,
-                 last_error: Callable[[], str] = str) -> None:
-        self.editor = editor
-        self.where = where
-        self._language = language
-        self._variables = variables
-        self._last_error = last_error
-
-    def context(self) -> Context:
-        text = self.editor.toPlainText()
-        cursor = self.editor.textCursor()
-        language = self._language() if callable(self._language) else self._language
-        return ctx.build(
-            self.where, language=language, text=text,
-            cursor=_from_qt(text, cursor.position()),
-            sel_start=_from_qt(text, cursor.selectionStart()),
-            sel_end=_from_qt(text, cursor.selectionEnd()),
-            variables=self._variables(), last_error=self._last_error())
-
-    def apply(self, context: Context, edit: Edit) -> None:
-        text = self.editor.toPlainText()
-        protocol.apply_edit(text, context, edit)          # raises if stale
-        region = context.region
-        cursor = QTextCursor(self.editor.document())
-        cursor.beginEditBlock()                           # one undo step
-        cursor.setPosition(_to_qt(text, region.start))
-        cursor.setPosition(_to_qt(text, region.end), QTextCursor.KeepAnchor)
-        cursor.insertText(edit.code)
-        cursor.endEditBlock()
-        self.editor.setTextCursor(cursor)
-
-
-def _to_qt(text: str, index: int) -> int:
-    """A Python string index as a Qt position (Qt counts UTF-16 units)."""
-    return len(text[:index].encode("utf-16-le")) // 2
-
-
-def _from_qt(text: str, position: int) -> int:
-    """A Qt position as a Python string index."""
-    units = 0
-    for i, ch in enumerate(text):
-        if units >= position:
-            return i
-        units += 2 if ord(ch) > 0xFFFF else 1
-    return len(text)
 
 
 def windows_user_key() -> str | None:
@@ -170,7 +95,7 @@ class _Bridge(QObject):
 
 
 class AssistantPanel(QWidget):
-    """The assistant: header, conversation, question box."""
+    """Cedric: header, conversation, question box."""
 
     #: The user pressed Run on a proposed command.
     run_command = Signal(str)
@@ -190,7 +115,11 @@ class AssistantPanel(QWidget):
         self._cancel: threading.Event | None = None
         self._reply_label: QLabel | None = None
         self._reply_text = ""
-        self._asked: tuple[str, Context] | None = None
+        #: The question in flight: (question, its context, its source).
+        self._asked: tuple[str, Context, Source | None] | None = None
+        #: A context attached by *Ask…*, for the next question.
+        self._pinned: tuple[Context, Source | None] | None = None
+        self._loaded = False
 
         self._bridge = _Bridge(self)
         self._bridge.text.connect(self._on_text)
@@ -205,6 +134,8 @@ class AssistantPanel(QWidget):
         self._header = QWidget()
         header = QHBoxLayout(self._header)
         header.setContentsMargins(0, 0, 0, 0)
+        self.mark = CedricMark()
+        header.addWidget(self.mark)
         self._model_box = QComboBox()
         self._model_box.setToolTip("Free models on OpenRouter right now")
         self._model_box.setSizeAdjustPolicy(
@@ -236,11 +167,28 @@ class AssistantPanel(QWidget):
         self._sends.setStyleSheet("color: palette(mid);")
         layout.addWidget(self._sends)
 
+        # What *Ask…* attached, until the next question takes it (or ×).
+        self._chip = QFrame()
+        self._chip.setProperty("hp", "panel")
+        chip = QHBoxLayout(self._chip)
+        chip.setContentsMargins(6, 2, 2, 2)
+        self._chip_label = QLabel("")
+        self._chip_label.setWordWrap(True)
+        self._chip_label.setFont(theme.label_font(8))
+        chip.addWidget(self._chip_label, stretch=1)
+        unpin = QToolButton()
+        unpin.setText("×")
+        unpin.setToolTip("Don't send this with the question")
+        unpin.clicked.connect(self.unpin)
+        chip.addWidget(unpin)
+        self._chip.hide()
+        layout.addWidget(self._chip)
+
         self._ask_row = QWidget()
         ask = QHBoxLayout(self._ask_row)
         ask.setContentsMargins(0, 0, 0, 0)
         self._input = QPlainTextEdit()
-        self._input.setPlaceholderText("Ask about the code…  (Ctrl+Enter)")
+        self._input.setPlaceholderText("Ask Cedric…  (Ctrl+Enter)")
         self._input.setFixedHeight(64)
         ask.addWidget(self._input, stretch=1)
         self._send_button = QPushButton("Ask")
@@ -261,7 +209,7 @@ class AssistantPanel(QWidget):
         card = QFrame()
         card.setProperty("hp", "panel")
         box = QVBoxLayout(card)
-        title = QLabel("Set up the assistant")
+        title = QLabel("Set up Cedric")
         title.setFont(theme.title_font(11))
         box.addWidget(title)
         steps = QLabel(
@@ -272,11 +220,12 @@ class AssistantPanel(QWidget):
             f"in a terminal; on a Mac, an <code>export</code> line in "
             f"<code>~/.zshrc</code>.</li>"
             f"<li>Press <b>Check again</b> (or restart Evans).</li></ol>"
-            f"<p>Evans never stores the key. Each question sends the selected "
-            f"code (or the current %% section), your variables' names, types "
-            f"and sizes — never their values — and the last error, to "
-            f"OpenRouter and the model's host. Free models allow 50 questions "
-            f"a day.</p>")
+            f"<p>Cedric answers with a free model on OpenRouter. Evans never "
+            f"stores the key. Each question sends the selected code (or the "
+            f"current %% section or cell, or what is typed at the prompt), "
+            f"your variables' names, types and sizes — never their values — "
+            f"and the last error, to OpenRouter and the model's host. Free "
+            f"models allow 50 questions a day.</p>")
         steps.setWordWrap(True)
         steps.setTextFormat(Qt.RichText)
         steps.setOpenExternalLinks(True)
@@ -304,14 +253,33 @@ class AssistantPanel(QWidget):
         self._model_box.setEnabled(have)
         for widget in (self._header, self._allowance, self._sends, self._ask_row):
             widget.setVisible(have)
+        self._chip.setVisible(have and self._pinned is not None)
         if have:
-            self._load_models()
-            self._load_allowance()
+            if self.isVisible():
+                self._load()
         else:
             self._allowance.setText("")
             if self.sender() is not None:
                 self._setup_note.setText(f"{orc.ENV_KEY} is still not set.")
         return have
+
+    def showEvent(self, event) -> None:            # noqa: N802 (Qt API)
+        super().showEvent(event)
+        if self._key:
+            self._load()
+
+    def _load(self) -> None:
+        """
+        The model list and the day's allowance, once, when first seen.
+
+        Not at construction: a hidden panel (most launches) never touches
+        the network.
+        """
+        if self._loaded:
+            return
+        self._loaded = True
+        self._load_models()
+        self._load_allowance()
 
     @property
     def has_key(self) -> bool:
@@ -323,11 +291,41 @@ class AssistantPanel(QWidget):
     # ── where the questions are about ─────────────────────────
 
     def set_source(self, source: Source | None) -> None:
-        """What the next question is about (the focused editor or console)."""
+        """What the next question is about (the showing Console tab)."""
         self._source = source
 
     def source(self) -> Source | None:
         return self._source
+
+    def request(self, context: Context, source: Source | None,
+                action: str) -> bool:
+        """
+        The floating button's choice: Explain or Fix asks at once with
+        ``context``; Ask… attaches it to the next question. While a reply
+        is still coming, Explain and Fix attach and fill in the question
+        instead, for the user to send. Returns whether a request went out.
+        """
+        if action == ASK or self.busy or not self._key:
+            self.pin(context, source)
+            if action in QUESTIONS:
+                self._input.setPlainText(QUESTIONS[action])
+            self._input.setFocus()
+            return False
+        return self.ask(QUESTIONS[action], context=context, source=source)
+
+    def pin(self, context: Context, source: Source | None) -> None:
+        """Attach ``context`` to the next question, shown as a chip."""
+        self._pinned = (context, source)
+        self._chip_label.setText(f"About: {context.summary()}")
+        self._chip.setVisible(bool(self._key))
+
+    def unpin(self) -> None:
+        self._pinned = None
+        self._chip.hide()
+
+    @property
+    def pinned(self) -> Context | None:
+        return self._pinned[0] if self._pinned else None
 
     # ── the conversation ──────────────────────────────────────
 
@@ -376,8 +374,12 @@ class AssistantPanel(QWidget):
         else:
             self.ask(self._input.toPlainText())
 
-    def ask(self, question: str) -> bool:
-        """Send ``question`` with the current source's context."""
+    def ask(self, question: str, *, context: Context | None = None,
+            source: Source | None = None) -> bool:
+        """
+        Send ``question``: with ``context`` if given, else with what *Ask…*
+        attached, else with the current source's context.
+        """
         question = question.strip()
         if not question or self.busy or not self._key:
             return False
@@ -387,17 +389,24 @@ class AssistantPanel(QWidget):
                                "is still loading, or could not be fetched.",
                                error=True))
             return False
-        context = (self._source.context() if self._source is not None
-                   else ctx.build("console"))
+        if context is None and self._pinned is not None:
+            context, source = self._pinned
+        elif context is None:
+            source = self._source.resolve() if self._source is not None else None
+            context = source.context() if source is not None \
+                else ctx.build("console")
+        self.unpin()
         messages = protocol.messages(context, question, self._history)
 
         self._input.clear()
         self._sends.setText(f"Sent: {context.summary()}")
         self._append(_question(question, context))
+        self._append(_speaker("Cedric"))
         self._reply_label = _reply_label()
         self._reply_text = ""
         self._append(self._reply_label)
-        self._asked = (question, context)
+        self._asked = (question, context, source)
+        self.mark.set_swimming(True)
 
         self._request += 1
         request = self._request
@@ -436,6 +445,7 @@ class AssistantPanel(QWidget):
         self._asked = None
 
     def _finish_request(self) -> None:
+        self.mark.set_swimming(False)
         self._cancel = None
         self._request += 1                 # late news from the old one is ignored
         self._send_button.setText("Ask")
@@ -463,15 +473,16 @@ class AssistantPanel(QWidget):
             if result.kind == "rate_limit":
                 self._load_allowance()
             return
-        question, context = asked
+        question, context, source = asked
         for part in protocol.parse(result.text):
-            self._append(self._part_widget(part, context))
+            self._append(self._part_widget(part, context, source))
         self._history.add(question, result.text)
         self._load_allowance()
 
-    def _part_widget(self, part, context: Context) -> QWidget:
+    def _part_widget(self, part, context: Context,
+                     source: Source | None) -> QWidget:
         if isinstance(part, Edit):
-            return EditCard(part, context, self._source, self)
+            return EditCard(part, context, source, self)
         if isinstance(part, Command):
             return CommandCard(part, self)
         return _prose(part.text if isinstance(part, Text) else str(part))
@@ -576,6 +587,12 @@ def _prose(text: str) -> QLabel:
     label.setWordWrap(True)
     label.setTextInteractionFlags(Qt.TextBrowserInteraction)
     label.setOpenExternalLinks(True)
+    return label
+
+
+def _speaker(name: str) -> QLabel:
+    label = QLabel(f"<b>{html.escape(name)}</b>")
+    label.setTextFormat(Qt.RichText)
     return label
 
 
@@ -759,7 +776,7 @@ class AssistantDock(QDockWidget):
     """The panel as a dock; its object name lets the layout remember it."""
 
     def __init__(self, parent: QWidget | None = None, **panel_options) -> None:
-        super().__init__("Assistant", parent)
+        super().__init__("Cedric", parent)
         self.setObjectName("assistantDock")
         self.panel = AssistantPanel(self, **panel_options)
         self.setWidget(self.panel)

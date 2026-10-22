@@ -10,8 +10,9 @@ covers:
   * his drawing and its design data: src/evans/ui/cedric.py (the shape, the
     pose and the palette) and anything generated from it;
   * every place Evans shows him: the "need help?" button at the foot of the
-    workspace rail, the launch splash, and any screenshot, icon or page that
-    shows him.
+    workspace rail, the launch splash, the assistant named after him (the
+    "Cedric" panel, its drawing of him, and the "Ask Cedric" button), and
+    any screenshot, icon or page that shows him.
 
 The same terms as the Cedric repository's own licence apply:
 https://github.com/leo-01000111/cedric/blob/main/LICENSE-CEDRIC

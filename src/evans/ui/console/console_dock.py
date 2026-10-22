@@ -29,7 +29,9 @@ from PySide6.QtWidgets import (
 from ...console import tracer as dbg
 from ...console.figures import FigureSpec, set_figure_sink
 from ...console.interpreter import Interpreter, Result
+from ...console.matlab import looks_like_matlab
 from .. import iconset
+from ..assistant import AskCedricFloat, ConsoleSource, EditorSource, SwitchSource
 from ..code import (
     CodeEditor,
     Context,
@@ -484,6 +486,8 @@ class ConsolePanel(QWidget):
     #: Whether the figure area below is worth showing: not on the Live tab,
     #: where each cell's figures are drawn inline under it.
     figure_area_wanted = Signal(bool)
+    #: *Ask Cedric* on a selection: (context, source, action) for the panel.
+    cedric_requested = Signal(object, object, str)
 
     def __init__(self, figures: FigureArea, extra: dict | None = None,
                  parent=None) -> None:
@@ -539,19 +543,68 @@ class ConsolePanel(QWidget):
         self._tabs.currentChanged.connect(
             lambda _index: self.figure_area_wanted.emit(not self.live_active))
 
+        # What Cedric is asked about: the showing tab's code, and the last
+        # error from wherever it came. Built before the editors attach
+        # their per-widget hooks below, which use them.
+        #: The last error anything here printed: the prompt, a run, a cell.
+        self.last_error = ""
+        self._console_source = ConsoleSource(
+            self.console._input, self.console._transcript,
+            language=lambda: ("matlab" if looks_like_matlab(
+                self.console._input.text()) else "python"),
+            variables=self.interpreter.variables,
+            last_error=lambda: self.last_error)
+        self._script_source = EditorSource(
+            lambda: self.editor.code, where="script",
+            language=self.editor.language,
+            variables=self.interpreter.variables,
+            last_error=lambda: self.last_error)
+        self._live_source = EditorSource(
+            self._live_cell_editor, where="live", language="matlab",
+            variables=self.interpreter.variables,
+            last_error=self._live_error, whole="cell")
+        #: Cedric's source: whichever Console tab is showing.
+        self.assistant_source = SwitchSource(self._showing_source)
+
         # Hover for syntax and Ctrl+click to go, wherever code is written
         # or shown: the script tabs, the live cells, the prompt, the output.
-        self.editor.set_follow(lambda widget: self._attach_follow(
-            widget, self._folder))
-        self.live.set_follow(lambda widget: self._attach_follow(
-            widget, lambda: self.live.folder or self._folder()))
+        # The floating Ask Cedric button rides along on the same hooks.
+        def script_hooks(widget) -> None:
+            self._attach_follow(widget, self._folder)
+            self._attach_ask(widget, EditorSource(
+                widget, where="script", language=self.editor.language,
+                variables=self.interpreter.variables,
+                last_error=lambda: self.last_error))
+
+        def live_hooks(widget) -> None:
+            self._attach_follow(
+                widget, lambda: self.live.folder or self._folder())
+            self._attach_ask(widget, EditorSource(
+                widget, where="live", language="matlab",
+                variables=self.interpreter.variables,
+                last_error=self._live_error, whole="cell"))
+
+        self.editor.set_follow(script_hooks)
+        self.live.set_follow(live_hooks)
         self._attach_follow(self.console._input, self._folder)
         self._attach_follow(self.console._transcript, self._folder)
+        self._attach_ask(self.console._input, self._console_source)
+        self._attach_ask(self.console._transcript, self._console_source)
+
+        # Cedric's button in the tab bar; the main window gives it the
+        # action that shows and hides his dock.
+        self.cedric_button = QToolButton()
+        self.cedric_button.setObjectName("cedricButton")
+        self.cedric_button.setText("Cedric")
+        self.cedric_button.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        self._tabs.setCornerWidget(self.cedric_button, Qt.TopRightCorner)
 
         layout.addWidget(self._tabs)
 
         self.console.executed.connect(self.workspace.refresh)
         self.console.executed.connect(self._record)
+        self.console.executed.connect(self._note_result)
+        self.live.ran.connect(self._note_live_error)
         self.history.recall.connect(self.recall)
         self.history.rerun.connect(self.execute)
         self._running_script = False
@@ -626,6 +679,49 @@ class ConsolePanel(QWidget):
         elif target.kind == "help":
             from ..help import open_help
             open_help(target.name)
+
+    # ── Cedric ──────────────────────────────────────────────────
+
+    def _attach_ask(self, widget, source) -> AskCedricFloat:
+        """The floating Ask Cedric button on ``widget``, asking ``source``."""
+        return AskCedricFloat(widget, lambda action: self.cedric_requested.emit(
+            source.context(), source.resolve(), action))
+
+    def _showing_source(self):
+        current = self._tabs.currentWidget()
+        if current is self.editor:
+            return self._script_source
+        if current is self.live:
+            return self._live_source
+        return self._console_source
+
+    def _live_cell_editor(self):
+        """The current live cell's code editor, if the current cell is code."""
+        cell = self.live.current_cell
+        if cell is None or not cell.is_code:
+            return None
+        try:
+            return self.live.widget_for(cell).editor
+        except KeyError:
+            return None
+
+    def _live_error(self) -> str:
+        """The current cell's error, else the last one printed anywhere."""
+        cell = self.live.current_cell
+        output = getattr(cell, "output", None)
+        if output is not None and output.error:
+            return output.error
+        return self.last_error
+
+    def _note_result(self, result) -> None:
+        if result is not None and result.error:
+            self.last_error = result.error
+
+    def _note_live_error(self) -> None:
+        failed = next((c for c in self.live.document.code_cells()
+                       if c.output is not None and not c.output.ok), None)
+        if failed is not None:
+            self.last_error = failed.output.error
 
     @property
     def live_active(self) -> bool:
@@ -783,6 +879,8 @@ class ConsolePanel(QWidget):
         document = document or self.editor.current_document()
         failed = next((r for r in results if r.error), None)
         what = "Section" if section else "Run"
+        if failed is not None:
+            self.last_error = failed.error
         if failed is None:
             self.editor.set_status(f"{what} finished.")
             return

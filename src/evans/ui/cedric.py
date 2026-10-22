@@ -335,3 +335,52 @@ class CedricButton(QWidget):
             q.setPen(QPen(QColor(tok.focus), 1.5, Qt.DotLine))
             q.drawRect(self.rect().adjusted(1, 1, -2, -2))
             q.end()
+
+
+class CedricMark(QWidget):
+    """
+    Cedric small, without his callout: the assistant panel's header.
+
+    He holds still until :meth:`set_swimming` is on — while a reply streams
+    in — and then swims, so the panel shows it is working without a spinner.
+    """
+
+    FPS = 24
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setFixedSize(QSize(34, 26))
+        self.setAccessibleName("Cedric")
+        self._t0 = time.monotonic()
+        self._timer = QTimer(self)
+        self._timer.setInterval(1000 // self.FPS)
+        self._timer.timeout.connect(self.update)
+        theme.notifier().changed.connect(lambda _t: self.update())
+
+    @property
+    def swimming(self) -> bool:
+        return self._timer.isActive()
+
+    def set_swimming(self, on: bool) -> None:
+        if on:
+            self._timer.start()
+        else:
+            self._timer.stop()
+        self.update()
+
+    def hideEvent(self, event) -> None:
+        super().hideEvent(event)
+        self._timer.stop()
+
+    def paintEvent(self, _event) -> None:
+        now = time.monotonic() - self._t0 if self.swimming else 0.0
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        r = QRectF(self.rect()).adjusted(1, 2, -1, -2)
+        scale = min(r.width() / VIEW.width(), r.height() / VIEW.height())
+        p.translate(r.center())
+        if self.swimming:
+            bob = _ease(now / 1.4)
+            p.translate(0, -0.06 * r.height() * bob)
+        paint_shape(p, scale, now, ink_for(theme.tokens()),
+                    antenna_speed=2.0 if self.swimming else 1.0)

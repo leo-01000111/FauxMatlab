@@ -78,20 +78,22 @@ def make_panel(qapp, fake: Fake, key: str | None = KEY):
         def _in_background(self, work):
             work()
 
-    return Inline(client_factory=lambda k: Client(k, transport=httpx.MockTransport(fake)),
-                  key_reader=lambda: key)
+    panel = Inline(client_factory=lambda k: Client(k, transport=httpx.MockTransport(fake)),
+                   key_reader=lambda: key)
+    panel.show()                       # the model list loads when first seen
+    return panel
 
 
 def editor_source(text=SCRIPT, cursor_at="K = 3", **options):
     from PySide6.QtWidgets import QPlainTextEdit
 
     from evans.ui.assistant import EditorSource
-    from evans.ui.assistant.panel import _to_qt
+    from evans.ui.assistant.sources import to_qt
 
     editor = QPlainTextEdit()
     editor.setPlainText(text)
     cursor = editor.textCursor()
-    cursor.setPosition(_to_qt(text, text.index(cursor_at)))
+    cursor.setPosition(to_qt(text, text.index(cursor_at)))
     editor.setTextCursor(cursor)
     return editor, EditorSource(editor, where="script", language="matlab", **options)
 
@@ -118,6 +120,7 @@ class TestSetup:
 
         panel = Inline(client_factory=lambda k: Client(k, transport=httpx.MockTransport(fake)),
                        key_reader=lambda: keys[0])
+        panel.show()
         assert not panel.has_key
         keys[0] = KEY
         assert panel.check_key()
@@ -158,7 +161,9 @@ class TestAsking:
         panel.set_source(source)
         panel.ask("lower the gain")
         kinds = [type(w).__name__ for w in panel.cards()]
-        assert kinds == ["QLabel", "QLabel", "EditCard", "QLabel", "CommandCard"]
+        # You, "Cedric", his prose, the edit, more prose, the command.
+        assert kinds == ["QLabel", "QLabel", "QLabel", "EditCard", "QLabel",
+                         "CommandCard"]
         edit = next(w for w in panel.cards() if isinstance(w, EditCard))
         text = edit.view.toPlainText()
         assert "-K = 3" in text and "+K = 1.5" in text
