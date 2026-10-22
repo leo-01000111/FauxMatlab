@@ -58,11 +58,11 @@ def test_he_is_drawn_in_the_site_coral(app, monkeypatch, tokens, ink):
     c.deleteLater()
 
 
-def test_help_opens_the_documentation_site(app, monkeypatch):
-    opened = []
-    monkeypatch.setattr(evans_help.QDesktopServices, "openUrl",
-                        lambda url: opened.append(url.toString()) or True)
+def test_help_opens_the_help_window(app, monkeypatch):
+    monkeypatch.setattr(evans_help, "_window", None)
     assert evans_help.open_help()
-    assert evans_help.open_help("tour.html")
-    assert opened == ["https://www.leongorecki.eu/evans/",
-                      "https://www.leongorecki.eu/evans/tour.html"]
+    window = evans_help.window()
+    assert window.isVisible() and window.topic == "index"
+    assert evans_help.open_help("step")
+    assert evans_help.window() is window and window.topic == "step"
+    window.close()

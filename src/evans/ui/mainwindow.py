@@ -368,6 +368,7 @@ class MainWindow(QMainWindow):
                                      extra=self._console_state())
         self._console.open_system.connect(self._on_console_system)
         self._console.open_model.connect(self._on_console_model)
+        help.set_console(self._run_from_help, lambda: self._console.running)
         # A figure drawn from anywhere pulls the workspace into view, so
         # `step(G)` typed on the Analyse page does not draw somewhere unseen.
         self._figures.figure_added.connect(
@@ -529,6 +530,9 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:
         self.save_layout()
+        # The help window has no parent, so it would keep Evans running.
+        if (helper := help.window()) is not None:
+            helper.close()
         # "Update when I close Evans": the installer takes over from here.
         self.updater.install_pending()
         super().closeEvent(event)
@@ -997,6 +1001,15 @@ class MainWindow(QMainWindow):
 
     def show_workspace(self, workspace) -> None:
         self._stack.set_current(workspace)
+
+    def _run_from_help(self, source: str):
+        """A help page's Run: the example runs at the prompt, in view."""
+        self._stack.set_current(Workspace.CONSOLE)
+        if self.isMinimized():
+            self.showNormal()
+        self.raise_()
+        self.activateWindow()
+        return self._console.execute(source)
 
     def _push_to_console(self) -> None:
         """Put the current plant and loop into the workspace under short names."""

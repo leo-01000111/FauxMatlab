@@ -47,6 +47,8 @@ include = ["evans*"]
 # the icon set (SVGs drawn in currentColor, plus the Windows app.ico).
 [tool.setuptools.package-data]
 "evans.ui" = ["fonts/*", "icons/*"]
+# The help window's hand-written pages.
+"evans.help" = ["pages/*.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
