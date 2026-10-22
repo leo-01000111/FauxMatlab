@@ -304,5 +304,22 @@ def test_dc_gain(num, den, expected):
         assert got == pytest.approx(expected)
 
 
-def test_dc_gain_of_indeterminate_is_nan():
-    assert np.isnan(dc_gain(ctl.tf([1, 0], [1, 0])))
+def test_dc_gain_cancels_the_factor_at_rest():
+    """
+    ``s · 1/(s(s+1))`` is ``1/(s+1)`` once the ``s`` cancels, so its gain is
+    the limit, 1; ``*`` keeps the pair, and evaluating it gave ``0/0 = NaN``.
+    A discrete model is at rest at ``z = 1``: ``(z−1)/((z−1)(z−0.5))`` → 2.
+    """
+    assert dc_gain(ctl.tf([1, 0], [1, 1, 0])) == pytest.approx(1.0)
+    assert dc_gain(ctl.tf([1, 0], [1, 0])) == pytest.approx(1.0)
+    assert dc_gain(ctl.tf([1, -1], [1, -1.5, 0.5], 0.1)) == pytest.approx(2.0)
+
+
+def test_dc_gain_of_discrete_model_is_g_at_one():
+    """
+    ``c2d(2/(s+1), 0.1)`` = ``2(1−e^{−0.1})/(z−e^{−0.1})``: at ``z = 1`` that
+    is exactly 2, the continuous gain. At ``z = 0`` it gave −0.21.
+    """
+    Gd = ctl.c2d(ctl.tf(2, [1, 1]), 0.1)
+    assert dc_gain(Gd) == pytest.approx(2.0, rel=1e-12)
+    assert np.isinf(dc_gain(ctl.tf([0.1], [1, -1], 0.1)))   # summer

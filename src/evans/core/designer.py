@@ -52,6 +52,23 @@ class Compensator:
     def tf(self) -> ctl.TransferFunction:
         return from_zpk(list(self.zeros), list(self.poles), float(self.gain))
 
+    @classmethod
+    def from_tf(cls, C) -> Compensator:
+        """
+        The compensator ``C`` already is, in zero-pole-gain form — what
+        ``sisotool(G, C)`` opens with. ``K`` is the ratio of the leading
+        coefficients, so ``C.tf()`` gives ``C`` back.
+        """
+        C = ctl.tf(C) if isinstance(C, ctl.LTI) else ctl.tf(float(C), 1)
+        num = np.trim_zeros(np.atleast_1d(np.asarray(C.num[0][0], float)), "f")
+        den = np.trim_zeros(np.atleast_1d(np.asarray(C.den[0][0], float)), "f")
+        gain = float(num[0] / den[0]) if num.size else 0.0
+        return cls(gain=gain,
+                   zeros=[complex(z) for z in np.roots(num)] if num.size > 1
+                   else [],
+                   poles=[complex(p) for p in np.roots(den)] if den.size > 1
+                   else [])
+
     def add_pair(self, where: complex, as_zero: bool) -> None:
         """Add a complex-conjugate pair (or a single root if it is real)."""
         target = self.zeros if as_zero else self.poles

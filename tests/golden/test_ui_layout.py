@@ -934,3 +934,19 @@ def test_ports_are_easier_to_hit_than_they_are_to_see(app):
     assert PORT_HIT_MARGIN > 0
     assert PORT_R + PORT_HIT_MARGIN >= 2 * PORT_R, \
         "the clickable radius should be at least double the drawn one"
+
+
+def test_sisotool_opens_on_the_compensator_it_was_given(app, win):
+    """
+    ``sisotool(G, C)`` recorded ``C`` and then opened on ``C = 1``, so the
+    locus and step on screen belonged to a loop the user never typed.
+    ``C = 5(s+2)/(s+10)``: K 5, zero −2, pole −10.
+    """
+    C = ctl.tf([5, 10], [1, 10])
+    win.open_app(AppRequest("sisotool", {"plant": ctl.tf(1, [1, 1, 0]),
+                                         "compensator": C}))
+    _settle(app, 10)
+    comp = win._apps["sisotool"].compensator
+    assert comp.gain == pytest.approx(5.0)
+    assert comp.zeros == pytest.approx([-2.0])
+    assert comp.poles == pytest.approx([-10.0])

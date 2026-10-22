@@ -18,12 +18,15 @@ The result is a record with these fields, which you read with a dot:
 - `table`: the Routh array, one row per power of `s`, padded with zeros.
 - `first_col`: the first column of the array.
 - `n_sign_changes`, `n_rhp_poles`: the number of sign changes in the first column, which is the number of right half-plane roots.
-- `stable`: true (1) when there is no sign change.
+- `stable`: true (1) when every root is in the left half-plane: no sign change and no root on the imaginary axis.
+- `n_jw_poles`: the number of roots on the imaginary axis (the origin included), found from a row of zeros.
 - `poly_coeffs`: the polynomial that was analysed.
 
 At the prompt the whole record prints on one line. `routh` is not a MATLAB function.
 
-The special cases are not handled yet. A zero in the first column with the rest of its row non-zero ends in an error. A whole row of zeros (roots on the imaginary axis, such as `s^3 + s^2 + s + 1`) is not detected: the zero is skipped and the polynomial can be reported as stable when it is only marginally stable. Check such cases with [roots](roots) or [pole](pole).
+A whole row of zeros means the polynomial has roots placed symmetrically about the origin, such as `s^3 + s^2 + s + 1 = (s + 1)(s^2 + 1)`, with roots at `±j`. The row above is then an auxiliary polynomial that divides the characteristic one; Evans replaces the zero row with its derivative, as the textbook method does, and continues. The roots of the auxiliary polynomial that lie on the imaginary axis are counted in `n_jw_poles`, and `stable` is false (0): such a loop is only marginally stable and oscillates.
+
+A zero in the first column with the rest of its row non-zero is not handled yet and ends in an error. Check that case with [roots](roots) or [pole](pole).
 
 ## Example
 

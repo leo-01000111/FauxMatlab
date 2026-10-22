@@ -13,7 +13,7 @@ Root locus of a single-input single-output system: the paths the closed-loop pol
 
 `rlocus(sys)` plots the closed-loop poles of the loop `sys` under negative feedback `u = -K y`, for `K` from 0 upwards, one curve per branch. Each branch starts at an open-loop pole and ends at a zero or heads to infinity. `sys` is the open-loop transfer function, as a `tf`, `zpk` or `ss` model. The gain range is chosen automatically. If the locus crosses the imaginary axis, the title gives the gain and the frequency at which it does, which is the limit of stability for that loop.
 
-`rlocus(sys, k)` sets the largest gain of the plot to `max(k)`, for a vector `k` of two or more gains. Evans does not evaluate the locus at the gains in `k` themselves: it always spreads its own gains from 0 to that maximum. Only the first system is plotted if you pass several.
+`rlocus(sys, k)` evaluates the locus at exactly the gains in `k`, a vector or a single gain. Only the first system is plotted if you pass several.
 
 With output arguments nothing is drawn. `r` is a matrix of closed-loop poles with one row per branch and one column per gain, and `k` the row vector of those gains, so `r(:, j)` are the poles for gain `k(j)`.
 

@@ -17,8 +17,8 @@ from __future__ import annotations
 
 _TABLE = """
 tf(num, den)                | Transfer function from numerator and denominator coefficients
-ss(A, B, C, D)              | State-space model
-zpk(z, p, k)                | Zero-pole-gain model
+ss(A, B, C, D, Ts)          | State-space model (Ts: already discrete)
+zpk(z, p, k, Ts)            | Zero-pole-gain model (Ts: discrete)
 tf2ss(num, den)             | Transfer function to state space: [A, B, C, D]
 ss2tf(A, B, C, D)           | State space to transfer function: [num, den]
 pade(T, n)                  | Padé approximation of a time delay e^(-sT)
@@ -32,7 +32,7 @@ minreal(sys, tol)           | Cancel pole-zero pairs
 pole(sys)                   | Poles of a system
 zero(sys)                   | Zeros of a system
 damp(sys)                   | Natural frequencies and damping ratios of the poles
-dcgain(sys)                 | Steady-state (DC) gain
+dcgain(sys)                 | Steady-state gain: G(0), or G(1) if discrete
 stepinfo(sys)               | Rise time, settling time, overshoot of the step response
 margin(sys)                 | Gain and phase margins: [Gm, Pm, Wcg, Wcp]
 allmargin(sys)              | Every gain, phase and delay margin
@@ -74,7 +74,7 @@ sim(model, tstop)           | Simulate a Simulink-style model
 linearize(model, io)        | Linearize a model about an operating point
 pidtune(sys, type)          | Tune a PID controller for a plant
 ltiview(sys)                | Open the linear system viewer
-sisotool(sys)               | Open the SISO design tool
+sisotool(G, C)              | Open the SISO design tool on plant G, compensator C
 pidtuner(sys)               | Open the PID tuner
 tfdata(sys)                 | Numerator and denominator: [num, den]
 zpkdata(sys)                | Zeros, poles and gain: [z, p, k]
@@ -155,7 +155,7 @@ eye(n)                      | Identity matrix
 rand(n, m)                  | Uniform random numbers
 randn(n, m)                 | Normal random numbers
 linspace(a, b, n)           | n points from a to b, evenly spaced
-logspace(a, b, n)           | n points from 10^a to 10^b
+logspace(a, b, n)           | n points from 10^a to 10^b (to pi if b is pi)
 repmat(A, m, n)             | Tile an array
 reshape(A, m, n)            | Change an array's shape
 diag(v)                     | Diagonal matrix, or a matrix's diagonal
@@ -167,11 +167,11 @@ prod(A, dim)                | Product of elements
 mean(A, dim)                | Average
 median(A, dim)              | Median
 std(A)                      | Standard deviation
-cumsum(A)                   | Cumulative sum
+cumsum(A, dim)              | Cumulative sum
 diff(A)                     | Differences between neighbours
 max(A)                      | Largest element: [M, I]
 min(A)                      | Smallest element: [M, I]
-sort(A, direction)          | Sort
+sort(A, dim, direction)     | Sort
 unique(A)                   | Unique values
 find(X)                     | Indices of nonzero elements
 trapz(x, y)                 | Trapezoidal integral

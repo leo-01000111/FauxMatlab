@@ -5,7 +5,9 @@ Sort the elements of a vector, or each column of a matrix, in ascending or desce
 ## Syntax
 
     B = sort(A)
+    B = sort(A, dim)
     B = sort(A, 'descend')
+    B = sort(A, dim, 'descend')
     [B, I] = sort(A, ...)
 
 ## Description
@@ -16,7 +18,9 @@ Sort the elements of a vector, or each column of a matrix, in ascending or desce
 
 `[B, I] = sort(A)` also returns the index vector, so that `B` equals `A(I)` for a vector. Equal elements keep their original order.
 
-Evans has no dimension argument: `sort(A, 2)` still sorts each column, so sort the transpose to sort rows. Complex values are ordered by real part, then imaginary part, where MATLAB orders them by magnitude; to get MATLAB's order, sort `abs(p)` and index with the second output.
+`sort(A, dim)` sorts along dimension `dim`: `1` sorts each column, `2` sorts each row.
+
+Complex values are ordered by magnitude, and values of equal magnitude by their angle from -pi to pi, as in MATLAB: `sort([-3 1+1i 2])` is `[1+1i 2 -3]`.
 
 ## Example
 

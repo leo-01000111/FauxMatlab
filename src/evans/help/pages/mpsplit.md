@@ -15,7 +15,7 @@ Split a transfer function into an all-pass part and a minimum-phase part.
 
 If `G` has no right half-plane zero it is already minimum phase, and `Gap` is 1.
 
-Two details of the result. `Gmp` keeps the new zero and the matching pole uncancelled, so pass it through [minreal](minreal) for the reduced form. With an odd number of right half-plane zeros the sign goes to `Gmp`, which then has a negative gain. `mpsplit` is not a MATLAB function.
+Two details of the result. `Gmp` keeps the new zero and the matching pole uncancelled, so pass it through [minreal](minreal) for the reduced form. `Gap` follows the course's form, a ratio of monic factors such as `(s - 2)/(s + 2)`, not `(2 - s)/(2 + s)`. So with `m` right half-plane zeros `Gap(0) = (-1)^m`: with an odd number of them `Gap` starts at 180 degrees and the sign goes to `Gmp`, which then has a negative gain. `mpsplit` is not a MATLAB function.
 
 ## Example
 

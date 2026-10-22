@@ -13,7 +13,7 @@ Row vector of points evenly spaced in decades, for frequency grids.
 
 Pass the result as the frequency vector to [bode](bode), [nyquist](nyquist) or [freqresp](freqresp) to choose exactly where the response is evaluated.
 
-In MATLAB, `logspace(a, pi)` is a special case that ends at pi. Evans has no such case: it ends at 10 to the power pi.
+`logspace(a, pi)` is a special case, as in MATLAB: the points end at pi itself, not at 10 to the power pi, which is the frequency range of a discrete system in rad/sample.
 
 ## Example
 

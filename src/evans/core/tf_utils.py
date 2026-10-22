@@ -143,23 +143,46 @@ def unity() -> ctl.TransferFunction:
 
 def dc_gain(tf: ctl.TransferFunction) -> float:
     """
-    ``G(0)`` — the steady-state gain.
+    ``G(0)`` — the steady-state gain (``G(1)`` for a discrete model).
 
-    Returns ``±inf`` for a system with integrators and ``nan`` for the
-    indeterminate ``0/0`` (a zero at the origin cancelling a pole there).
+    Returns ``±inf`` for a system with integrators.
 
     v1 guarded this with ``except ZeroDivisionError``, which never fires:
     numpy divides floats by zero to ``inf`` with a ``RuntimeWarning`` rather
     than raising, so every integrator produced a warning and an unguarded
     value.
+
+    A discrete model is at rest where ``z = 1``, not ``z = 0``. A factor
+    common to numerator and denominator at that point (``s·1/(s(s+1))``,
+    which ``*`` does not cancel) is divided out first: the gain is the
+    limit, 1 there, not ``0/0``.
     """
-    num = float(np.polyval(np.atleast_1d(tf.num[0][0]), 0.0))
-    den = float(np.polyval(np.atleast_1d(tf.den[0][0]), 0.0))
-    if abs(den) < 1e-300:
-        if abs(num) < 1e-300:
-            return float("nan")          # 0/0 — indeterminate
-        return float("inf") * np.sign(num)
-    return num / den
+    at = 1.0 if tf.dt else 0.0
+    num = np.atleast_1d(np.asarray(tf.num[0][0], float))
+    den = np.atleast_1d(np.asarray(tf.den[0][0], float))
+    if not np.any(num):
+        return 0.0
+    while (len(num) > 1 and len(den) > 1
+           and _has_root(num, at) and _has_root(den, at)):
+        num, den = _deflate(num, at), _deflate(den, at)
+    if _has_root(den, at):
+        if _has_root(num, at):
+            return float("nan")          # 0/0 left after cancelling
+        return float("inf") * np.sign(np.polyval(num, at))
+    return float(np.polyval(num, at) / np.polyval(den, at))
+
+
+def _has_root(p: np.ndarray, at: float) -> bool:
+    """Whether ``at`` is a root of ``p``, to round-off in its coefficients."""
+    return abs(np.polyval(p, at)) <= 1e-10 * max(np.sum(np.abs(p)), 1e-300)
+
+
+def _deflate(p: np.ndarray, at: float) -> np.ndarray:
+    """``p / (x − at)`` by synthetic division, dropping the remainder."""
+    out = [p[0]]
+    for c in p[1:-1]:
+        out.append(c + at * out[-1])
+    return np.asarray(out, float)
 
 
 def pole_info(p: complex) -> PoleInfo:

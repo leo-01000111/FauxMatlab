@@ -60,11 +60,22 @@ def tf(num, den=None, dt=None):
 
 
 def ss(A, B=None, C=None, D=None, dt=None):
-    """State-space model, or a conversion when given one system."""
+    """
+    State-space model, or a conversion when given one system.
+
+    ``ss(A, B, C, D, Ts)`` is MATLAB's: the matrices already *are* the
+    discrete ones, ``x[k+1] = A x[k] + B u[k]``, and ``Ts`` is only recorded.
+    To discretise a continuous model use ``c2d(ss(A, B, C, D), Ts)``.
+    """
     if B is None:
         return ctl.tf2ss(A) if isinstance(A, ctl.TransferFunction) else A
     sys = _ss.state_space(A, B, C, D)
-    return ctl.sample_system(sys, dt) if dt else sys
+    return ctl.ss(sys.A, sys.B, sys.C, sys.D, _sample_time(dt)) if dt         else sys
+
+
+def _sample_time(dt):
+    """MATLAB's ``Ts = -1`` (unspecified) is python-control's ``True``."""
+    return True if dt is True or float(dt) == -1 else float(dt)
 
 
 def zpk(zeros, poles, gain, dt=None):
@@ -73,7 +84,7 @@ def zpk(zeros, poles, gain, dt=None):
         else np.array([float(gain)])
     den = np.real(np.poly(poles)) if len(np.atleast_1d(poles)) \
         else np.array([1.0])
-    return ctl.tf(num, den, dt) if dt else ctl.tf(num, den)
+    return ctl.tf(num, den, _sample_time(dt)) if dt else ctl.tf(num, den)
 
 
 def tf2ss(sys):
@@ -138,9 +149,20 @@ def zero(sys):
 
 
 def dcgain(sys):
-    """Steady-state gain, the value of ``G(0)``."""
-    return _tfu.dc_gain(sys) if isinstance(sys, ctl.TransferFunction) \
-        else float(np.atleast_2d(ctl.dcgain(sys))[0, 0])
+    """
+    Steady-state gain: ``G(0)``, or ``G(1)`` for a discrete model.
+
+    A MIMO model gives the whole ``ny × nu`` matrix, as MATLAB does.
+    """
+    if not isinstance(sys, ctl.LTI):           # a plain gain
+        return sys
+    if sys.ninputs == 1 and sys.noutputs == 1:
+        if isinstance(sys, ctl.TransferFunction):
+            return _tfu.dc_gain(sys)
+        return float(np.real(np.ravel(ctl.dcgain(sys))[0]))
+    with np.errstate(all="ignore"):
+        gain = np.asarray(ctl.dcgain(sys), dtype=complex)
+    return np.real(gain).reshape(sys.noutputs, sys.ninputs)
 
 
 class DampTable(tuple):
@@ -159,17 +181,32 @@ class DampTable(tuple):
                 f"{'Time Constant':>15s}",
                 f"{'':>24s} {'':>10s} {'(rad/s)':>12s} {'(s)':>15s}"]
         for p, z, w in zip(poles, zeta, wn):
-            tau = 1.0 / abs(p.real) if abs(p.real) > 1e-12 else math.inf
+            # ζωn is −Re of the s-plane pole, for a discrete model too.
+            sigma = abs(z * w) if np.isfinite(w) else math.inf
+            tau = 1.0 / sigma if sigma > 1e-12 else math.inf
             rows.append(f"{_fmt_complex(p):>24s} {z:>10.4g} {w:>12.4g} "
                         f"{tau:>15.4g}")
         return "\n".join(rows)
 
 
 def damp(sys):
-    """Poles with their damping ratio, natural frequency and time constant."""
-    poles = np.atleast_1d(ctl.poles(sys))
-    wn = np.abs(poles)
-    zeta = np.where(wn > 1e-12, -np.real(poles) / np.maximum(wn, 1e-300), 1.0)
+    """
+    Poles with their damping ratio, natural frequency and time constant.
+
+    A discrete model's poles are listed as they are, in the z-plane, but ζ and
+    ωn belong to the s-plane pole each one samples, ``s = ln(z)/Ts`` — the
+    same mapping MATLAB uses. ``z`` itself has no damping ratio.
+    """
+    poles = np.atleast_1d(ctl.poles(sys)).astype(complex)
+    s_poles = poles
+    if ctl.isdtime(sys, strict=True):
+        ts = 1.0 if sys.dt is True else float(sys.dt)   # True: Ts unspecified
+        with np.errstate(divide="ignore"):
+            s_poles = np.log(poles) / ts
+    wn = np.abs(s_poles)
+    with np.errstate(invalid="ignore"):
+        zeta = np.where((wn > 1e-12) & np.isfinite(wn),
+                        -np.real(s_poles) / np.maximum(wn, 1e-300), 1.0)
     return DampTable((wn, zeta, poles))
 
 
@@ -214,6 +251,15 @@ def stepinfo(sys, t=None, **kwargs) -> dict[str, float]:
     are ``RiseTime``, ``SettlingTime``, ``Overshoot`` … so a snippet reading
     ``info.SettlingTime`` needs only ``info['SettlingTime']``.
     """
+    if isinstance(sys, ctl.LTI) and not _settles(sys):
+        # MATLAB: "If sys is unstable, then all step-response characteristics
+        # are NaN, except for Peak and PeakTime, which are Inf." Any finite
+        # number here would only be where the simulation happened to stop.
+        nan = float("nan")
+        return {"RiseTime": nan, "TransientTime": nan, "SettlingTime": nan,
+                "SettlingMin": nan, "SettlingMax": nan, "Overshoot": nan,
+                "Undershoot": nan, "Peak": math.inf, "PeakTime": math.inf,
+                "SteadyState": nan}
     if isinstance(sys, tuple) and len(sys) == 2:
         time_vector, y = sys
         response = _time.TimeResponse(t=np.asarray(time_vector),
@@ -235,6 +281,14 @@ def stepinfo(sys, t=None, **kwargs) -> dict[str, float]:
     }
 
 
+def _settles(sys) -> bool:
+    """Every pole strictly inside the stable region, so the step settles."""
+    poles = np.atleast_1d(ctl.poles(sys))
+    if ctl.isdtime(sys, strict=True):
+        return bool(np.all(np.abs(poles) < 1 - 1e-12))
+    return bool(np.all(np.real(poles) < -1e-12))
+
+
 def margin(sys):
     """
     ``(Gm, Pm, Wcg, Wcp)`` — MATLAB's order, with ``Gm`` in absolute units.
@@ -248,7 +302,12 @@ def margin(sys):
 
 
 def allmargin(sys) -> dict[str, float]:
-    """Every margin, named — including the modulus margin MATLAB omits."""
+    """
+    Every margin, named — including the modulus margin MATLAB omits.
+
+    ``DelayMargin`` is in seconds, or in samples for a discrete loop, as
+    MATLAB gives it.
+    """
     pm, gm_dB, w180, wc, sm, wms = _freq.stability_margins(sys)
     return {
         "GainMargin_dB": gm_dB,
@@ -257,10 +316,15 @@ def allmargin(sys) -> dict[str, float]:
         "PMFrequency": wc,
         "ModulusMargin": sm,
         "MMFrequency": wms,
-        "DelayMargin": (math.radians(abs(pm)) / wc
-                        if np.isfinite(wc) and wc > 0 and np.isfinite(pm)
-                        else math.inf),
+        "DelayMargin": _freq.delay_margin(pm, wc) / _samples(sys),
     }
+
+
+def _samples(sys) -> float:
+    """MATLAB gives a discrete delay margin in samples: seconds per sample."""
+    if ctl.isdtime(sys, strict=True):
+        return 1.0 if sys.dt is True else float(sys.dt)
+    return 1.0
 
 
 def bandwidth(sys, dbdrop: float = -3.0) -> float:
@@ -557,9 +621,8 @@ def pzmap(*systems, plot: bool = True):
 
 
 def rlocus(sys, kvect=None, plot: bool = True):
-    """Root locus as gain varies."""
-    data = _stab.root_locus(sys, K_max=(max(kvect) if kvect is not None
-                                        else None))
+    """Root locus as gain varies; ``kvect`` gives the gains themselves."""
+    data = _stab.root_locus(sys, K_values=kvect)
     spec = FigureSpec("rlocus", "Root Locus", "Re", "Im")
     for branch in range(data.roots.shape[1]):
         column = data.roots[:, branch]
@@ -761,11 +824,31 @@ def zn(sys, method: str = "ultimate", controller: str = "PID"):
 
 
 def errconst(sys) -> dict[str, float]:
-    """Static error constants and steady-state errors."""
+    """
+    Static error constants and steady-state errors of the loop ``sys``.
+
+    A discrete loop counts its poles at ``z = 1`` and takes the discrete
+    limits ``Kp = G(1)``, ``Kv = lim (z−1)G/Ts``, ``Ka = lim (z−1)²G/Ts²``.
+    Writing ``z = w + 1`` turns those into the continuous limits at ``w = 0``,
+    so the same analysis answers both once the scale ``Ts`` is put back.
+    """
+    if not isinstance(sys, ctl.TransferFunction):
+        sys = ctl.tf(sys)
+    ts = None
+    if ctl.isdtime(sys, strict=True):
+        ts = 1.0 if sys.dt is True else float(sys.dt)
+        shift = np.poly1d([1.0, 1.0])                  # z = w + 1
+        sys = ctl.tf(np.poly1d(sys.num[0][0])(shift).coeffs,
+                     np.poly1d(sys.den[0][0])(shift).coeffs)
     report = _perf.analyse_performance(sys)
-    return {"Type": report.system_type, "Kp": report.Kp, "Kv": report.Kv,
-            "Ka": report.Ka, "ess_step": report.ess_step,
-            "ess_ramp": report.ess_ramp, "ess_parabola": report.ess_parabola}
+    out = {"Type": report.system_type, "Kp": report.Kp, "Kv": report.Kv,
+           "Ka": report.Ka, "ess_step": report.ess_step,
+           "ess_ramp": report.ess_ramp, "ess_parabola": report.ess_parabola}
+    if ts is not None:
+        out["Kv"], out["Ka"] = report.Kv / ts, report.Ka / ts ** 2
+        out["ess_ramp"] = report.ess_ramp * ts
+        out["ess_parabola"] = report.ess_parabola * ts ** 2
+    return out
 
 
 # ──────────────────────────────────────────────────────────────
@@ -824,16 +907,24 @@ def ltiview(*systems, **named):
 
 def sisotool(plant=None, compensator=None):
     """
-    Open the Control System Designer: ``sisotool(G)``.
+    Open the Control System Designer: ``sisotool(G)``, or ``sisotool(G, C)``
+    to start from the compensator ``C`` instead of ``C = 1``.
 
     With no argument it opens on the app's current plant.
     """
+    from ..core.designer import Compensator
     from .apps import AppRequest
     from .apps import emit as _emit
     systems = {}
     if plant is not None:
         systems["plant"] = plant
     if compensator is not None:
+        if Compensator.from_tf(compensator).gain < 0:
+            # The designer's gain runs over K ≥ 0; opening on −K would show
+            # the locus of a different loop with no word said.
+            raise ValueError("sisotool: the designer tunes a gain K ≥ 0, "
+                             "and this compensator's K is negative. Put the "
+                             "sign in the plant instead: sisotool(-G, -C).")
         systems["compensator"] = compensator
     return _emit(AppRequest("sisotool", systems))
 

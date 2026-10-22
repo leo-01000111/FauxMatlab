@@ -30,7 +30,7 @@ class BodeData:
     # Margins
     gm_dB:   float    # gain margin in dB  (inf → no phase crossover)
     pm_deg:  float    # phase margin in degrees
-    dm_s:    float    # delay margin in seconds (= PM in rad / ω_c)
+    dm_s:    float    # delay margin in s (PM mod 360°, in rad, / ω_c)
     wc:      float    # gain crossover frequency (0-dB crossing), rad/s
     w180:    float    # phase crossover frequency (−180° crossing), rad/s
     # Bandwidth / closed-loop peak
@@ -121,11 +121,7 @@ def bode(
 
     pm_deg, gm_dB, wpc, wgc = _margins(tf, mag, phase_deg, omega)
 
-    # Delay margin: how much pure delay the loop tolerates before PM hits zero.
-    if np.isfinite(wgc) and wgc > 0 and np.isfinite(pm_deg):
-        dm_s = float(np.radians(abs(pm_deg)) / wgc)
-    else:
-        dm_s = float("inf")
+    dm_s = delay_margin(pm_deg, wgc)
 
     if closed_loop_tf is None:
         closed_loop_tf = _safe_unity_feedback(tf)
@@ -147,6 +143,20 @@ def bode(
         Mr=Mr, wr=wr, Ms=Ms, ws=ws,
         stable=stable, stability_known=known, note=note,
     )
+
+
+def delay_margin(pm_deg: float, wc: float) -> float:
+    """
+    Seconds of pure delay that bring the gain crossover ``wc`` onto −180°.
+
+    A delay only ever *adds* lag, ``ωT`` radians, so it needs ``PM`` of it
+    when the margin is positive and ``PM + 360°`` when it is negative — the
+    next −180° crossing below. Taking ``|PM|`` instead answered a delay that
+    would have had to *lead*. ``inf`` when there is no crossover.
+    """
+    if not (np.isfinite(wc) and wc > 0 and np.isfinite(pm_deg)):
+        return float("inf")
+    return float(np.radians(pm_deg % 360.0) / wc)
 
 
 def stability_margins(tf) -> tuple[float, float, float, float, float, float]:
@@ -460,9 +470,22 @@ def _auto_omega(tf: ctl.TransferFunction,
                 min_pts: int = 500,
                 decades_before: float = 2.0,
                 decades_after:  float = 2.0) -> np.ndarray:
-    """Frequency grid spanning the system's features with margin either side."""
-    poles = np.atleast_1d(ctl.poles(tf))
-    zeros = np.atleast_1d(ctl.zeros(tf))
+    """
+    Frequency grid spanning the system's features with margin either side.
+
+    A discrete model's poles and zeros are mapped to the s-plane first
+    (``ln(z)/Ts``) for their frequencies, and the grid stops at the Nyquist
+    frequency ``π/Ts``: above it the response only repeats, mirrored.
+    """
+    poles = np.atleast_1d(ctl.poles(tf)).astype(complex)
+    zeros = np.atleast_1d(ctl.zeros(tf)).astype(complex)
+    w_nyquist = None
+    if ctl.isdtime(tf, strict=True):
+        ts = 1.0 if tf.dt is True else float(tf.dt)
+        w_nyquist = np.pi / ts
+        with np.errstate(divide="ignore", invalid="ignore"):
+            poles = np.log(poles[np.abs(poles) > 1e-12]) / ts
+            zeros = np.log(zeros[np.abs(zeros) > 1e-12]) / ts
     freqs = [abs(p) for p in poles if abs(p) > 1e-6] + \
             [abs(z) for z in zeros if abs(z) > 1e-6]
     if freqs:
@@ -472,4 +495,10 @@ def _auto_omega(tf: ctl.TransferFunction,
         w_lo, w_hi = 1e-2, 1e3
     w_lo = max(w_lo, 1e-4)
     w_hi = min(max(w_hi, w_lo * 10), 1e6)
+    if w_nyquist is not None:
+        w_hi = w_nyquist
+        w_lo = min(w_lo, w_hi / 1e3)
+        # logspace's last point can round a hair above π/Ts.
+        return np.minimum(np.logspace(np.log10(w_lo), np.log10(w_hi),
+                                      min_pts), w_nyquist)
     return np.logspace(np.log10(w_lo), np.log10(w_hi), min_pts)

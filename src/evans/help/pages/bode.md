@@ -14,7 +14,7 @@ Bode diagram of a dynamic system: gain in dB and phase in degrees against freque
 
 ## Description
 
-`bode(sys)` plots the frequency response of `sys`, a `tf`, `zpk` or `ss` model, as two panels: magnitude in dB and phase in degrees, both against angular frequency in rad/s. The frequency range is chosen from the poles and zeros. No margin markers are drawn; use [margin](margin) for those.
+`bode(sys)` plots the frequency response of `sys`, a `tf`, `zpk` or `ss` model, as two panels: magnitude in dB and phase in degrees, both against angular frequency in rad/s. The frequency range is chosen from the poles and zeros. For a discrete model it ends at the Nyquist frequency `pi/Ts`, as in MATLAB: above it the response of a sampled system only repeats. No margin markers are drawn; use [margin](margin) for those.
 
 `bode(sys, w)` evaluates the response at the frequencies in the vector `w` (rad/s). `bode(sys, {wmin, wmax})` uses 500 logarithmically spaced points between the two limits.
 

@@ -6,6 +6,7 @@ Open the Control System Designer panel on a plant: a root locus you drag the clo
 
     sisotool
     sisotool(G)
+    sisotool(G, C)
 
 ## Description
 
@@ -15,7 +16,9 @@ The designer works on the app's shared loop. The sensor block H comes from the a
 
 `sisotool` with no argument opens the designer on the plant G of the current analysis workspace. If the designer is already open, `sisotool(G)` replaces its plant.
 
-The command accepts a compensator as a second argument (`sisotool(G, C)`), but the designer currently ignores it and starts from its own compensator. It returns a short description of the request, such as `<sisotool: plant>`. In a script run without the app nothing opens; the request is recorded and the line still runs.
+`sisotool(G, C)` opens the designer with `C` as the starting compensator: its gain, zeros and poles fill the designer's fields, and the plots show the loop with `C` in it. The designer tunes a gain `K` of 0 or more, so a compensator with a negative gain is refused with an error; move the sign into the plant, `sisotool(-G, -C)`.
+
+The command returns a short description of the request, such as `<sisotool: plant>`. In a script run without the app nothing opens; the request is recorded and the line still runs.
 
 ## Example
 

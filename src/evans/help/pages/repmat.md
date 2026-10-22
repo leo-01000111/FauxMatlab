@@ -14,7 +14,7 @@ Tile an array: repeat it a number of times down and across.
 
 With a scalar `A`, `repmat(7, 3)` is a 3-by-3 matrix of sevens, the same as `7*ones(3)`.
 
-Text is repeated across only: `repmat('ab', 1, 3)` is `'ababab'`. Evans ignores the row count for text, so `repmat('ab', 2, 1)` gives `'ab'`.
+Text is repeated across only: `repmat('ab', 1, 3)` is `'ababab'`. Evans has no text with several rows, so `repmat('ab', 2, 1)` stops with an error; use a cell array for a list of texts.
 
 ## Example
 

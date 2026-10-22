@@ -17,7 +17,7 @@ Remove variables from the workspace.
 
 Scripts often begin with `clear` (and [clc](clc)) so that values left from an earlier run cannot leak into this one. `clear` does not close figures: use `close all` for that.
 
-Evans matches names exactly. Wildcards such as `clear K*` and the `-regexp` option are not supported and remove nothing.
+`clear K*` removes every variable whose name matches the pattern, here every name starting with `K`; `*` stands for any run of characters. `clear -regexp expr ...` removes the variables whose names match any of the regular expressions after it, so `clear -regexp ^K\d` removes `K1` and `K2` but not `Kp`.
 
 ## Example
 

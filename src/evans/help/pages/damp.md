@@ -17,7 +17,7 @@ For a pole `p`, the natural frequency is `abs(p)`, the damping ratio is `-real(p
 
 With outputs nothing is printed. `wn` and `zeta` are column vectors, and `p` is the column of poles they belong to, in the same order.
 
-Evans applies these continuous-time formulas to a discrete system's poles as they are, in the z-plane. MATLAB first maps each discrete pole to the s-plane, so for a discrete model the two disagree; convert with [d2c](d2c) before calling `damp` if you need MATLAB's numbers.
+For a discrete system the table lists the poles as they are, in the z-plane, but the damping ratio, natural frequency and time constant belong to the s-plane pole each one samples, `s = log(z)/Ts`, as in MATLAB. So `c2d(tf(1, [1 1]), 0.1)`, with its pole at `z = 0.905`, shows damping 1 and frequency 1 rad/s, the same as the continuous `1/(s+1)`.
 
 ## Example
 
@@ -30,4 +30,4 @@ fprintf('wn = %.2f rad/s, zeta = %.2f\n', wn(1), zeta(1))
 
 ## See also
 
-[pole](pole) · [pzmap](pzmap) · [stepinfo](stepinfo) · [rlocus](rlocus) · [d2c](d2c)
+[pole](pole) · [pzmap](pzmap) · [stepinfo](stepinfo) · [rlocus](rlocus) · [c2d](c2d)

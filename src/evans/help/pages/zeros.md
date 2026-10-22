@@ -15,7 +15,7 @@ Array of zeros, of a given number of rows and columns.
 
 The usual uses are a zero initial state (`x0 = zeros(2, 1)`), a zero feedthrough matrix `D` for [ss](ss), and an array allocated before a loop fills it in.
 
-Evans makes two-dimensional arrays only: `zeros(2, 2, 2)` returns a 2-by-2 matrix and ignores the third size. A class name such as `'int32'` or `'like', x` is accepted and ignored, so the result is always double.
+Evans makes two-dimensional arrays only: `zeros(2, 2, 2)` stops with an error saying N-D arrays are not supported yet. A trailing size of 1, as in `zeros(2, 3, 1)`, is still a matrix and works. A class name such as `'int32'` or `'like', x` is accepted and ignored, so the result is always double.
 
 ## Example
 

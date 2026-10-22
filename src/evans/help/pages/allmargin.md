@@ -16,7 +16,7 @@ Every stability margin of an open loop, returned as named fields.
 - `PMFrequency`: the gain crossover frequency in rad/s, where the phase margin is read.
 - `ModulusMargin`: the smallest distance from the Nyquist curve to the point -1. MATLAB's `allmargin` does not report it.
 - `MMFrequency`: the frequency at which that smallest distance occurs.
-- `DelayMargin`: the extra time delay in seconds the loop tolerates before it loses stability, the phase margin in radians divided by `PMFrequency`.
+- `DelayMargin`: the extra time delay in seconds the loop tolerates before the gain crossover reaches -180 degrees: the phase margin in radians divided by `PMFrequency`. A delay only adds phase lag, so when the phase margin is negative the delay that brings the next crossing is `(PM + 360)` degrees' worth. For a discrete loop it is in sample periods, as in MATLAB.
 
 A missing crossover gives `NaN` for its frequency.
 

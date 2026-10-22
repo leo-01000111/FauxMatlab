@@ -29,6 +29,7 @@ class RouthResult:
     first_col:      list          # first column of table (sympy expressions)
     is_symbolic:    bool          # True if K is a free parameter
     symbol:         sp.Symbol | None
+    n_jw_poles:     int = 0       # roots on the jω axis (from a zero row)
 
 
 def routh_table(
@@ -57,6 +58,23 @@ def routh_table(
         if i < cols:
             arr[1][i] = c
 
+    # A row of zeros means the row above is an auxiliary polynomial that
+    # divides the characteristic one; its roots mirror about the origin and
+    # may sit on the jω axis, where the first column shows no sign change.
+    # The textbook remedy: replace the zero row by the derivative of that
+    # auxiliary polynomial, and count its jω-axis roots separately.
+    aux_polys = []
+
+    def _fix_zero_row(row: int) -> None:
+        if symbol is not None or row < 1 or not _is_zero_row(arr[row])                 or _is_zero_row(arr[row - 1]):
+            return
+        power = n - (row - 1)
+        aux = [arr[row - 1][i] for i in range(cols) if power - 2 * i >= 0]
+        aux_polys.append((power, aux))
+        for i, c in enumerate(aux):
+            arr[row][i] = c * (power - 2 * i)
+
+    _fix_zero_row(1)
     # Iteratively build remaining rows
     for row in range(2, n + 1):
         prev  = arr[row - 1]
@@ -74,6 +92,7 @@ def routh_table(
                 arr[row][col] = val
             else:
                 arr[row][col] = sp.Integer(0)
+        _fix_zero_row(row)
 
     # First column
     first_col = [arr[row][0] for row in range(n + 1)]
@@ -81,12 +100,21 @@ def routh_table(
                             for c in first_col]
 
     # Count sign changes in first column (numeric only for pure numeric)
+    n_jw = 0
     if symbol is None:
         n_changes = _count_sign_changes_numeric(
             [float(c) for c in first_col_simplified]
         )
-        stable = n_changes == 0
-        K_range = "stable" if stable else f"{n_changes} RHP pole(s)"
+        # A later zero row's auxiliary polynomial divides the first one,
+        # so the first already holds every jω-axis root.
+        n_jw = _jw_axis_roots(*aux_polys[0]) if aux_polys else 0
+        stable = n_changes == 0 and n_jw == 0
+        if stable:
+            K_range = "stable"
+        elif n_changes:
+            K_range = f"{n_changes} RHP pole(s)"
+        else:
+            K_range = f"marginally stable: {n_jw} pole(s) on the jω axis"
     else:
         n_changes = -1   # cannot count symbolically in general
         stable = False   # unknown
@@ -102,7 +130,24 @@ def routh_table(
         first_col=first_col_simplified,
         is_symbolic=symbol is not None,
         symbol=symbol,
+        n_jw_poles=n_jw,
     )
+
+
+def _is_zero_row(row: list) -> bool:
+    """Every entry zero, to the round-off a float table carries."""
+    values = [complex(sp.N(c)) for c in row]
+    return all(abs(v) < 1e-12 for v in values)
+
+
+def _jw_axis_roots(power: int, aux: list) -> int:
+    """Roots on the jω axis of an auxiliary polynomial in s of degree power."""
+    coeffs = []
+    for c in aux:                       # powers m, m−2, …: fill the gaps
+        coeffs.extend([float(c), 0.0])
+    roots = np.roots(coeffs[:power + 1])
+    return int(sum(1 for r in roots
+                   if abs(r.real) < 1e-6 * max(1.0, abs(r))))
 
 
 def routh_from_closed_loop(
@@ -263,9 +308,12 @@ def root_locus(
     K_min: float = 0.0,
     K_max: float | None = None,
     n_pts: int = 400,
+    K_values: np.ndarray | None = None,
 ) -> RootLocusData:
     """
     Root locus of ``1 + K·L(s) = 0`` with ``L = K₂·G``, for K in [K_min, K_max].
+
+    ``K_values`` gives the gains outright instead, as ``rlocus(G, k)`` does.
 
     Branches are tracked by **continuity**, not by sorting. ``np.roots``
     returns roots in arbitrary order, so v1's ``np.sort_complex`` at each gain
@@ -278,10 +326,13 @@ def root_locus(
         K2 = ctl.TransferFunction([1], [1])
     L = K2 * G
 
-    if K_max is None:
-        K_max = _estimate_max_K(L)
-
-    K_values = np.linspace(K_min, K_max, n_pts)
+    if K_values is not None:
+        K_values = np.atleast_1d(np.asarray(K_values, float)).reshape(-1)
+        n_pts = K_values.size
+    else:
+        if K_max is None:
+            K_max = _estimate_max_K(L)
+        K_values = np.linspace(K_min, K_max, n_pts)
 
     num_coeffs = np.atleast_1d(L.num[0][0])
     den_coeffs = np.atleast_1d(L.den[0][0])

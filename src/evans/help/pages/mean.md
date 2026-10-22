@@ -11,7 +11,7 @@ Average of the elements of a vector, or of each column of a matrix.
 
 `mean(A)` for a row or column vector returns the arithmetic mean of its elements. For a matrix it averages down each column and returns a row vector.
 
-`mean(A, dim)` averages along dimension `dim`: `1` down the columns, `2` along the rows. As with [sum](sum), Evans returns `mean(A, 2)` as a row vector where MATLAB gives a column vector.
+`mean(A, dim)` averages along dimension `dim`: `1` down the columns, `2` along the rows. As with [sum](sum), `mean(A, 2)` is a column vector with one mean per row, and `mean(x, 1)` of a row vector is the row itself.
 
 The mean of an empty array is `NaN`. Evans does not support the `'all'` or `'omitnan'` options; use `mean(A(:))` for the mean of every element.
 

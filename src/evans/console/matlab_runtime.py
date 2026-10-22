@@ -26,6 +26,7 @@ They are handed to the real figure sink when the script finishes.
 
 from __future__ import annotations
 
+import fnmatch
 import math
 import os
 import re
@@ -1403,11 +1404,34 @@ class Runtime:
         if self._clear is None:
             return
         if names and names[0] not in ("all", "-all", "variables", "-v"):
-            self._clear(*(n for n in names if n not in keep))
+            self._clear(*(n for n in self._clear_targets(names)
+                          if n not in keep))
             return
         saved = {n: self.ns[n] for n in keep if n in self.ns}
         self._clear()
         self.ns.update(saved)
+
+    def _clear_targets(self, names: tuple[str, ...]) -> list[str]:
+        """
+        The variables ``clear`` names: ``K*`` by wildcard, and every name
+        after ``-regexp`` by regular expression. Taken literally, both
+        matched no variable and removed nothing without a word.
+        """
+        user = [n for n, v in self.ns.items()
+                if not n.startswith("_")
+                and not isinstance(v, types.ModuleType)
+                and v is not self.base.get(n, object())]
+        targets, regexp = [], False
+        for name in names:
+            if name.lower() == "-regexp":
+                regexp = True
+            elif regexp:
+                targets += [u for u in user if re.search(name, u)]
+            elif "*" in name:
+                targets += [u for u in user if fnmatch.fnmatchcase(u, name)]
+            else:
+                targets.append(name)
+        return targets
 
     def workspace(self) -> dict[str, Any]:
         """The script's variables, as ``save`` and ``whos`` see them."""
@@ -1898,11 +1922,17 @@ class _Library:
     def _dims(dims) -> tuple[int, int]:
         if not dims:
             return (1, 1)
-        if len(dims) == 1:
-            d = np.atleast_1d(dims[0]).astype(int)
-            return (int(d[0]), int(d[0])) if d.size == 1 else (int(d[0]),
-                                                               int(d[1]))
-        return (int(dims[0]), int(dims[1]))
+        sizes = (np.atleast_1d(dims[0]).astype(int).tolist()
+                 if len(dims) == 1 else [int(d) for d in dims])
+        if len(sizes) == 1:
+            return (sizes[0], sizes[0])
+        if any(d != 1 for d in sizes[2:]):
+            # Quietly keeping the first two sizes gave a 2-D answer to a
+            # 3-D question.
+            shape = "×".join(map(str, sizes))
+            raise MatlabError(f"{shape}: Evans supports matrices (2-D) "
+                              f"only; N-D arrays are not supported yet.")
+        return (sizes[0], sizes[1])
 
     def _filled(self, fill, dims):
         dims = tuple(d for d in dims if not isinstance(d, str))
@@ -1933,12 +1963,19 @@ class _Library:
         return np.linspace(float(a), float(b), int(n))
 
     def f_logspace(self, a, b, n=50):
-        return np.logspace(float(a), float(b), int(n))
+        # MATLAB's special case: an end of exactly pi means "up to π",
+        # not up to 10^π — the grid ``freqz`` wants for (0, π].
+        end = math.log10(math.pi) if float(b) == math.pi else float(b)
+        return np.logspace(float(a), end, int(n))
 
     def f_repmat(self, x, m, n=None):
         if n is None:
             m, n = self._dims((m,))
         if isinstance(x, str):
+            if int(m) != 1:
+                raise MatlabError("repmat: Evans has no multi-row text "
+                                  "(char matrices) yet; repmat(text, 1, n) "
+                                  "works, or use a cell array.")
             return x * int(n)
         return _normalise_row(np.tile(_as2d(x), (int(m), int(n))), True)
 
@@ -2041,9 +2078,28 @@ class _Library:
         a = np.asarray(x)
         if a.size == 0:
             return fn(np.zeros(0))
+        if dim is not None:
+            return _normalise(self._reduce_along(fn, a, dim))
         out = fn(a if a.ndim > 1 and dim is not None or a.ndim > 1 and
                  a.shape[0] > 1 else a.reshape(-1), axis=self._axis(a, dim))
         return _normalise(np.asarray(out)) if np.ndim(out) else _scalar(out)
+
+    @staticmethod
+    def _reduce_along(fn, a: np.ndarray, dim) -> np.ndarray:
+        """
+        ``fn`` down dimension ``dim`` of ``a`` as a matrix, keeping that
+        dimension at size 1 — MATLAB's shape: ``sum(A, 2)`` is a column,
+        ``sum(row, 1)`` the row itself, and a dimension past the second
+        has size 1, so reducing along it leaves ``a`` as it is.
+        """
+        A = _as2d(a)
+        axis = int(dim) - 1
+        if axis < 0:
+            raise MatlabError("Dimension argument must be a positive "
+                              "integer scalar.")
+        if axis >= 2:
+            return fn(A[..., None], axis=2)
+        return np.expand_dims(fn(A, axis=axis), axis)
 
     def f_sum(self, x, dim=None):
         return self._reduce(np.sum, x, dim)
@@ -2064,13 +2120,24 @@ class _Library:
 
     def f_cumsum(self, x, dim=None):
         a = np.asarray(x)
+        if dim is not None:
+            return _normalise_row(self._cumulative(np.cumsum, a, dim), True)
         return np.cumsum(a, axis=self._axis(a, dim) or 0) if a.ndim > 1 \
             else np.cumsum(a)
 
     def f_cumprod(self, x, dim=None):
         a = np.asarray(x)
+        if dim is not None:
+            return _normalise_row(self._cumulative(np.cumprod, a, dim), True)
         return np.cumprod(a, axis=self._axis(a, dim) or 0) if a.ndim > 1 \
             else np.cumprod(a)
+
+    @staticmethod
+    def _cumulative(fn, a: np.ndarray, dim) -> np.ndarray:
+        """``cumsum(x, dim)`` on ``x`` as a matrix; past dim 2, ``x`` itself."""
+        A = _as2d(a)
+        axis = int(dim) - 1
+        return A.copy() if axis >= 2 else fn(A, axis=axis)
 
     def f_diff(self, x, n=1):
         return np.diff(np.asarray(x), int(n), axis=0 if np.ndim(x) > 1
@@ -2095,13 +2162,19 @@ class _Library:
             key = np.abs(a)
         else:
             key = a
-        if a.ndim == 1 or a.shape[0] == 1 and dim is None:
+        if dim is not None:
+            a, key = _as2d(a), _as2d(key)
+            if int(dim) > 2:                       # size 1 there: a itself
+                out = _normalise(a)
+                return (out, _normalise(np.ones(a.shape))) if nargout >= 2 \
+                    else out
+        elif a.ndim == 1 or a.shape[0] == 1:
             flat, k = a.reshape(-1), key.reshape(-1)
             i = int(arg(np.where(np.isnan(k), -np.inf if arg is np.argmax
                                  else np.inf, k)))
             value = _scalar(flat[i])
             return (value, i + 1) if nargout >= 2 else value
-        axis = self._axis(a, dim) or 0
+        axis = (int(dim) - 1) if dim is not None else 0
         idx = arg(key, axis=axis)
         values = np.take_along_axis(a, np.expand_dims(idx, axis), axis)
         values = _normalise(values)
@@ -2117,15 +2190,40 @@ class _Library:
         return self._extreme(np.minimum, np.argmin, x, other, dim, nargout)
 
     @_nargout
-    def f_sort(self, x, mode="ascend", nargout=1):
+    def f_sort(self, x, *args, nargout=1):
+        """
+        ``sort(A)``, ``sort(A, dim)``, ``sort(..., 'descend')``.
+
+        Complex values sort by magnitude, then by angle in (−π, π], as
+        MATLAB's do; numpy's own order is by real part.
+        """
         a = np.asarray(x)
-        flat = a.ndim == 1 or a.shape[0] == 1
-        axis = -1 if flat else 0
-        order = np.argsort(a, axis=axis, kind="stable")
-        if str(mode).lower().startswith("desc"):
+        dims = [d for d in args if not isinstance(d, str)]
+        modes = [m for m in args if isinstance(m, str)]
+        was_row = False
+        if dims:
+            if int(_scalar_of(dims[0])) > 2:     # size 1 there: nothing moves
+                return (a, np.ones(a.shape)) if nargout >= 2 else a
+            was_row = a.ndim == 1
+            a = _as2d(a)
+            axis = int(_scalar_of(dims[0])) - 1
+        else:
+            axis = -1 if a.ndim == 1 or a.shape[0] == 1 else 0
+        if np.iscomplexobj(a):
+            by_angle = np.argsort(np.angle(a), axis=axis, kind="stable")
+            magnitude = np.take_along_axis(np.abs(a), by_angle, axis)
+            order = np.take_along_axis(
+                by_angle, np.argsort(magnitude, axis=axis, kind="stable"),
+                axis)
+        else:
+            order = np.argsort(a, axis=axis, kind="stable")
+        if modes and modes[0].lower().startswith("desc"):
             order = np.flip(order, axis=axis)
         values = np.take_along_axis(a, order, axis)
-        return (values, order + 1.0) if nargout >= 2 else values
+        index = order + 1.0
+        if was_row:
+            values, index = values.reshape(-1), index.reshape(-1)
+        return (values, index) if nargout >= 2 else values
 
     def f_unique(self, x):
         return np.unique(np.asarray(x))
@@ -2836,7 +2934,6 @@ class _Library:
     # ── workspace files ─────────────────────────────────────────
 
     def f_save(self, *args):
-        import fnmatch
 
         import scipy.io
         words = [_as_text(a) for a in args]
@@ -2869,7 +2966,6 @@ class _Library:
 
     @_nargout
     def f_load(self, filename="matlab.mat", *names, nargout=0):
-        import fnmatch
 
         import scipy.io
         path = self.rt.resolve(filename)
@@ -2904,23 +3000,30 @@ class _Library:
 
     def f_tf(self, *args):
         if len(args) >= 2 and not isinstance(args[0], str):
-            num, den = args[0], args[1]
-            rest = [a for a in args[2:] if not isinstance(a, str)]
+            (num, den, *rest), dt = _lti_args("tf", args)
             return api.tf(_poly_arg(num), _poly_arg(den),
-                          rest[0] if rest else None)
+                          rest[0] if rest else dt)
         if len(args) == 1 and _is_lti(args[0]):
             return ctl.tf(args[0])
         return api.tf(*args)
 
-    def f_zpk(self, z, p=None, k=None, *rest):
-        if _is_lti(z) and p is None:
+    def f_zpk(self, *args):
+        (z, *rest), dt = _lti_args("zpk", args)
+        if _is_lti(z) and not rest:
             return z
+        if len(rest) < 2:
+            raise MatlabError("zpk needs zeros, poles and a gain: "
+                              "zpk(z, p, k) or zpk(z, p, k, Ts).")
+        p, k = rest[0], rest[1]
         return api.zpk(np.atleast_1d(np.asarray(z, complex)).reshape(-1),
                        np.atleast_1d(np.asarray(p, complex)).reshape(-1),
-                       float(k))
+                       float(k), rest[2] if len(rest) > 2 else dt)
 
     def f_ss(self, *args):
-        return api.ss(*args)
+        positional, dt = _lti_args("ss", args)
+        if dt is not None and len(positional) == 4:
+            positional.append(dt)
+        return api.ss(*positional)
 
     @_nargout
     def f_tfdata(self, sys, form=None, nargout=1):
@@ -2958,6 +3061,10 @@ class _Library:
 
     def f_freqresp(self, sys, w):
         w = np.atleast_1d(np.asarray(w, float))
+        if ctl.isdtime(sys, strict=True):
+            # A discrete model's frequency ω sits on the unit circle.
+            ts = 1.0 if sys.dt is True else float(sys.dt)
+            return np.array([complex(sys(np.exp(1j * x * ts))) for x in w])
         return np.array([complex(sys(1j * x)) for x in w])
 
     def f_isstable(self, sys):
@@ -2980,6 +3087,8 @@ class _Library:
             t = np.asarray(args[0] if args else np.arange(len(sys)), float)
             y = np.asarray(sys, float).reshape(-1)
             info = Struct(api.stepinfo((t.reshape(-1), y)))
+        elif not api._settles(sys):
+            return Struct(api.stepinfo(sys))       # NaN, Peak = Inf
         else:
             # The plotting window is sized to frame the slowest pole; a zero
             # near the origin can make the response settle well after that.
@@ -3874,6 +3983,54 @@ def _matlab_stepinfo(info: Struct, t: np.ndarray, y: np.ndarray) -> Struct:
             info["SettlingMin"] = float(np.min(tail))
             info["SettlingMax"] = float(np.max(tail))
     return info
+
+
+#: Properties tf/zpk/ss accept that change nothing Evans computes.
+_COSMETIC_LTI = {"name", "inputname", "outputname", "statename", "notes",
+                 "userdata", "inputunit", "outputunit", "stateunit",
+                 "timeunit", "inputgroup", "outputgroup"}
+
+
+def _lti_args(fn: str, args) -> tuple[list, object]:
+    """
+    Split ``tf/zpk/ss(..., Ts, 'Name', value, ...)`` into the positional
+    arguments and the sample time.
+
+    A delay property is refused rather than dropped: Evans has no exact
+    delay, and quietly reading ``'InputDelay', 2`` as ``Ts = 2`` built a
+    discrete model nobody asked for.
+    """
+    positional = []
+    for i, a in enumerate(args):
+        if isinstance(a, str):
+            options = list(args[i:])
+            break
+        positional.append(a)
+    else:
+        options = []
+    if len(options) % 2:
+        raise MatlabError(f"{fn}: properties come in name-value pairs; "
+                          f"{options[-1]!r} has no value.")
+    dt = None
+    for name, value in zip(options[::2], options[1::2]):
+        key = name.lower()
+        if key in ("inputdelay", "outputdelay", "iodelay"):
+            delay = np.asarray(value, float)
+            if np.any(delay != 0):
+                T = _number(float(np.max(delay)))
+                raise MatlabError(
+                    f"{fn}: Evans has no exact time delays yet, so "
+                    f"'{name}' cannot be kept. Approximate the delay "
+                    f"instead: multiply by pade({T}, 3) for e^(-{T}s).")
+        elif key == "ts":
+            dt = value
+        elif key == "variable":
+            if str(value) not in ("s", "z", "p", "q"):
+                raise MatlabError(f"{fn}: 'Variable', {value!r} is not "
+                                  f"supported; write the model in s or z.")
+        elif key not in _COSMETIC_LTI:
+            raise MatlabError(f"{fn}: unknown property '{name}'.")
+    return positional, dt
 
 
 def _poly_arg(x):

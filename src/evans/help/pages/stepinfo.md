@@ -24,7 +24,9 @@ The simulation runs long enough for the response to settle: if the default time 
 
 `S = stepinfo(y, t)` computes the same fields from a response you already have, such as the outputs of [step](step) or [lsim](lsim). `y` and `t` are vectors of equal length. `stepinfo(y)` uses the sample index `0, 1, 2, ...` as the time.
 
-Evans uses fixed thresholds (10 to 90 % rise, 2 % settling). After a system, MATLAB's `'SettlingTimeThreshold'` and `'RiseTimeLimits'` options are accepted but ignored; after a data vector they cause an error. A third `yfinal` argument in `stepinfo(y, t, yfinal)` is ignored, and the final value is taken from the data. For an unstable system the fields are not meaningful, where MATLAB returns `NaN`; check [isstable](isstable) first.
+Evans uses fixed thresholds (10 to 90 % rise, 2 % settling). After a system, MATLAB's `'SettlingTimeThreshold'` and `'RiseTimeLimits'` options are accepted but ignored; after a data vector they cause an error. A third `yfinal` argument in `stepinfo(y, t, yfinal)` is ignored, and the final value is taken from the data.
+
+For a system that does not settle (a pole in the right half-plane or on the imaginary axis, an integrator included, or outside the unit circle for a discrete model), every field is `NaN` except `Peak` and `PeakTime`, which are `Inf`, as in MATLAB.
 
 ## Example
 

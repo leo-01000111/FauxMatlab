@@ -62,6 +62,7 @@ from PySide6.QtWidgets import (
 from ..console.apps import AppRequest, set_app_sink
 from ..core.architecture import CourseArchitecture
 from ..core.collection import SnapshotStore, SystemCollection
+from ..core.designer import Compensator
 from ..core.report import text_report
 from ..core.session import load_session_dict, session_dict
 from ..core.tf_utils import (
@@ -738,6 +739,9 @@ class MainWindow(QMainWindow):
             designer.compensator_applied.connect(self._on_controller_designed)
         elif "plant" in systems:
             designer.set_plant(systems["plant"], self._arch.block_tf("H"))
+        if "compensator" in systems:
+            designer.set_compensator(
+                Compensator.from_tf(systems["compensator"]))
         return self._show("sisotool", designer)
 
     def _open_pid_tuner(self, request: AppRequest | None = None) -> PIDTuner:
