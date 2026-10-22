@@ -24,11 +24,11 @@ For the standard test inputs there are shorter commands: [step](step), [impulse]
 ## Example
 
 ```matlab
-G = ss(tf(1, [1 0.5 1]));
+G = tf(1, [1 0.5 1]);
 t = 0:0.01:20;
 u = sin(0.8*t);
-lsim(G, u, t, [0; 0])
-y = lsim(G, u, t, [0; 0]);
+lsim(G, u, t)
+y = lsim(G, u, t);
 fprintf('Output amplitude near the end: %.3f\n', max(abs(y(end-800:end))))
 ```
 

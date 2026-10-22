@@ -331,6 +331,29 @@ def test_polyfit_polyval_meshgrid_linspace(it):
     np.testing.assert_allclose(val(it, "l"), [0, 0.25, 0.5, 0.75, 1])
 
 
+def test_poly_reads_roots_as_a_row_or_a_column(it):
+    # roots returns a column; poly used to take it for a non-square matrix.
+    run(it, "a = poly(roots([2 6 4]));\nb = poly([-1; -2]);\n"
+            "c = poly(5);\nd = poly([1 2; 3 4]);")
+    np.testing.assert_allclose(val(it, "a"), [1, 3, 2], atol=1e-12)
+    np.testing.assert_allclose(val(it, "b"), [1, 3, 2], atol=1e-12)
+    np.testing.assert_allclose(val(it, "c"), [1, -5], atol=1e-12)
+    np.testing.assert_allclose(val(it, "d"), [1, -5, -2], atol=1e-12)
+
+
+def test_lsim_and_step_on_models_at_rest(it):
+    # lsim without x0 passed X0=None, which python-control rejects; step on
+    # an ss model read coefficients it has not got.
+    run(it, "t = 0:0.1:10; u = ones(size(t));\n"
+            "y1 = lsim(tf(1, [1 1]), u, t);\n"
+            "y2 = lsim(ss(-1, 1, 1, 0), u, t);\n"
+            "y3 = step(ss(-1, 1, 1, 0), 10);")
+    for name in ("y1", "y2", "y3"):
+        y = np.asarray(val(it, name)).reshape(-1)
+        assert y[0] == pytest.approx(0, abs=1e-9)
+        assert y[-1] == pytest.approx(1 - np.exp(-10), abs=1e-3)
+
+
 # ──────────────────────────────────────────────────────────────
 #  ODEs and optimisation
 # ──────────────────────────────────────────────────────────────

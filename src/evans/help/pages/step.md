@@ -14,7 +14,7 @@ Step response of a dynamic system: how its output moves after the input jumps fr
 
 ## Description
 
-`step(sys)` plots the unit step response of `sys`, a `tf` or `zpk` model. The time span is picked from the slowest pole, long enough to show the response settle. A state-space model fails here at the moment; convert it first with `step(tf(sys))`.
+`step(sys)` plots the unit step response of `sys`, which can be a `tf`, `zpk` or `ss` model. The time span is picked from the slowest pole, long enough to show the response settle.
 
 `step(sys, Tfinal)` simulates from 0 to `Tfinal` seconds. `step(sys, t)` uses the time vector `t` as given, which should start at 0 and be evenly spaced. A discrete model needs this form, with the spacing of `t` equal to its sample time: `step(Gd, 0:Ts:5)`.
 
