@@ -606,6 +606,8 @@ class LiveScriptEditor(QWidget):
         self.document = LiveDocument([Cell.code("")])
         self._widgets: list[CellWidget] = []
         self._current: Cell | None = None
+        #: Sets up hover and Ctrl+click on a code cell; see `set_follow`.
+        self._follow = None
         self._build_thread: threading.Thread | None = None
         #: The PDF beside the script; made the first time it is shown.
         self.preview = None
@@ -740,11 +742,23 @@ class LiveScriptEditor(QWidget):
         self._rebuild()
         self._update_auto_labels()
 
+    def set_follow(self, attach) -> None:
+        """
+        Hover and Ctrl+click in the code cells: ``attach(text_widget)`` sets
+        them up on one, now for the cells there and later for each new one.
+        """
+        self._follow = attach
+        for widget in self._widgets:
+            if isinstance(widget, CodeCellWidget):
+                attach(widget.editor)
+
     def _make_widget(self, cell: Cell) -> CellWidget:
         if cell.is_code:
             widget = CodeCellWidget(cell)
             widget.figure_requested.connect(self.figure_requested)
             widget.set_completion(self._code_request)
+            if self._follow is not None:
+                self._follow(widget.editor)
         else:
             widget = TextCellWidget(cell, evaluate=self._evaluator())
             widget.set_completion(self.reference_labels)

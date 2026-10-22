@@ -254,6 +254,7 @@ def _check_ui(report: Report, say) -> None:
         window.hide()
         _check_pdf_view(report, say)
         _check_completion(report, say)
+        _check_help(report, say)
     except Exception as exc:                                    # noqa: BLE001
         report.record(False, f"UI raised {type(exc).__name__}: {exc}")
         say(f"      FAILED: {exc}")
@@ -312,6 +313,25 @@ def _check_completion(report: Report, say) -> None:
           and rank(tex.prefix, tex.items(True))[0].text == r"\frac")
     report.record(ok, "completion: signatures, descriptions or LaTeX missing")
     say(f"      {'code completion':28s} {'clean' if ok else 'FAILED'}")
+
+
+def _check_help(report: Report, say) -> None:
+    """
+    The help window opens on a page: the pages are data files, so a build
+    that leaves them out would show "No page" for everything.
+    """
+    from . import help as pages
+    from .ui.help import HelpWindow
+
+    missing = [t for t in pages.topics() if pages.load(t) is None]
+    window = HelpWindow()
+    window.show_topic("step")
+    shown = "Step response" in window.browser.toPlainText()
+    window.deleteLater()
+    ok = len(pages.topics()) > 100 and not missing and shown
+    report.record(ok, f"help pages: {len(pages.topics())} found, "
+                      f"{len(missing)} unreadable, step shown: {shown}")
+    say(f"      {'help pages':28s} {'clean' if ok else 'FAILED'}")
 
 
 def main(argv: list[str] | None = None) -> int:

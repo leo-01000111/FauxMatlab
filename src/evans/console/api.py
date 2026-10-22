@@ -446,7 +446,9 @@ def lsim(sys, u, t, x0=None, plot: bool = True):
     """Response to an arbitrary input."""
     t = np.asarray(t, dtype=float)
     u = np.asarray(u, dtype=float)
-    t_out, y = ctl.forced_response(sys, T=t, U=u, X0=x0)[:2]
+    # python-control rejects X0=None; MATLAB's default is a system at rest.
+    t_out, y = ctl.forced_response(sys, T=t, U=u,
+                                   X0=0 if x0 is None else x0)[:2]
     y = np.asarray(y).ravel()
     if plot:
         spec = FigureSpec("time", "Response to input", "Time (s)", "Amplitude")

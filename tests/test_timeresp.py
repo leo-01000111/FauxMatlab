@@ -2,6 +2,7 @@
 
 import control as ctl
 import numpy as np
+import pytest
 
 from evans.core.tf_utils import first_order, second_order
 from evans.core.timeresp import (
@@ -29,6 +30,14 @@ class TestStepResponse:
         resp = step_response(tf)
         assert resp.t.shape == resp.y.ravel().shape
         assert len(resp.t) > 10
+
+    def test_state_space_model(self):
+        # The exact steady state used to read tf.num, which an ss model has
+        # not got: step(ss(...)) raised AttributeError.
+        sys = ctl.ss([[0, 1], [-2, -3]], [[0], [1]], [[1, 0]], [[0]])
+        resp = step_response(sys)
+        assert resp.metadata["y_inf_exact"] == pytest.approx(0.5)
+        assert abs(resp.y[-1] - 0.5) < 0.01
 
 
 class TestImpulseResponse:

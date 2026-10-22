@@ -106,6 +106,8 @@ class MainWindow(QMainWindow):
         self._app_docks: dict[str, QDockWidget] = {}
         #: Scripts and models opened or saved, for File ▸ Open recent.
         self.recent_files = RecentFiles()
+        #: Unsaved scripts were settled for quitting; see `confirm_quit`.
+        self._quit_confirmed = False
         # Before the menus: the title bar holds the menu bar they fill.
         self._title_bar = TitleBar(self)
         #: Help ▸ Check for updates; before the menus, which call it.
@@ -368,6 +370,7 @@ class MainWindow(QMainWindow):
                                      extra=self._console_state())
         self._console.open_system.connect(self._on_console_system)
         self._console.open_model.connect(self._on_console_model)
+        help.set_console(self._run_from_help, lambda: self._console.running)
         # A figure drawn from anywhere pulls the workspace into view, so
         # `step(G)` typed on the Analyse page does not draw somewhere unseen.
         self._figures.figure_added.connect(
@@ -527,8 +530,29 @@ class MainWindow(QMainWindow):
             action.setChecked(workspace is current)
             action.blockSignals(False)
 
+    def confirm_quit(self) -> bool:
+        """
+        Settle scripts with unsaved changes before Evans closes: save,
+        discard or cancel each. False means stay open. Asked once, so a
+        restart that asks first does not ask again as the window closes.
+        """
+        if not self._quit_confirmed:
+            self._quit_confirmed = self._console.editor.confirm_close_all()
+        return self._quit_confirmed
+
+    def reopen_scripts(self) -> int:
+        """The scripts open when Evans last closed, in their tabs again."""
+        return self._console.editor.reopen_remembered()
+
     def closeEvent(self, event) -> None:
+        if not self.confirm_quit():
+            event.ignore()
+            return
+        self._console.editor.remember_open()
         self.save_layout()
+        # The help window has no parent, so it would keep Evans running.
+        if (helper := help.window()) is not None:
+            helper.close()
         # "Update when I close Evans": the installer takes over from here.
         self.updater.install_pending()
         super().closeEvent(event)
@@ -757,7 +781,9 @@ class MainWindow(QMainWindow):
 
     def _restart(self) -> bool:
         """Start a new Evans with the same arguments, then close this one."""
-        if getattr(sys, "frozen", False):         # Evans.exe
+        if not self.confirm_quit():
+            return False
+        if getattr(sys, "frozen", False):        # Evans.exe
             program, args = sys.executable, sys.argv[1:]
         else:                                     # python app.py / evans
             program = sys.executable
@@ -997,6 +1023,15 @@ class MainWindow(QMainWindow):
 
     def show_workspace(self, workspace) -> None:
         self._stack.set_current(workspace)
+
+    def _run_from_help(self, source: str):
+        """A help page's Run: the example runs at the prompt, in view."""
+        self._stack.set_current(Workspace.CONSOLE)
+        if self.isMinimized():
+            self.showNormal()
+        self.raise_()
+        self.activateWindow()
+        return self._console.execute(source)
 
     def _push_to_console(self) -> None:
         """Put the current plant and loop into the workspace under short names."""

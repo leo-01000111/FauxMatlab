@@ -621,3 +621,37 @@ from scripts, live parameter sliders.
 5. **Fresh clone:** MIT `LICENSE`; README Quick start; `.claude/` ignored; the plans moved to
    `docs/`, `debug_runner.py` to `tools/`; CI publishes a GitHub Release from a `v*` tag, and
    no longer waits six hours on a hung test.
+
+## Part 8 — Help, navigation, several scripts, an assistant (decided 2026-10-22)
+
+1. **An integrated help window.** A separate top-level window, opened through
+   `ui/help.py`'s `open_help(topic)` (the one place every route to help already goes).
+   Its pages are hand-written, for the app only. The website keeps its generated reference.
+   They cover the 88 console commands in `api._GROUPS` and the MATLAB basics scripts lean
+   on (`zeros`, `plot`, `linspace`, `disp`…). Agents draft each page from the code, with a
+   runnable example, and they are reviewed in batches before they land.
+2. **Hover for syntax, Ctrl+click to go.** Hovering a function shows its syntax in a popup
+   (the table in `ui/code/signatures.py`). Ctrl+click on a built-in opens its help page. On
+   a local function it jumps to the definition in the same script. On a function defined in a
+   `.m` file in the current folder or on the path, it opens that file in a new tab at the
+   function.
+3. **Several scripts at once, in the Script editor only** (live scripts stay single). Tabs
+   with an unsaved-changes marker, and a Save / Discard / Cancel prompt on closing a tab or
+   quitting. *Untitled* tabs until the first save. The same tabs reopen on restart, at the
+   same cursor. The debugger follows into files: breakpoints in any tab, and stepping into a
+   function in another `.m` file opens its tab and pauses there.
+4. **An assistant on OpenRouter**, not Claude: Anthropic does not allow a third-party app to
+   offer claude.ai subscription sign-in, and driving the user's own Claude Code is a grey
+   area for a public download. Instead it is a dockable side panel, on free OpenRouter
+   models: a default, plus a picker that lists the current free ones. The key comes only
+   from `OPENROUTER_API_KEY` and is never stored. To keep token use low, a request carries
+   only the selection (or the `%%` section at the cursor), a workspace summary (names, types
+   and sizes, never values) and the last error. It can propose an edit to the active script
+   or cell as a diff to accept or reject, and propose a console command that runs only once
+   approved. It works in the console, the script and the live script.
+
+**How it is divided:** the help window and its pages (1) and the assistant (4) each get a
+session of their own. Several scripts (3) and then hover / Ctrl+click (2), which opens files
+in 3's tabs, are done in the main session. The assistant's panel and client are built
+standalone first. Its hooks into the editor and console land after 3, which rewrites
+`ScriptEditor`.

@@ -35,6 +35,7 @@ The stop lands on the next line of user code after it returns.
 from __future__ import annotations
 
 import ctypes
+import os
 import sys
 import time
 from collections.abc import Callable, Iterator
@@ -56,21 +57,39 @@ class Interrupted(BaseException):
     ``try … catch`` becomes ``except Exception`` and must not swallow it.
     """
 
-    def __init__(self, line: int | None) -> None:
+    def __init__(self, line: int | None, file: str | None = None) -> None:
         super().__init__(line)
         self.line = line
+        #: The ``.m`` file ``line`` is in (a :func:`file_key`), or None for
+        #: the script that was run.
+        self.file = file
 
     def __str__(self) -> str:
-        return (f"Interrupted at line {self.line}" if self.line
-                else "Interrupted")
+        if not self.line:
+            return "Interrupted"
+        where = f" in {os.path.basename(self.file)}" if self.file else ""
+        return f"Interrupted at line {self.line}{where}"
+
+
+def file_key(path) -> str:
+    """
+    How a ``.m`` file is named to the tracer: the same file however its path
+    was spelled (relative, or in another case where the OS ignores case).
+    """
+    return os.path.normcase(os.path.abspath(os.fspath(path)))
 
 
 @dataclass
 class Pause:
-    """Where a run is stopped: the frame, and the user's line in it."""
+    """
+    Where a run is stopped: the frame, and the user's line in it — a line of
+    the script that was run, or of the ``.m`` file ``file`` (a
+    :func:`file_key`) when the pause is in a function it defines.
+    """
     frame:    FrameType
     line:     int
     debuggable: bool
+    file:     str | None = None
 
     @property
     def scope(self) -> dict:
@@ -87,6 +106,7 @@ class _Watched:
     lines:  list[int] | None       # Python line → user line; None = same
     debuggable: bool
     quiet:  bool                   # a function-definition chunk's top level
+    file:   str | None             # a .m file's key; None = the run's script
 
     def line(self, pyline: int) -> int:
         if self.lines is None:
@@ -112,8 +132,11 @@ class Tracer:
     poll_interval = 0.05
 
     def __init__(self) -> None:
-        #: User lines (of the script editor's text) to pause on.
+        #: User lines (of the script being run) to pause on.
         self.breakpoints: set[int] = set()
+        #: Lines to pause on in ``.m`` files the run calls into, by
+        #: :func:`file_key`.
+        self.file_breakpoints: dict[str, set[int]] = {}
         self.poll: Callable[[], None] | None = None
         self.on_pause: Callable[[Pause], str] | None = None
         self._codes: dict[int, _Watched] = {}
@@ -147,21 +170,24 @@ class Tracer:
     # ── registration ────────────────────────────────────────────
 
     def watch(self, code: CodeType, lines: list[int] | None = None, *,
-              debuggable: bool = False, quiet: bool = False) -> None:
+              debuggable: bool = False, quiet: bool = False,
+              file: str | None = None) -> None:
         """
         Raise line events in ``code`` and every function nested in it.
 
         ``lines`` maps Python line numbers (1-based) to the line the user
         wrote; ``debuggable`` lets breakpoints and the editor's highlight
         apply; ``quiet`` skips the top level of a chunk that only defines a
-        function, so a breakpoint on ``function`` pauses at the call.
+        function, so a breakpoint on ``function`` pauses at the call;
+        ``file`` says the lines are a ``.m`` file's (a :func:`file_key`),
+        whose breakpoints are in :attr:`file_breakpoints`.
         """
-        self._codes[id(code)] = _Watched(code, lines, debuggable, quiet)
+        self._codes[id(code)] = _Watched(code, lines, debuggable, quiet, file)
         if self._tool is not None:
             _MON.set_local_events(self._tool, code, _MON.events.LINE)
         for const in code.co_consts:
             if isinstance(const, CodeType):
-                self.watch(const, lines, debuggable=debuggable)
+                self.watch(const, lines, debuggable=debuggable, file=file)
 
     @contextmanager
     def active(self, namespace: dict | None = None) -> Iterator[None]:
@@ -243,13 +269,13 @@ class Tracer:
             return None
         line = watched.line(pyline)
         if self._stop:
-            raise Interrupted(line)
+            raise Interrupted(line, watched.file)
         now = time.monotonic()
         if self.poll is not None and now - self._polled >= self.poll_interval:
             self._polled = now
             self.poll()
             if self._stop:
-                raise Interrupted(line)
+                raise Interrupted(line, watched.file)
         if self.paused is not None or watched.quiet:
             # A command typed while paused runs, and can be stopped, but
             # does not step or break.
@@ -276,14 +302,16 @@ class Tracer:
             pause = not header
         elif self._mode == STEP:
             pause = not header and not _below(frame, self._step_frame)
-        if not pause and watched.debuggable and line in self.breakpoints:
+        marks = self.breakpoints if watched.file is None             else self.file_breakpoints.get(watched.file, ())
+        if not pause and watched.debuggable and line in marks:
             pause = True
         if pause:
-            self._pause(frame, line, watched.debuggable)
+            self._pause(frame, line, watched.debuggable, watched.file)
         return None
 
-    def _pause(self, frame: FrameType, line: int, debuggable: bool) -> None:
-        self.paused = Pause(frame, line, debuggable)
+    def _pause(self, frame: FrameType, line: int, debuggable: bool,
+               file: str | None = None) -> None:
+        self.paused = Pause(frame, line, debuggable, file)
         try:
             action = self.on_pause(self.paused) if self.on_pause else CONTINUE
         finally:
@@ -291,7 +319,7 @@ class Tracer:
             self._polled = time.monotonic()
         if action == STOP or self._stop:
             self._stop = True
-            raise Interrupted(line)
+            raise Interrupted(line, file)
         self._mode = action if action in (STEP, STEP_IN) else CONTINUE
         self._step_frame = frame
 

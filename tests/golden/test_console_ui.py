@@ -533,10 +533,13 @@ def test_opening_a_script_records_it_and_reopens_it(app, win, tmp_path,
     win._console.editor.load_file(script)
     assert recent.paths() == [script.resolve()]
 
-    win._console.editor.set_text("")
+    # Open already, in a tab of its own: reopening shows that tab.
+    win._console.editor.new_document()
+    count = len(win._console.editor.documents())
     assert win.open_recent(script)
     _settle(app)
     assert win._console.editor.text() == "a = 1;\n"
+    assert len(win._console.editor.documents()) == count
     assert win._stack.current is Workspace.CONSOLE
     assert win._console._tabs.currentWidget() is win._console.editor
     win._console._tabs.setCurrentIndex(0)
