@@ -28,7 +28,7 @@ from PySide6.QtWidgets import QLineEdit, QPlainTextEdit, QTextEdit
 
 from ...assistant import context as ctx
 from ...assistant import protocol
-from ...assistant.context import Context
+from ...assistant.context import Context, Region
 from ...assistant.protocol import Edit, StaleEdit
 
 Variables = Callable[[], Mapping[str, Any]]
@@ -114,6 +114,27 @@ class EditorSource(Source):
             variables=self._variables(), last_error=self._last_error(),
             whole=self._whole)
 
+    def line_context(self, line: int, error: str) -> Context:
+        """
+        The context for a run that failed on ``line`` (1-based): that line,
+        to be fixed in place, and the error it raised.
+        """
+        context = self.context()
+        editor = self.editor
+        if editor is None:
+            return context
+        text = editor.toPlainText()
+        lines = text.split("\n")
+        if not 1 <= line <= len(lines):
+            return context
+        start = sum(len(row) + 1 for row in lines[:line - 1])
+        failed = ctx.build(
+            self.where, language=context.language, text=text, cursor=start,
+            sel_start=start, sel_end=start + len(lines[line - 1]),
+            variables=self._variables(), last_error=error)
+        failed.origin = "failed"
+        return failed
+
     def apply(self, context: Context, edit: Edit) -> None:
         editor = self.editor
         if editor is None:
@@ -135,42 +156,73 @@ class ConsoleSource(Source):
     The console: what is typed at the prompt, and what is picked out above.
 
     The prompt's text, typed but not run, always goes along (its selection,
-    if part of it is selected), and an edit replaces it — it still runs only
-    when the user presses Enter. A selection in the transcript is sent as
-    output to explain, errors included, and is never edited.
+    if part of it is selected). With the prompt empty, the last command that
+    failed goes instead, with its error. Either way an edit is the command
+    to run: Apply puts it at the prompt and presses Enter (``submit``). A
+    selection in the transcript is sent as output to explain, errors
+    included, and is never edited.
     """
 
     def __init__(self, prompt: QLineEdit, transcript: QPlainTextEdit, *,
                  language: str | Callable[[], str] = "matlab",
                  variables: Variables = dict,
-                 last_error: Callable[[], str] = str) -> None:
+                 last_error: Callable[[], str] = str,
+                 failed_command: Callable[[], str] = str,
+                 submit: Callable[[], None] | None = None) -> None:
         self.prompt = prompt
         self.transcript = transcript
         self._language = language
         self._variables = variables
         self._last_error = last_error
+        self._failed_command = failed_command
+        self._submit = submit
+
+    def failed_context(self, command: str, error: str) -> Context:
+        """
+        A command that failed, to be fixed: an edit replaces it — at the
+        (empty) prompt, from where it runs — rather than the transcript.
+        """
+        language = self._language() if callable(self._language) else self._language
+        if looks_matlab(command) is not None:
+            language = looks_matlab(command)
+        context = ctx.build(
+            "console", language=language, text=command, whole="failed",
+            variables=self._variables(), last_error=error,
+            attachment=self._transcript_selection())
+        if context.region is not None:
+            # Anchored to the prompt, which must still be empty to take it.
+            context.region = Region(0, 0, "")
+        return context
+
+    def _transcript_selection(self) -> str:
+        # Qt hands a selection's line breaks back as U+2029.
+        return self.transcript.textCursor().selectedText().replace("\u2029", "\n")
 
     def context(self) -> Context:
         text = self.prompt.text()
+        failed = self._failed_command()
+        if not text.strip() and failed:
+            return self.failed_context(failed, self._last_error())
         start = end = None
         if self.prompt.hasSelectedText():
             start = from_qt(text, self.prompt.selectionStart())
             end = from_qt(text, self.prompt.selectionEnd())
-        selected = self.transcript.textCursor().selectedText()
         language = self._language() if callable(self._language) else self._language
         return ctx.build(
             "console", language=language, text=text,
             cursor=from_qt(text, self.prompt.cursorPosition()),
             sel_start=start, sel_end=end, whole="prompt",
             variables=self._variables(), last_error=self._last_error(),
-            # Qt hands a selection's line breaks back as U+2029.
-            attachment=selected.replace(" ", "\n"))
+            attachment=self._transcript_selection())
 
     def apply(self, context: Context, edit: Edit) -> None:
         if "\n" in edit.code.strip("\n"):
             raise StaleEdit("This edit runs to several lines and the prompt "
                             "holds one. Copy it into a script instead.")
         text = self.prompt.text()
+        if context.origin == "failed" and text.strip():
+            raise StaleEdit("Something is typed at the prompt now. Clear it "
+                            "to run the fixed command.")
         protocol.apply_edit(text, context, edit)          # raises if stale
         region = context.region
         start, end = to_qt(text, region.start), to_qt(text, region.end)
@@ -178,6 +230,8 @@ class ConsoleSource(Source):
         self.prompt.setSelection(start, end - start)
         self.prompt.insert(edit.code.strip("\n"))
         self.prompt.setFocus()
+        if self._submit is not None:
+            self._submit()                                 # as Enter would
 
 
 class SwitchSource(Source):
@@ -194,6 +248,15 @@ class SwitchSource(Source):
 
     def apply(self, context: Context, edit: Edit) -> None:
         self._pick().apply(context, edit)
+
+
+def looks_matlab(command: str) -> str | None:
+    """'matlab' or 'python' for a console command, ``None`` if unsure."""
+    try:
+        from ...console.matlab import looks_like_matlab
+    except ImportError:
+        return None
+    return "matlab" if looks_like_matlab(command) else "python"
 
 
 def to_qt(text: str, index: int) -> int:

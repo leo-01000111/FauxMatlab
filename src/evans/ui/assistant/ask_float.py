@@ -29,7 +29,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .. import theme
+from .error_ask import ask_button
 
 EXPLAIN = "explain"
 FIX = "fix"
@@ -56,16 +56,10 @@ class AskCedricFloat(QObject):
         self._line = isinstance(widget, QLineEdit)
         host: QWidget = widget if self._line else widget.viewport()
 
-        self.button = QToolButton(host)
-        self.button.setText("Ask Cedric")
+        self.button = ask_button(host)
         self.button.setObjectName("askCedric")
         self.button.setToolTip("Ask Cedric about the selection")
-        self.button.setFocusPolicy(Qt.NoFocus)
-        self.button.setCursor(Qt.PointingHandCursor)
         self.button.setPopupMode(QToolButton.InstantPopup)
-        self.button.setFont(theme.sign_font(8))
-        self._restyle()
-        theme.notifier().changed.connect(self._restyle)
         self.button.hide()
 
         menu = QMenu(self.button)
@@ -81,16 +75,6 @@ class AskCedricFloat(QObject):
             widget.verticalScrollBar().valueChanged.connect(self._place)
             widget.horizontalScrollBar().valueChanged.connect(self._place)
         widget.selectionChanged.connect(self._selection_changed)
-
-    def _restyle(self, *_ignored) -> None:
-        # A location plate, like the primary buttons: it floats over text,
-        # so it needs a solid ground and a hard edge to read as a button.
-        t = theme.tokens()
-        self.button.setStyleSheet(
-            f"QToolButton {{ background: {t.plate}; color: {t.on_plate};"
-            f" border: 1px solid {t.on_plate}; padding: 2px 8px;"
-            f" border-radius: {theme.RADIUS_PLATE}px; }}"
-            f"QToolButton::menu-indicator {{ image: none; width: 0; }}")
 
     # ── the selection ─────────────────────────────────────────
 

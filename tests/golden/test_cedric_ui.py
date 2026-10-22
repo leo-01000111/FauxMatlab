@@ -287,17 +287,17 @@ class TestAskFloat:
 # ── proposals landing ──────────────────────────────────────────────
 
 class TestProposals:
-    def test_edit_replaces_the_prompt_without_running(self, console, cedric, app):
+    def test_applying_at_the_prompt_runs_it(self, console, cedric, app):
         panel, fake = cedric
-        fake.reply = "Close the bracket:\n```evans-edit\nbode(G)\n```"
-        console.console.set_input("bode(G")
-        before = len(console.interpreter.history)
+        fake.reply = "Close the bracket:\n```evans-edit\ncedric_fixed = 5\n```"
+        console.console.set_input("cedric_fixed = (5")
         panel.ask("why won't this run?")
         _settle(app)
         card = next(w for w in panel.cards() if isinstance(w, EditCard))
         assert card.apply()
-        assert console.console._input.text() == "bode(G)"
-        assert len(console.interpreter.history) == before    # not run
+        _settle(app)
+        assert console.console._input.text() == ""              # it was sent
+        assert console.interpreter.variables()["cedric_fixed"] == 5
 
     def test_multi_line_edit_cannot_go_into_the_prompt(self, console, cedric, app):
         panel, fake = cedric
@@ -355,3 +355,109 @@ class TestProposals:
         card.paste()
         assert console.console._input.text() == "cedric_copied = 7"
         assert "cedric_copied" not in console.interpreter.variables()
+
+
+# ── a command that failed, and the buttons beside errors ──────────
+
+class TestErrors:
+    def test_failed_command_is_what_he_fixes(self, console, cedric, app):
+        panel, fake = cedric
+        console.execute("G = tf(1, [1, 1])")
+        console.execute("stpe(G)")
+        _settle(app)
+        assert console.last_failed_command == "stpe(G)"
+        context = console.assistant_source.context()       # prompt is empty
+        assert (context.origin, context.code) == ("failed", "stpe(G)")
+        assert "stpe" in context.last_error
+        fake.reply = "A typo:\n```evans-edit\ncedric_after = 1\n```"
+        panel.ask("fix it")
+        card = next(w for w in panel.cards() if isinstance(w, EditCard))
+        assert card.apply_button.isEnabled()
+        assert "-stpe(G)" in card.view.toPlainText()
+        assert card.apply()
+        _settle(app)
+        assert console.interpreter.variables()["cedric_after"] == 1
+        assert console.last_failed_command == ""             # ran cleanly
+
+    def test_a_typed_prompt_refuses_the_failed_fix(self, console, cedric, app):
+        panel, fake = cedric
+        console.execute("stpe(1)")
+        fake.reply = "```evans-edit\nstep(1)\n```"
+        panel.ask("fix it")
+        console.console.set_input("x = 1")
+        card = next(w for w in panel.cards() if isinstance(w, EditCard))
+        assert not card.apply()
+        assert console.console._input.text() == "x = 1"
+
+    def test_a_failed_command_gets_a_button_that_asks_at_once(
+            self, console, cedric, app):
+        panel, fake = cedric
+        marks = console._transcript_marks
+        before = marks.count
+        console.execute("undefined_thing_abc + 1")
+        _settle(app)
+        assert marks.count == min(before + 1, 12)
+        button = marks.buttons()[-1]
+        assert button.isVisible()
+        button.click()
+        _settle(app)
+        user = fake.sent[-1]["messages"][-1]["content"]
+        assert "undefined_thing_abc + 1" in user                # the command
+        assert "undefined_thing_abc" in user.split("Last error:")[1]
+        assert user.endswith("What is wrong here, and how do I fix it?")
+
+    def test_clean_commands_get_no_button(self, console):
+        before = console._transcript_marks.count
+        console.execute("1 + 1")
+        assert console._transcript_marks.count == before
+
+    def test_a_script_error_gets_a_button_on_its_line(self, console, cedric, app):
+        panel, fake = cedric
+        console.show_script()
+        document = console.editor.new_document()
+        console.editor.set_language("matlab")
+        script = "a = 1;\nb = undefined_thing_q;\nc = 3;"
+        console.editor.set_text(script)
+        console._run_script(console.editor.text(), "matlab")
+        _settle(app)
+        marks = document.code._cedric_marks
+        assert marks.count == 1
+        fake.reply = "Define it first:\n```evans-edit\nb = 2;\n```"
+        marks.buttons()[0].click()
+        _settle(app)
+        user = fake.sent[-1]["messages"][-1]["content"]
+        assert "b = undefined_thing_q;" in user and "c = 3;" not in user
+        assert user.endswith("What is wrong here, and how do I fix it?")
+        card = [w for w in panel.cards() if isinstance(w, EditCard)][-1]
+        assert card.apply()
+        assert document.code.toPlainText() == script.replace(
+            "undefined_thing_q", "2")
+        _settle(app)
+        assert marks.count == 0                    # its line is gone
+
+
+class TestPanelKeys:
+    def test_enter_sends_and_shift_enter_breaks_the_line(self, cedric, app):
+        from PySide6.QtCore import QEvent, Qt
+        from PySide6.QtGui import QKeyEvent
+        panel, fake = cedric
+        box = panel._input
+        box.setPlainText("first line")
+        box.moveCursor(QTextCursor.End)
+        QApplication.sendEvent(box, QKeyEvent(QEvent.KeyPress, Qt.Key_Return,
+                                              Qt.ShiftModifier))
+        assert fake.sent == [] and "\n" in box.toPlainText()
+        QApplication.sendEvent(box, QKeyEvent(QEvent.KeyPress, Qt.Key_Return,
+                                              Qt.NoModifier))
+        _settle(app)
+        assert len(fake.sent) == 1
+        assert box.toPlainText() == ""
+
+
+def test_the_diff_has_no_headers():
+    from evans.ui.assistant.panel import GAP, diff_lines
+    old = "\n".join(f"line {i}" for i in range(20))
+    new = old.replace("line 1\n", "line one\n").replace("line 18", "line 18!")
+    lines = diff_lines(old, new)
+    assert not any(line.startswith(("---", "+++", "@@")) for line in lines)
+    assert "-line 1" in lines and "+line one" in lines and GAP in lines

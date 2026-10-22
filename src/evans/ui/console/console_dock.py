@@ -12,8 +12,8 @@ from __future__ import annotations
 from collections.abc import Iterable
 from pathlib import Path
 
-from PySide6.QtCore import QEventLoop, Qt, Signal
-from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtCore import QEventLoop, QSize, Qt, Signal
+from PySide6.QtGui import QKeySequence, QShortcut, QTextDocument
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -30,8 +30,11 @@ from ...console import tracer as dbg
 from ...console.figures import FigureSpec, set_figure_sink
 from ...console.interpreter import Interpreter, Result
 from ...console.matlab import looks_like_matlab
-from .. import iconset
+from .. import iconset, theme
 from ..assistant import AskCedricFloat, ConsoleSource, EditorSource, SwitchSource
+from ..assistant.ask_float import FIX
+from ..assistant.error_ask import ErrorMarks, spaced
+from ..cedric import cedric_icon
 from ..code import (
     CodeEditor,
     Context,
@@ -548,12 +551,21 @@ class ConsolePanel(QWidget):
         # their per-widget hooks below, which use them.
         #: The last error anything here printed: the prompt, a run, a cell.
         self.last_error = ""
+        #: The last command typed at the prompt that failed ("" once one
+        #: has run cleanly since): what Cedric fixes when the prompt is empty.
+        self.last_failed_command = ""
+        prompt = self.console._input
         self._console_source = ConsoleSource(
-            self.console._input, self.console._transcript,
-            language=lambda: ("matlab" if looks_like_matlab(
-                self.console._input.text()) else "python"),
+            prompt, self.console._transcript,
+            language=lambda: ("matlab" if looks_like_matlab(prompt.text())
+                              else "python"),
             variables=self.interpreter.variables,
-            last_error=lambda: self.last_error)
+            last_error=lambda: self.last_error,
+            failed_command=lambda: self.last_failed_command,
+            # Accepting an edit at the prompt runs it, as Enter would.
+            submit=lambda: prompt.submitted.emit(prompt.text()))
+        #: Ask Cedric beside each failed command in the transcript.
+        self._transcript_marks = ErrorMarks(self.console._transcript)
         self._script_source = EditorSource(
             lambda: self.editor.code, where="script",
             language=self.editor.language,
@@ -595,8 +607,14 @@ class ConsolePanel(QWidget):
         # action that shows and hides his dock.
         self.cedric_button = QToolButton()
         self.cedric_button.setObjectName("cedricButton")
-        self.cedric_button.setText("Cedric")
-        self.cedric_button.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        self.cedric_button.setText("Ask Cedric")
+        self.cedric_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.cedric_button.setIconSize(QSize(34, 24))
+        self.cedric_button.setFont(spaced(theme.sign_font(9)))
+        self.cedric_button.setProperty("_hp_font", True)   # past the theme's hook
+        self.cedric_button.setCursor(Qt.PointingHandCursor)
+        self._style_cedric_button()
+        theme.notifier().changed.connect(self._style_cedric_button)
         self._tabs.setCornerWidget(self.cedric_button, Qt.TopRightCorner)
 
         layout.addWidget(self._tabs)
@@ -682,6 +700,26 @@ class ConsolePanel(QWidget):
 
     # ── Cedric ──────────────────────────────────────────────────
 
+    def _style_cedric_button(self, *_ignored) -> None:
+        """
+        A plate with Cedric on it, black while his panel is closed and sign
+        yellow while it is open: the way in has to be seen to be used.
+        """
+        t = theme.tokens()
+        icon = cedric_icon(34, 24)
+        self.cedric_button.setIcon(icon)
+        action = self.cedric_button.defaultAction()
+        if action is not None:
+            action.setIcon(icon)
+        self.cedric_button.setStyleSheet(
+            f"QToolButton#cedricButton {{ background: {t.plate};"
+            f" color: {t.on_plate}; border: 2px solid {t.plate};"
+            f" padding: 1px 10px 1px 4px; margin: 2px;"
+            f" border-radius: {theme.RADIUS_PLATE}px; }}"
+            f"QToolButton#cedricButton:hover {{ border-color: {t.signal}; }}"
+            f"QToolButton#cedricButton:checked {{ background: {t.signal};"
+            f" color: {t.on_signal}; border-color: {t.on_signal}; }}")
+
     def _attach_ask(self, widget, source) -> AskCedricFloat:
         """The floating Ask Cedric button on ``widget``, asking ``source``."""
         return AskCedricFloat(widget, lambda action: self.cedric_requested.emit(
@@ -714,8 +752,60 @@ class ConsolePanel(QWidget):
         return self.last_error
 
     def _note_result(self, result) -> None:
-        if result is not None and result.error:
+        if result is None:
+            return
+        if result.error:
             self.last_error = result.error
+        if self._running_script:
+            return                     # a run's error is marked in its script
+        self.last_failed_command = result.source if result.error else ""
+        if result.error:
+            self._mark_console_error(result.source, result.error)
+
+    def _mark_console_error(self, command: str, error: str) -> None:
+        """Ask Cedric at the end of the error the transcript just printed."""
+        lines = [line for line in error.splitlines() if line.strip()]
+        if not lines:
+            return
+        document = self.console._transcript.document()
+        found = document.find(lines[-1], document.characterCount(),
+                              QTextDocument.FindBackward)
+        if found.isNull():
+            return
+        source = self._console_source
+
+        def ask() -> None:
+            self.cedric_requested.emit(source.failed_context(command, error),
+                                       source, FIX)
+
+        self._transcript_marks.add(found.position(), ask,
+                                   "Ask Cedric to fix this command")
+
+    def _mark_script_error(self, document: ScriptDocument, line: int,
+                           error: str) -> None:
+        """Ask Cedric at the end of the line a script run failed on."""
+        code = document.code
+        marks = self._script_marks(code)
+        language = self.editor._language_of(document)
+        source = EditorSource(code, where="script", language=language,
+                              variables=self.interpreter.variables,
+                              last_error=lambda: error)
+
+        def ask() -> None:
+            self.cedric_requested.emit(source.line_context(line, error),
+                                       source, FIX)
+
+        marks.add_line(line, ask, "Ask Cedric to fix this line")
+
+    def _script_marks(self, code: CodeEditor) -> ErrorMarks:
+        marks = getattr(code, "_cedric_marks", None)
+        if marks is None:
+            marks = ErrorMarks(code)
+            code._cedric_marks = marks
+            # Gone with the tint: the editor drops it on the first edit.
+            code.textChanged.connect(
+                lambda: code.error_line is None and marks.clear())
+        return marks
 
     def _note_live_error(self) -> None:
         failed = next((c for c in self.live.document.code_cells()
@@ -879,6 +969,7 @@ class ConsolePanel(QWidget):
         document = document or self.editor.current_document()
         failed = next((r for r in results if r.error), None)
         what = "Section" if section else "Run"
+        self._script_marks(document.code).clear()
         if failed is not None:
             self.last_error = failed.error
         if failed is None:
@@ -887,6 +978,7 @@ class ConsolePanel(QWidget):
         if failed.line and document in self.editor.documents():
             self.editor.show_document(document)
             document.code.set_error_line(failed.line)
+            self._mark_script_error(document, failed.line, failed.error)
         where = f" at line {failed.line}" if failed.line else ""
         stopped = failed.error.startswith(str(dbg.Interrupted(None)))
         self.editor.set_status(f"{what} {'stopped' if stopped else 'failed'}"

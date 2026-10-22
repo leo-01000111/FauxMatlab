@@ -924,9 +924,12 @@ class MainWindow(QMainWindow):
         act_cedric.setStatusTip(
             "Cedric, the assistant: ask a free AI model about your code")
         act_cedric.triggered.connect(self.set_cedric_visible)
+        # What the console's tab-bar button says (the menu keeps "Cedric").
+        act_cedric.setIconText("Ask Cedric")
         self._act_cedric = act_cedric
         view_menu.addAction(act_cedric)
         self._console.cedric_button.setDefaultAction(act_cedric)
+        self._console._style_cedric_button()        # his drawing on both
 
         view_menu.addSeparator()
 

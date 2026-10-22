@@ -66,7 +66,8 @@ class Context:
     code: str = ""
     #: What ``code`` is: ``"selection"``, ``"section"``, ``"line"``,
     #: ``"cell"`` (a live-script cell), ``"prompt"`` (the console's input
-    #: line, typed but not run) or ``""``.
+    #: line, typed but not run), ``"failed"`` (what raised the last error)
+    #: or ``""``.
     origin: str = ""
     region: Region | None = None
     variables: list[Variable] = field(default_factory=list)
@@ -84,7 +85,9 @@ class Context:
         parts = []
         if self.code:
             lines = self.code.count("\n") + 1
-            parts.append(f"{self.origin} ({lines} line{'s' if lines != 1 else ''}"
+            what = {"prompt": "prompt line",
+                    "failed": "failed code"}.get(self.origin, self.origin)
+            parts.append(f"{what} ({lines} line{'s' if lines != 1 else ''}"
                          f"{', cut' if self.truncated else ''})")
         if self.attachment:
             lines = self.attachment.count("\n") + 1
@@ -258,6 +261,8 @@ def render(context: Context) -> str:
                 "line": "Current line", "cell": "Current live-script cell",
                 "prompt": "Typed at the console prompt, not run yet "
                           "(one line: an edit must stay on one line)",
+                "failed": "The code that failed (an edit replaces it; "
+                          "in the console, keep it to one line)",
                 }.get(context.origin, "Code")
         cut = " (cut short; do not propose an edit)" if context.truncated else ""
         out.append(f"{what}{cut}:\n```{context.language}\n{context.code}\n```")

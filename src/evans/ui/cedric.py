@@ -23,7 +23,7 @@ import random
 import time
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPen
+from PySide6.QtGui import QColor, QFontMetrics, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QApplication, QSizePolicy, QWidget
 
 from . import theme
@@ -384,3 +384,24 @@ class CedricMark(QWidget):
             p.translate(0, -0.06 * r.height() * bob)
         paint_shape(p, scale, now, ink_for(theme.tokens()),
                     antenna_speed=2.0 if self.swimming else 1.0)
+
+
+def cedric_icon(width: int = 30, height: int = 21) -> QIcon:
+    """
+    Cedric as a still icon for a button, in the current theme's ink.
+
+    Drawn at twice the size and scaled down by the device-pixel ratio, so
+    his hatching stays crisp on a high-density screen.
+    """
+    ratio = 2.0
+    pixmap = QPixmap(int(width * ratio), int(height * ratio))
+    pixmap.setDevicePixelRatio(ratio)
+    pixmap.fill(Qt.transparent)
+    p = QPainter(pixmap)
+    p.setRenderHint(QPainter.Antialiasing)
+    r = QRectF(0, 0, width, height).adjusted(0.5, 1, -0.5, -1)
+    scale = min(r.width() / VIEW.width(), r.height() / VIEW.height())
+    p.translate(r.center())
+    paint_shape(p, scale, 0.0, ink_for(theme.tokens()))
+    p.end()
+    return QIcon(pixmap)

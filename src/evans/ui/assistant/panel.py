@@ -26,8 +26,8 @@ import sys
 import threading
 from collections.abc import Callable
 
-from PySide6.QtCore import QObject, Qt, QTimer, Signal
-from PySide6.QtGui import QFontMetrics, QKeySequence, QShortcut
+from PySide6.QtCore import QEvent, QObject, Qt, QTimer, Signal
+from PySide6.QtGui import QFontMetrics
 from PySide6.QtWidgets import (
     QComboBox,
     QDockWidget,
@@ -188,7 +188,9 @@ class AssistantPanel(QWidget):
         ask = QHBoxLayout(self._ask_row)
         ask.setContentsMargins(0, 0, 0, 0)
         self._input = QPlainTextEdit()
-        self._input.setPlaceholderText("Ask Cedric…  (Ctrl+Enter)")
+        self._input.setPlaceholderText(
+            "Ask Cedric…  (Enter sends, Shift+Enter for a new line)")
+        self._input.installEventFilter(self)
         self._input.setFixedHeight(64)
         ask.addWidget(self._input, stretch=1)
         self._send_button = QPushButton("Ask")
@@ -196,10 +198,6 @@ class AssistantPanel(QWidget):
         self._send_button.clicked.connect(self._send_or_stop)
         ask.addWidget(self._send_button, alignment=Qt.AlignBottom)
         layout.addWidget(self._ask_row)
-        for keys in ("Ctrl+Return", "Ctrl+Enter"):
-            QShortcut(QKeySequence(keys), self._input,
-                      activated=self._send_or_stop,
-                      context=Qt.WidgetShortcut)
 
         self.check_key()
 
@@ -367,6 +365,15 @@ class AssistantPanel(QWidget):
     @property
     def busy(self) -> bool:
         return self._cancel is not None
+
+    def eventFilter(self, obj, event) -> bool:     # noqa: N802 (Qt API)
+        """Enter sends, as in a chat; Shift+Enter starts a new line."""
+        if obj is self._input and event.type() == QEvent.KeyPress \
+                and event.key() in (Qt.Key_Return, Qt.Key_Enter) \
+                and not event.modifiers() & Qt.ShiftModifier:
+            self._send_or_stop()
+            return True
+        return super().eventFilter(obj, event)
 
     def _send_or_stop(self) -> None:
         if self.busy:
@@ -622,6 +629,51 @@ def _note(text: str, *, error: bool = False) -> QLabel:
     return label
 
 
+#: Between two far-apart changes in one diff.
+GAP = "⋯"
+
+
+def diff_lines(original: str, replacement: str) -> list[str]:
+    """
+    The diff as the card shows it: changed lines in red and green with
+    their context, and none of a unified diff's file and hunk headers —
+    a gap mark stands between hunks instead.
+    """
+    out: list[str] = []
+    for line in protocol.diff(original, replacement):
+        if line.startswith(("---", "+++")):
+            continue
+        if line.startswith("@@"):
+            if out:
+                out.append(GAP)
+            continue
+        out.append(line)
+    return out
+
+
+class _FitText(QTextEdit):
+    """Read-only, wrapped, and exactly as tall as its text (up to a cap)."""
+
+    MAX_LINES = 30
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setReadOnly(True)
+        self.setLineWrapMode(QTextEdit.WidgetWidth)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.document().setDocumentMargin(4)
+        self.document().documentLayout().documentSizeChanged.connect(self._fit)
+
+    def resizeEvent(self, event) -> None:       # noqa: N802 (Qt API)
+        super().resizeEvent(event)
+        self._fit()
+
+    def _fit(self, *_ignored) -> None:
+        cap = self.MAX_LINES * QFontMetrics(self.font()).lineSpacing()
+        height = min(self.document().size().height(), cap)
+        self.setFixedHeight(int(height) + 2 * self.frameWidth() + 2)
+
+
 class EditCard(QFrame):
     """A proposed edit: its diff, then Apply or Reject."""
 
@@ -634,23 +686,18 @@ class EditCard(QFrame):
         box = QVBoxLayout(self)
         box.setContentsMargins(6, 6, 6, 6)
         what = {"selection": "the selection", "section": "this section",
-                "line": "this line"}.get(context.origin, "the code")
+                "line": "this line", "cell": "this cell",
+                "prompt": "the prompt line",
+                "failed": "the code that failed"}.get(context.origin, "the code")
         title = QLabel(f"Proposed edit to {what}")
         title.setFont(theme.label_font(8))
         box.addWidget(title)
 
-        self.view = QTextEdit()
-        self.view.setReadOnly(True)
+        self.view = _FitText()
         self.view.setFont(theme.data_font(8.5))
-        self.view.document().setDocumentMargin(4)
-        self.view.setLineWrapMode(QTextEdit.NoWrap)
-        self._lines = protocol.diff(context.region.text if context.region else "",
-                                    edit.code)
+        self._lines = diff_lines(context.code, edit.code)
         self._render()
         theme.notifier().changed.connect(self._render)
-        rows = min(max(len(self._lines), 3), 18)
-        self.view.setFixedHeight(
-            (rows + 1) * QFontMetrics(self.view.font()).lineSpacing() + 8)
         box.addWidget(self.view)
 
         row = QHBoxLayout()
@@ -682,10 +729,9 @@ class EditCard(QFrame):
         t = theme.tokens()
         rows = []
         for line in self._lines:
-            colour = (t.lamp_go if line.startswith("+") and not line.startswith("+++")
-                      else t.hold_ink if line.startswith("-") and not line.startswith("---")
-                      else t.edge if line.startswith("@@")
-                      else t.ink_muted if line.startswith(("+++", "---"))
+            colour = (t.lamp_go if line.startswith("+")
+                      else t.hold_ink if line.startswith("-")
+                      else t.ink_muted if line == GAP
                       else t.ink)
             rows.append(f"<span style='color:{colour}'>{html.escape(line) or '&nbsp;'}</span>")
         # Rich text ignores the widget's font: name the mono face outright.
