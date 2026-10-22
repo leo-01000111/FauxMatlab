@@ -129,6 +129,7 @@ class ScriptEditor(QWidget):
         self._documents: list[ScriptDocument] = []
         self._completion = None
         self._completion_source = None
+        self._follow = None
         #: The tab a run is using, which must not be closed under it.
         self._busy: ScriptDocument | None = None
 
@@ -272,6 +273,8 @@ class ScriptEditor(QWidget):
             code.set_completion(self._completion)
         if self._completion_source is not None:
             code.set_completion_source(self._completion_source)
+        if self._follow is not None:
+            self._follow(code)
         code.installEventFilter(self._keys)
         self._documents.append(document)
         self._tabs.addTab(code, document.name)
@@ -521,6 +524,15 @@ class ScriptEditor(QWidget):
         self._completion = request
         for document in self._documents:
             document.code.set_completion(request)
+
+    def set_follow(self, attach) -> None:
+        """
+        Hover and Ctrl+click on every tab: ``attach(code_editor)`` sets them
+        up on one, now for the open tabs and later for each new one.
+        """
+        self._follow = attach
+        for document in self._documents:
+            attach(document.code)
 
     def completion_language(self) -> str:
         """

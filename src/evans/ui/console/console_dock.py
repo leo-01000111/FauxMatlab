@@ -31,7 +31,11 @@ from ...console.figures import FigureSpec, set_figure_sink
 from ...console.interpreter import Interpreter, Result
 from .. import iconset
 from ..code import (
+    CodeEditor,
+    Context,
+    FollowController,
     MatlabHighlighter,
+    Target,
     code_request,
     warm_up,
 )
@@ -535,6 +539,15 @@ class ConsolePanel(QWidget):
         self._tabs.currentChanged.connect(
             lambda _index: self.figure_area_wanted.emit(not self.live_active))
 
+        # Hover for syntax and Ctrl+click to go, wherever code is written
+        # or shown: the script tabs, the live cells, the prompt, the output.
+        self.editor.set_follow(lambda widget: self._attach_follow(
+            widget, self._folder))
+        self.live.set_follow(lambda widget: self._attach_follow(
+            widget, lambda: self.live.folder or self._folder()))
+        self._attach_follow(self.console._input, self._folder)
+        self._attach_follow(self.console._transcript, self._folder)
+
         layout.addWidget(self._tabs)
 
         self.console.executed.connect(self.workspace.refresh)
@@ -575,6 +588,44 @@ class ConsolePanel(QWidget):
             shortcut = QShortcut(QKeySequence(key), self)
             shortcut.setContext(Qt.WidgetWithChildrenShortcut)
             shortcut.activated.connect(slot)
+
+    # ── hover and Ctrl+click ────────────────────────────────────
+
+    def _attach_follow(self, widget, folder) -> FollowController:
+        """Hover and Ctrl+click on ``widget``, looking in ``folder()``."""
+        return FollowController(
+            widget, lambda: self._follow_context(folder()), self.follow)
+
+    def _follow_context(self, folder: Path) -> Context:
+        interpreter = self.interpreter
+        return Context(
+            find_file=lambda name: self._function_file(name, folder),
+            is_variable=lambda name: name in interpreter.variables(),
+            python=lambda name: interpreter.namespace.get(name))
+
+    def _function_file(self, name: str, folder: Path) -> Path | None:
+        """``name.m`` in ``folder``, then on the path ``addpath`` built."""
+        runtime = self.interpreter._matlab_runtime()
+        for place in [folder, *runtime.path]:
+            path = Path(place) / f"{name}.m"
+            if path.is_file():
+                return path
+        return None
+
+    def follow(self, target: Target, widget=None) -> None:
+        """
+        Go where a Ctrl+click points: a local function's line in the same
+        editor, a function file in a script tab, a built-in's help page.
+        """
+        if target.kind == "local" and isinstance(widget, CodeEditor):
+            widget.goto_line(target.line)
+            widget.setFocus()
+        elif target.kind == "file" and target.path is not None:
+            self._tabs.setCurrentWidget(self.editor)
+            self.editor.load_file(target.path, target.line).code.setFocus()
+        elif target.kind == "help":
+            from ..help import open_help
+            open_help(target.name)
 
     @property
     def live_active(self) -> bool:
