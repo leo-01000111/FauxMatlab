@@ -24,6 +24,9 @@ dependencies = [
     # Already required by python-control; named because live scripts use it
     # directly — mathtext draws their equations, Agg their report figures.
     "matplotlib>=3.8",
+    # The assistant panel's OpenRouter client: streamed replies that Stop
+    # can cut off, and a mock transport so its tests never touch the network.
+    "httpx>=0.27",
 ]
 
 [project.optional-dependencies]
