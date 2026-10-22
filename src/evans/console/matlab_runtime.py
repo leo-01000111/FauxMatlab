@@ -2268,7 +2268,12 @@ class _Library:
         return np.roots(np.asarray(p, float).reshape(-1)).reshape(-1, 1)
 
     def f_poly(self, r):
-        return np.real_if_close(np.poly(np.asarray(r)))
+        # A vector of roots, row or column (roots returns a column), or a
+        # square matrix for its characteristic polynomial.
+        r = np.asarray(r)
+        if r.ndim != 2 or 1 in r.shape:
+            r = r.reshape(-1)
+        return np.real_if_close(np.poly(r))
 
     def f_polyval(self, p, x):
         out = np.polyval(np.asarray(p).reshape(-1), x)

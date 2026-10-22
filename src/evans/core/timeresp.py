@@ -138,7 +138,13 @@ def step_response(
     poles = np.atleast_1d(ctl.poles(tf))
     if len(poles) and all(p.real < -1e-12 for p in poles):
         from .tf_utils import dc_gain
-        gain = dc_gain(tf)
+        # dc_gain reads coefficients, so a state-space model asks
+        # python-control instead; a MIMO gain is a matrix, and has no one value.
+        if isinstance(tf, ctl.TransferFunction):
+            gain = dc_gain(tf)
+        else:
+            gain = np.real(np.asarray(ctl.dcgain(tf), dtype=complex))
+            gain = float(gain) if gain.size == 1 else float("nan")
         if np.isfinite(gain):
             meta["y_inf_exact"] = float(gain) * amplitude
 

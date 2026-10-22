@@ -99,6 +99,10 @@ a = Analysis(
            # button in the frozen build would show its text and no icon.
            (str(ROOT / "src" / "evans" / "ui" / "icons" / "*"),
             "evans/ui/icons"),
+           # The help pages, read by path too: without them the help window
+           # opens on "No page" for everything.
+           (str(ROOT / "src" / "evans" / "help" / "pages" / "*.md"),
+            "evans/help/pages"),
            # The licences travel with the build: MIT for the code, and
            # Cedric's all-rights-reserved notice for the character it shows.
            (str(ROOT / "LICENSE"), "."),
