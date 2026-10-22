@@ -606,7 +606,10 @@ class Runtime:
         #: Folders added with ``addpath``, searched after the current one.
         self.path: list[str] = []
         self._listing: dict[str, set[str]] = {}
-        self._files: dict[str, tuple[int, Callable]] = {}
+        self._files: dict[str, tuple[int, Callable, list]] = {}
+        #: The interpreter's :class:`~.tracer.Tracer`, so that a function
+        #: file's lines can be stopped in and paused on as a script's are.
+        self.tracer = None
         #: Set once "no audio output" has been said, so it is said once.
         self._quiet = False
         self.lib = _Library(self)
@@ -716,6 +719,7 @@ class Runtime:
                               f"'{name}'.") from None
         cached = self._files.get(path)
         if cached is not None and cached[0] == stamp:
+            self._watch_file(cached[2], path)
             return cached[1]
         from .matlab import MatlabSyntaxError, translate
         with open(path, "rb") as fh:
@@ -731,16 +735,21 @@ class Runtime:
                               f"{exc.message}") from None
         functions = [c for c in chunks if c.function]
         filename = f"<{name}.m>"
+        watched = []
         if functions and min(c.first for c in functions) == min(
                 c.first for c in chunks):
             scope = dict(self.base)
             scope["__ml__"] = self
             for chunk in functions:
-                exec(compile(chunk.python, filename, "exec"), scope)
+                code = compile(chunk.python, filename, "exec")
+                watched.append((code, chunk.lines, True))
+                exec(code, scope)
             main = min(functions, key=lambda c: c.first)
             fn = scope[re.search(r"^def (\w+)\(", main.python, re.M).group(1)]
         else:
             codes = [compile(c.python, filename, "exec") for c in chunks]
+            watched = [(code, c.lines, c.function)
+                       for code, c in zip(codes, chunks)]
 
             def fn(*_args, nargout=0):
                 for code in codes:
@@ -748,8 +757,23 @@ class Runtime:
 
             fn._ml_function = fn._ml_nargout = True
             fn.__name__ = name
-        self._files[path] = (stamp, fn)
+        self._files[path] = (stamp, fn, watched)
+        self._watch_file(watched, path)
         return fn
+
+    def _watch_file(self, watched: list, path: str) -> None:
+        """
+        Hand a function file's code to the tracer, under the file's own
+        line numbers. Again at every call: a run's end forgets code the
+        workspace does not hold, and this cache is not the workspace.
+        """
+        if self.tracer is None:
+            return
+        from .tracer import file_key
+        key = file_key(path)
+        for code, lines, quiet in watched:
+            self.tracer.watch(code, lines, debuggable=True, quiet=quiet,
+                              file=key)
 
     def value(self, x):
         """A bare function name in an expression calls it with no inputs."""

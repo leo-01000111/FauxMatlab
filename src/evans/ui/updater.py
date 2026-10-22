@@ -247,6 +247,10 @@ class Updater(QObject):
 
     def _install(self, installer: Path, *, relaunch: bool,
                  quit_app: bool = True) -> bool:
+        # Unsaved scripts first: once the installer runs, Evans is closing.
+        confirm = getattr(self._window, "confirm_quit", None)
+        if quit_app and confirm is not None and not confirm():
+            return False
         if not self._launch(str(installer),
                             update.installer_arguments(relaunch=relaunch)):
             self._tell("Update", "The installer could not be started. "

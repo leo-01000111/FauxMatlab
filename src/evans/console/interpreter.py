@@ -149,7 +149,7 @@ class Interpreter:
         except Interrupted as exc:
             result.output = buffer.getvalue()
             result.error = str(exc)
-            result.line = exc.line
+            result.line = exc.line if exc.file is None else None
             return result
         except BaseException as exc:                        # noqa: BLE001
             result.output = buffer.getvalue()
@@ -355,7 +355,8 @@ class Interpreter:
                 except Interrupted as exc:
                     result.output = buffer.getvalue()
                     result.error = str(exc)
-                    result.line = exc.line
+                    # A line of another file must not tint the script's.
+                    result.line = exc.line if exc.file is None else None
                     done(result)
                     break
                 except SyntaxError as exc:              # our bug, not theirs
@@ -396,6 +397,7 @@ class Interpreter:
                 self.namespace.get("__ml__") is not self._matlab:
             self._matlab = Runtime(self.namespace, base=self._presets,
                                    clear=self.clear)
+            self._matlab.tracer = self.tracer
             self.namespace["__ml__"] = self._matlab
         return self._matlab
 

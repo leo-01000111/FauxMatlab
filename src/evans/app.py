@@ -157,6 +157,9 @@ def main() -> None:
     win.raise_()
     splash.finish(win)
 
+    # The scripts that were open when Evans last closed.
+    win.reopen_scripts()
+
     # `Evans.exe model.fmdl`: the file association, or a drop on the exe.
     for path in _file_arguments(app.arguments()[1:]):
         win.open_recent(path)

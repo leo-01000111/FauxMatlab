@@ -106,6 +106,8 @@ class MainWindow(QMainWindow):
         self._app_docks: dict[str, QDockWidget] = {}
         #: Scripts and models opened or saved, for File ▸ Open recent.
         self.recent_files = RecentFiles()
+        #: Unsaved scripts were settled for quitting; see `confirm_quit`.
+        self._quit_confirmed = False
         # Before the menus: the title bar holds the menu bar they fill.
         self._title_bar = TitleBar(self)
         #: Help ▸ Check for updates; before the menus, which call it.
@@ -527,7 +529,25 @@ class MainWindow(QMainWindow):
             action.setChecked(workspace is current)
             action.blockSignals(False)
 
+    def confirm_quit(self) -> bool:
+        """
+        Settle scripts with unsaved changes before Evans closes: save,
+        discard or cancel each. False means stay open. Asked once, so a
+        restart that asks first does not ask again as the window closes.
+        """
+        if not self._quit_confirmed:
+            self._quit_confirmed = self._console.editor.confirm_close_all()
+        return self._quit_confirmed
+
+    def reopen_scripts(self) -> int:
+        """The scripts open when Evans last closed, in their tabs again."""
+        return self._console.editor.reopen_remembered()
+
     def closeEvent(self, event) -> None:
+        if not self.confirm_quit():
+            event.ignore()
+            return
+        self._console.editor.remember_open()
         self.save_layout()
         # "Update when I close Evans": the installer takes over from here.
         self.updater.install_pending()
@@ -757,7 +777,9 @@ class MainWindow(QMainWindow):
 
     def _restart(self) -> bool:
         """Start a new Evans with the same arguments, then close this one."""
-        if getattr(sys, "frozen", False):         # Evans.exe
+        if not self.confirm_quit():
+            return False
+        if getattr(sys, "frozen", False):        # Evans.exe
             program, args = sys.executable, sys.argv[1:]
         else:                                     # python app.py / evans
             program = sys.executable
