@@ -175,11 +175,24 @@ td.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; whit
 
 /* Report an issue, in the header beside Download. The bug stays put on hover,
    and on a phone the button is the bug alone. */
-.hp-btn--issue:hover svg, .hp-btn--coffee:hover svg { transform: none; }
+.hp-btn--issue:hover svg { transform: none; }
 @media (max-width: 640px) {
   .hp-btn--issue { padding: 0 var(--space-2); }
   .hp-btn--issue span { display: none; }
 }
+
+/* Buy me a coffee: coffee brown and cream, apart from the yellow of the
+   download, so it never reads as part of installing. The cup stays put. */
+.hp-btn--coffee { background: #6f4e37; color: #fff4e3; }
+.hp-btn--coffee:hover { transform: translate(-2px, -2px); box-shadow: var(--shadow-lift); }
+.hp-btn--coffee:hover svg { transform: none; }
+.coffee {
+  display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: var(--space-2) var(--space-4);
+  max-width: 62ch; margin: var(--space-5) auto 0; padding: var(--space-3) var(--space-4);
+  box-shadow: inset 0 0 0 1px var(--ink-muted); text-align: left;
+}
+.coffee p { flex: 1 1 24ch; margin: 0; color: var(--ink-muted); font-size: 14px; }
+@media (max-width: 640px) { .coffee .hp-btn { width: 100%; } }
 
 /* "(12 already installed)" under the Windows and macOS headings, from the
    download counter. */

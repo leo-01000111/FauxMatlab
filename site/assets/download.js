@@ -37,7 +37,6 @@
   var INSTALLER = /^Evans-Setup-[\d.]+\.exe$/;
   var DISK_IMAGE = /^Evans-[\d.]+-macos-arm64\.dmg$/;
   var COUNTER = "dl/";
-  var KOFI = "https://ko-fi.com/leongorecki";
   /* The oldest macOS the app runs on: PySide6's wheels need 13. */
   var MAC_MIN = 13;
 
@@ -137,8 +136,7 @@
             "<p>Didn’t start? " + again + " · " + all + "</p>" +
             "<ol>" + steps.map(function (s) { return "<li>" + s + "</li>"; })
                           .join("") + "</ol>" +
-            (more ? "<p>" + more + "</p>" : "") +
-            '<p>Enjoying Evans? <a href="' + KOFI + '">Buy me a coffee</a>.</p>', true);
+            (more ? "<p>" + more + "</p>" : ""), true);
   }
 
   /*
