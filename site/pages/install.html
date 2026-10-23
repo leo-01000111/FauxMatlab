@@ -17,6 +17,7 @@
     <section class="proj-section os-grid" aria-label="Install on your system">
       <div class="card prose" id="windows-col">
         <h2>Windows</h2>
+        <p class="install-count" data-installed="windows" hidden></p>
         <h3 id="installer">The installer (recommended)</h3>
         <ol>
           <li>Open the <a href="@@releases@@">latest release</a> and download <code>Evans-Setup-@@version@@.exe</code> from its Assets list.</li>
@@ -44,6 +45,7 @@
 
       <div class="card prose" id="macos">
         <h2>macOS</h2>
+        <p class="install-count" data-installed="mac" hidden></p>
         <h3 id="dmg">The disk image</h3>
         <p>For Macs with Apple Silicon (M1 or later) on macOS 13 Ventura or newer. To check, open the Apple menu → <strong>About This Mac</strong>: the chip should say Apple M-something. An Intel Mac or an older macOS can run Evans <a href="#source">from source</a>.</p>
         <ol>

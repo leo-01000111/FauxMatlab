@@ -1,0 +1,19 @@
+# The download counter (src/index.js). Deploy from this folder:
+#   npx wrangler deploy
+# The salt for the visitor hashes is a secret, never in the repository:
+#   npx wrangler secret put SALT
+
+name = "evans-downloads"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+account_id = "132e27a21214b7c61521d15d056889f9"
+workers_dev = false
+
+routes = [
+  { pattern = "www.leongorecki.eu/evans/dl/*", zone_name = "leongorecki.eu" },
+]
+
+# count:windows and count:mac hold the totals; seen:* the day's visitor hashes.
+kv_namespaces = [
+  { binding = "DL", id = "f1fe87738c1d40bda4580c088578cf5c" },
+]

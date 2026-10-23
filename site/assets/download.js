@@ -23,6 +23,12 @@
  * Every button starts as a plain link that works without JavaScript. The
  * file's address and size come from GitHub's API; if it does not answer,
  * the big button keeps the release page, so it never points nowhere.
+ *
+ * The big button goes through the download counter (worker/, served at
+ * dl/ beside these pages), which counts the download and redirects to the
+ * same file. Only once the counter has answered: where it does not (a local
+ * build, an outage), the button points at GitHub directly. Its totals go
+ * under the Windows and macOS headings ([data-installed]).
  */
 (function () {
   "use strict";
@@ -30,6 +36,8 @@
   var API = "https://api.github.com/repos/leo-01000111/evans/releases/latest";
   var INSTALLER = /^Evans-Setup-[\d.]+\.exe$/;
   var DISK_IMAGE = /^Evans-[\d.]+-macos-arm64\.dmg$/;
+  var COUNTER = "dl/";
+  var KOFI = "https://ko-fi.com/leongorecki";
   /* The oldest macOS the app runs on: PySide6's wheels need 13. */
   var MAC_MIN = 13;
 
@@ -129,7 +137,8 @@
             "<p>Didn’t start? " + again + " · " + all + "</p>" +
             "<ol>" + steps.map(function (s) { return "<li>" + s + "</li>"; })
                           .join("") + "</ol>" +
-            (more ? "<p>" + more + "</p>" : ""), true);
+            (more ? "<p>" + more + "</p>" : "") +
+            '<p>Enjoying Evans? <a href="' + KOFI + '">Buy me a coffee</a>.</p>', true);
   }
 
   /*
@@ -169,9 +178,39 @@
     return release;
   }
 
-  /* Point the big button at the file matching `asset`, and say its size. */
-  function file(buttons, asset, kind) {
-    latest().then(function (rel) {
+  /* The counter's totals, {windows, mac, total}, or null where it is down. */
+  var counting = null;
+  function counter() {
+    if (counting) return counting;
+    counting = !window.fetch ? Promise.resolve(null) :
+      fetch(COUNTER + "count")
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .catch(function () { return null; });
+    return counting;
+  }
+
+  /* "(12 already installed)" under each system's heading. */
+  function installed() {
+    var lines = document.querySelectorAll("[data-installed]");
+    if (!lines.length) return;
+    counter().then(function (totals) {
+      if (!totals) return;
+      Array.prototype.forEach.call(lines, function (p) {
+        var n = totals[p.getAttribute("data-installed")];
+        if (typeof n !== "number") return;
+        p.textContent = "(" + n.toLocaleString("en") + " already installed)";
+        p.hidden = false;
+      });
+    });
+  }
+
+  /*
+   * Point the big button at the file matching `asset`, through the counter
+   * at dl/`slug` when it is up, and say its size.
+   */
+  function file(buttons, asset, kind, slug) {
+    Promise.all([latest(), counter()]).then(function (got) {
+      var rel = got[0], counted = !!got[1];
       var assets = (rel && rel.assets) || [];
       var f = assets.filter(function (a) { return asset.test(a.name); })[0];
       buttons.forEach(function (b) {
@@ -181,7 +220,7 @@
           line(b, "size", "All downloads on GitHub");
           return;
         }
-        b.href = f.browser_download_url;
+        b.href = counted ? COUNTER + slug : f.browser_download_url;
         b.setAttribute("title", f.name);
         b.setAttribute("data-download-release", rel.html_url);
         line(b, "size", kind + " size: " + Math.round(f.size / 1048576) +
@@ -210,7 +249,7 @@
                 '<a href="#windows">Take the portable zip</a>.');
       });
     });
-    file(buttons, INSTALLER, "Installer");
+    file(buttons, INSTALLER, "Installer", "windows");
   }
 
   function mac(buttons) {
@@ -234,7 +273,7 @@
         if (!sent(b)) started(b, steps);
       });
     });
-    file(buttons, DISK_IMAGE, "Disk image");
+    file(buttons, DISK_IMAGE, "Disk image", "mac");
   }
 
   /* `name` for the button ("Run on Linux from source"), `why` for the note. */
@@ -270,6 +309,7 @@
   function run() {
     var buttons = Array.prototype.slice.call(
       document.querySelectorAll("[data-download]"));
+    installed();
     if (!buttons.length) return;
     var os = system();
     document.documentElement.setAttribute("data-os", os);

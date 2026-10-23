@@ -35,6 +35,7 @@ from evans import __version__  # noqa: E402
 
 REPO = "https://github.com/leo-01000111/evans"
 RELEASES = f"{REPO}/releases/latest"
+KOFI = "https://ko-fi.com/leongorecki"
 HOME = "https://www.leongorecki.eu/"
 URL = "https://www.leongorecki.eu/evans/"
 
@@ -100,6 +101,7 @@ TEMPLATE = """<!DOCTYPE html>
       </nav>
       <div class="header-tools">
         <div class="hp-lang" role="group" aria-label="Theme" data-theme-toggle hidden><button type="button" data-set-theme="light" aria-pressed="false">Day</button><button type="button" data-set-theme="dark" aria-pressed="false">Night</button></div>
+        <a class="hp-btn hp-btn--ghost hp-btn--sm hp-btn--issue" href="patch-notes.html#report" aria-label="Report an issue" title="Report an issue"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="square" stroke-linejoin="miter"><path d="M8 9h8v6a4 4 0 0 1-8 0z"></path><path d="M9.5 9V7.5a2.5 2.5 0 0 1 5 0V9"></path><path d="M12 11v7"></path><path d="M8 12H4"></path><path d="M20 12h-4"></path><path d="M8.5 16.5L5 19"></path><path d="M15.5 16.5L19 19"></path><path d="M8.5 9.5L5 7"></path><path d="M15.5 9.5L19 7"></path></g></svg><span>Report an issue</span></a>
         <a class="hp-btn hp-btn--secondary hp-btn--sm" href="install.html" data-download data-download-short><span>Download</span></a>
       </div>
     </div>
@@ -114,7 +116,7 @@ TEMPLATE = """<!DOCTYPE html>
     <div role="separator"><svg class="hp-marking" width="100%" height="28" aria-hidden="true" focusable="false"><defs><pattern id="hp-mk-evans" width="36" height="28" patternUnits="userSpaceOnUse"><rect class="edge" x="0.5" y="11.5" width="20" height="5" fill="currentColor" stroke-width="1"></rect></pattern></defs><rect x="0" y="0" width="100%" height="28" fill="url(#hp-mk-evans)"></rect></svg></div>
     <div class="site-footer__row">
       <p class="site-footer__copy data">Evans {version} · MIT licence · © Leon Górecki</p>
-      <p class="site-footer__links data"><a href="{repo}">GitHub</a> · <a href="{releases}">Releases</a> · <a href="patch-notes.html">Patch notes</a> · <a href="patch-notes.html#report">Report an issue</a> ·<a href="{home}">leongorecki.eu</a></p>
+      <p class="site-footer__links data"><a href="{repo}">GitHub</a> · <a href="{releases}">Releases</a> · <a href="patch-notes.html">Patch notes</a> · <a href="patch-notes.html#report">Report an issue</a> · <a href="{kofi}">Buy me a coffee</a> · <a href="{home}">leongorecki.eu</a></p>
     </div>
     <p class="site-footer__note">MATLAB and Simulink are registered trademarks of The MathWorks, Inc. Evans is an independent project, not affiliated with or endorsed by MathWorks.</p>
   </footer>
@@ -156,6 +158,7 @@ def build(out: Path) -> dict:
         "n_blocks": str(len(block_types())),
         "releases": RELEASES,
         "repo": REPO,
+        "kofi": KOFI,
     }
     for file, _, title, description, source in PAGES:
         if source in generated:
@@ -167,7 +170,7 @@ def build(out: Path) -> dict:
         page = TEMPLATE.format(
             title=reference.esc(title), description=reference.esc(description),
             url=URL + ("" if file == "index.html" else file), home=HOME,
-            back=ARROW.format(r=180), releases=RELEASES, repo=REPO,
+            back=ARROW.format(r=180), releases=RELEASES, repo=REPO, kofi=KOFI,
             version=__version__, nav=nav(file), body=body)
         if "@@" in page:
             raise SystemExit(f"{file}: unfilled placeholder near "

@@ -173,6 +173,19 @@ td.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; whit
 /* Requirements: the row names read as headings. */
 .req-table th[scope="row"] { text-align: left; white-space: nowrap; font-weight: 600; }
 
+/* Report an issue, in the header beside Download. The bug stays put on hover,
+   and on a phone the button is the bug alone. */
+.hp-btn--issue:hover svg, .hp-btn--coffee:hover svg { transform: none; }
+@media (max-width: 640px) {
+  .hp-btn--issue { padding: 0 var(--space-2); }
+  .hp-btn--issue span { display: none; }
+}
+
+/* "(12 already installed)" under the Windows and macOS headings, from the
+   download counter. */
+.install-count { margin: calc(-1 * var(--space-2)) 0 var(--space-3); font-family: var(--font-mono); font-size: 12px; color: var(--ink-muted); }
+.install-count[hidden] { display: none; }
+
 /* The install page's download: centred, and the one big button on the site.
    It names the system it found above its label and the file below it. */
 .proj-hero--center { text-align: center; }
