@@ -186,12 +186,24 @@ td.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; whit
 .hp-btn--coffee { background: #6f4e37; color: #fff4e3; }
 .hp-btn--coffee:hover { transform: translate(-2px, -2px); box-shadow: var(--shadow-lift); }
 .hp-btn--coffee:hover svg { transform: none; }
+.hp-btn--source:hover svg { transform: none; }
+/* Under the download, the coffee card and Build from source share a row,
+   centred and 80% as wide as the systems below: two thirds for the card, one
+   for the button. They stack where the systems do. */
+.support-row {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-4);
+  width: 80%; margin: var(--space-5) auto 0; text-align: left;
+}
 .coffee {
-  display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: var(--space-2) var(--space-4);
-  max-width: 62ch; margin: var(--space-5) auto 0; padding: var(--space-3) var(--space-4);
-  box-shadow: inset 0 0 0 1px var(--ink-muted); text-align: left;
+  grid-column: span 2; display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2) var(--space-4);
+  padding: var(--space-3) var(--space-4); box-shadow: inset 0 0 0 1px var(--ink-muted);
 }
 .coffee p { flex: 1 1 24ch; margin: 0; color: var(--ink-muted); font-size: 14px; }
+.support-row .hp-btn--source { height: 100%; }
+@media (max-width: 1060px) {
+  .support-row { grid-template-columns: 1fr; width: auto; }
+  .coffee { grid-column: auto; }
+}
 @media (max-width: 640px) { .coffee .hp-btn { width: 100%; } }
 
 /* "(12 already installed)" under the Windows and macOS headings, from the
